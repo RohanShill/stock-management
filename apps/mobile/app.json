@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Manju Store Management Beta v1.0",
+    "slug": "manju-store-management",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "hardwarestore",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1E293B"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hardwarestore.manager"
+    },
+    "android": {
+      "package": "com.hardwarestore.manager",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1E293B"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "isDemo": false,
+      "demoLabel": "DEMO VERSION — SAMPLE DATA",
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "ab7f1827-dcd3-4af4-8992-24636fb90ffc"
+      }
+    }
+  }
+}

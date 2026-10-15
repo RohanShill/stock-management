@@ -1,0 +1,28 @@
+{
+  "name": "hardware-store-manager",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run --workspace=@hardware-store/shared build",
+    "test:shared": "npm test --workspace=@hardware-store/shared",
+    "test:api": "npm test --workspace=@hardware-store/api",
+    "test:mobile": "npm test --workspace=@hardware-store/mobile",
+    "test": "npm run test:shared && npm run test:api && npm run test:mobile",
+    "start:api": "npm run dev --workspace=@hardware-store/api",
+    "start:mobile": "npm start --workspace=@hardware-store/mobile",
+    "demo:mobile": "cross-env EXPO_PUBLIC_DEMO_MODE=true APP_ENV=demo npm run demo --workspace=@hardware-store/mobile",
+    "demo:build:apk": "npx eas-cli build -p android --profile demo"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "query-string": "7.1.3"
+  }
+}
