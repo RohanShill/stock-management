@@ -38,6 +38,7 @@ import {
   fromCanonicalBaseQuantity,
 } from '@hardware-store/shared';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
+import { InventoryRepository } from '../../src/database/repositories/inventoryRepository.js';
 import { CategoryRepository } from '../../src/database/repositories/categoryRepository.js';
 import { CustomFieldRepository } from '../../src/database/repositories/customFieldRepository.js';
 import { PartiesRepository } from '../../src/database/repositories/partiesRepository.js';
@@ -82,22 +83,33 @@ export default function ProductsScreen() {
     }
   }, [routerParams.categoryId, routerParams.filter]);
 
-  // Form State
+  // Form State (Clean, Streamlined)
   const [formVisible, setFormVisible] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [formCategoryId, setFormCategoryId] = useState('');
   const [formSubcategoryId, setFormSubcategoryId] = useState('');
   const [formProdName, setFormProdName] = useState('');
-  const [formBrand, setFormBrand] = useState('Astral');
-  const [formModelNumber, setFormModelNumber] = useState('');
-  const [formMaterial, setFormMaterial] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-  const [formMeasurementType, setFormMeasurementType] = useState<MeasurementType>('count');
+  const [formBrand, setFormBrand] = useState('');
+  const [formSellingPrice, setFormSellingPrice] = useState('');
+  const [formPurchasePrice, setFormPurchasePrice] = useState('');
+  const [formOpeningStock, setFormOpeningStock] = useState('10');
+  const [formMinStockLevel, setFormMinStockLevel] = useState('5');
   const [formBaseUnit, setFormBaseUnit] = useState<StandardUnit>('piece');
-  const [formPipeDiameterMm, setFormPipeDiameterMm] = useState('25');
-  const [formStandardLengthM, setFormStandardLengthM] = useState('3');
-  const [formPipeTrackingMethod, setFormPipeTrackingMethod] = useState<'aggregate' | 'segment'>('aggregate');
-  const [formPreferredSupplierId, setFormPreferredSupplierId] = useState('');
+  const [formMeasurementType, setFormMeasurementType] = useState<MeasurementType>('count');
+  const [formSize, setFormSize] = useState('');
+  const [formRackLocation, setFormRackLocation] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+
+  // Quick Add Stock Dialog State
+  const [quickStockTarget, setQuickStockTarget] = useState<{
+    variantId: string;
+    productName: string;
+    currentStock: number;
+    unit: string;
+    brand?: string;
+  } | null>(null);
+  const [quickStockQty, setQuickStockQty] = useState('10');
+  const [stockUpdating, setStockUpdating] = useState(false);
 
   // Dynamic Specifications State
   const [availableCustomFields, setAvailableCustomFields] = useState<CustomFieldDefinition[]>([]);
@@ -148,61 +160,36 @@ export default function ProductsScreen() {
     loadData();
   }, [loadData]);
 
-  // Load custom field specifications when category or subcategory changes
-  useEffect(() => {
-    async function loadCustomSpecs() {
-      const storeId = store?.id || 'default-store';
-      const fields = await CustomFieldRepository.getCustomFields(storeId, 'subcategory', formSubcategoryId || undefined);
-      setAvailableCustomFields(fields);
-    }
-    if (formSubcategoryId) {
-      loadCustomSpecs();
-    }
-  }, [formSubcategoryId, store]);
-
-  // Generate SKUs for variants automatically if blank
-  useEffect(() => {
-    if (formProdName && categories.length > 0) {
-      const cat = categories.find((c) => c.id === formCategoryId);
-      const catName = cat?.name || 'General';
-      setVariantsDraft((prev) =>
-        prev.map((v) => {
-          if (!v.sku || v.sku.startsWith('GEN-') || v.sku.startsWith('ITEM-')) {
-            return { ...v, sku: generateSku(catName, formProdName, v.size || v.name) };
-          }
-          return v;
-        })
-      );
-    }
-  }, [formProdName, formCategoryId, categories]);
-
   const handleOpenAddProduct = useCallback(() => {
     setEditingProductId(null);
     setFormCategoryId(categories[0]?.id || '');
-    setFormSubcategoryId(subcategories[0]?.id || '');
+    setFormSubcategoryId('');
     setFormProdName('');
-    setFormBrand('Astral');
-    setFormModelNumber('');
-    setFormMaterial('');
-    setFormDescription('');
-    setFormMeasurementType('count');
+    setFormBrand('');
+    setFormSellingPrice('');
+    setFormPurchasePrice('');
+    setFormOpeningStock('10');
+    setFormMinStockLevel('5');
     setFormBaseUnit('piece');
-    setCustomFieldValues({});
+    setFormMeasurementType('count');
+    setFormSize('');
+    setFormRackLocation('');
+    setFormDescription('');
     setVariantsDraft([
       {
         name: 'Standard',
-        sku: generateSku('General', 'Item', 'Std'),
+        sku: '',
         size: 'Standard',
-        purchasePriceRs: '100',
-        sellingPriceRs: '140',
+        purchasePriceRs: '0',
+        sellingPriceRs: '0',
         taxRatePercent: '18',
-        openingStock: '20',
+        openingStock: '10',
         minStockLevel: '5',
-        rackLocation: 'A-1',
+        rackLocation: '',
       },
     ]);
     setFormVisible(true);
-  }, [categories, subcategories]);
+  }, [categories]);
 
   useEffect(() => {
     if (routerParams.action === 'add' && categories.length > 0) {
@@ -216,15 +203,19 @@ export default function ProductsScreen() {
     setFormSubcategoryId(prod.subcategoryId);
     setFormProdName(prod.name);
     setFormBrand(prod.brand || '');
-    setFormModelNumber(prod.modelNumber || '');
-    setFormMaterial(prod.material || '');
     setFormDescription(prod.description || '');
     setFormMeasurementType(prod.measurementType);
     setFormBaseUnit(prod.baseUnit);
-    setFormPipeDiameterMm(prod.pipeDiameterMm?.toString() || '25');
-    setFormStandardLengthM(prod.standardLengthMm ? (prod.standardLengthMm / 1000).toString() : '3');
-    setFormPipeTrackingMethod(prod.pipeTrackingMethod || 'aggregate');
-    setCustomFieldValues(prod.customValues || {});
+
+    const firstVar = prod.variants[0];
+    if (firstVar) {
+      setFormSellingPrice(paiseToRupee(firstVar.sellingPricePaise).toString());
+      setFormPurchasePrice(paiseToRupee(firstVar.purchasePricePaise).toString());
+      setFormOpeningStock(firstVar.currentStock.toString());
+      setFormMinStockLevel(firstVar.minStockLevel.toString());
+      setFormSize(firstVar.size || '');
+      setFormRackLocation(firstVar.rackLocation || '');
+    }
 
     setVariantsDraft(
       prod.variants.map((v) => ({
@@ -245,106 +236,142 @@ export default function ProductsScreen() {
     setFormVisible(true);
   };
 
-  const handleAddVariantRow = () => {
-    const nextIdx = variantsDraft.length + 1;
-    const cat = categories.find((c) => c.id === formCategoryId);
-    const newSku = generateSku(cat?.name || 'General', formProdName || 'Item', `V${nextIdx}`);
-    setVariantsDraft([
-      ...variantsDraft,
-      {
-        name: `Size ${nextIdx}`,
-        sku: newSku,
-        size: '',
-        purchasePriceRs: variantsDraft[0]?.purchasePriceRs || '100',
-        sellingPriceRs: variantsDraft[0]?.sellingPriceRs || '140',
-        taxRatePercent: '18',
-        openingStock: '10',
-        minStockLevel: '5',
-        rackLocation: variantsDraft[0]?.rackLocation || 'A-1',
-      },
-    ]);
-  };
-
-  const handleRemoveVariantRow = (idx: number) => {
-    if (variantsDraft.length <= 1) {
-      Alert.alert('Required', 'Product must have at least one variant.');
+  const handleOpenQuickStockForProduct = (prod: Product & { variants: ProductVariant[] }) => {
+    const v = prod.variants[0];
+    if (!v) {
+      Alert.alert('No Variant', 'This product has no active variant.');
       return;
     }
-    setVariantsDraft(variantsDraft.filter((_, i) => i !== idx));
+    setQuickStockTarget({
+      variantId: v.id,
+      productName: prod.name + (v.size ? ` (${v.size})` : ''),
+      currentStock: v.currentStock ?? 0,
+      unit: prod.baseUnit || 'pcs',
+      brand: prod.brand,
+    });
+    setQuickStockQty('10');
   };
 
-  const handleUpdateVariantDraft = (idx: number, field: keyof VariantDraft, val: any) => {
-    setVariantsDraft((prev) => {
-      const updated = [...prev];
-      updated[idx] = { ...updated[idx], [field]: val };
-      return updated;
-    });
+  const handleConfirmQuickStock = async () => {
+    if (!quickStockTarget) return;
+    const qty = parseFloat(quickStockQty);
+    if (isNaN(qty) || qty <= 0) {
+      Alert.alert('Invalid Quantity', 'Please enter a valid stock quantity');
+      return;
+    }
+    try {
+      setStockUpdating(true);
+      const storeId = store?.id || 'default-store';
+      await InventoryRepository.adjustStock(
+        quickStockTarget.variantId,
+        qty,
+        (quickStockTarget.unit as any) || 'piece',
+        'increase',
+        'Direct Stock Add',
+        storeId,
+        deviceId,
+        user?.id
+      );
+      Alert.alert(
+        'Stock Added!',
+        `Successfully added +${qty} ${quickStockTarget.unit} to "${quickStockTarget.productName}".`
+      );
+      setQuickStockTarget(null);
+      setQuickStockQty('10');
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not add stock';
+      Alert.alert('Stock Error', msg);
+    } finally {
+      setStockUpdating(false);
+    }
   };
+
+  useEffect(() => {
+    if (routerParams.action === 'addStock' && products.length > 0) {
+      const target =
+        products.find((p) => p.variants.some((v) => (v.currentStock ?? 0) <= (v.minStockLevel ?? 0))) ||
+        products[0];
+      if (target) {
+        handleOpenQuickStockForProduct(target);
+      }
+    }
+  }, [routerParams.action, products.length]);
 
   const handleSaveProduct = async () => {
     if (!formProdName.trim()) {
-      Alert.alert('Required', 'Product name is mandatory');
+      Alert.alert('Required', 'Product name is mandatory (सामान का नाम लिखें)');
+      return;
+    }
+    const sellPrice = parseFloat(formSellingPrice);
+    if (isNaN(sellPrice) || sellPrice < 0) {
+      Alert.alert('Required', 'Please enter a valid Selling Price (बिक्री मूल्य लिखें)');
       return;
     }
     if (!formCategoryId) {
-      Alert.alert('Required', 'Please select a Category');
-      return;
-    }
-    if (!formSubcategoryId) {
-      Alert.alert('Required', 'Please select a Subcategory');
+      Alert.alert('Required', 'Please select a Category (कैटेगरी चुनें)');
       return;
     }
 
     try {
       const storeId = store?.id || 'default-store';
 
-      const allowedUnitsMap: Record<MeasurementType, StandardUnit[]> = {
-        count: ['piece', 'set', 'box', 'pack'],
-        length: ['mm', 'cm', 'm', 'ft', 'inch'],
-        weight: ['g', 'kg'],
-        volume: ['ml', 'l'],
-        pack: ['box', 'pack', 'piece'],
-      };
+      // Auto-resolve subcategory if missing
+      let subcatId = formSubcategoryId;
+      if (!subcatId) {
+        const existing = subcategories.find((s) => s.categoryId === formCategoryId);
+        if (existing) {
+          subcatId = existing.id;
+        } else {
+          const newSub = await CategoryRepository.createSubcategory(
+            { categoryId: formCategoryId, name: 'General' },
+            storeId,
+            deviceId
+          );
+          subcatId = newSub.id;
+        }
+      }
+
+      const costPaise = rupeeToPaise(parseFloat(formPurchasePrice || '0'));
+      const sellPaise = rupeeToPaise(sellPrice);
+      const stockQty = parseFloat(formOpeningStock || '0');
+      const minStock = parseFloat(formMinStockLevel || '5');
 
       const productPayload: Partial<Product> = {
         name: formProdName.trim(),
         categoryId: formCategoryId,
-        subcategoryId: formSubcategoryId,
-        brand: formBrand.trim(),
-        modelNumber: formModelNumber.trim(),
-        material: formMaterial.trim(),
-        description: formDescription.trim(),
+        subcategoryId: subcatId,
+        brand: formBrand.trim() || undefined,
+        description: formDescription.trim() || undefined,
         measurementType: formMeasurementType,
         baseUnit: formBaseUnit,
-        allowedUnits: allowedUnitsMap[formMeasurementType],
-        pipeDiameterMm: formMeasurementType === 'length' ? parseFloat(formPipeDiameterMm || '0') : undefined,
-        standardLengthMm: formMeasurementType === 'length' ? parseFloat(formStandardLengthM || '3') * 1000 : undefined,
-        pipeTrackingMethod: formMeasurementType === 'length' ? formPipeTrackingMethod : undefined,
-        customValues: customFieldValues,
+        allowedUnits: [formBaseUnit],
       };
 
-      const variantsPayload: Array<Partial<ProductVariant>> = variantsDraft.map((v) => ({
-        id: v.id,
-        name: v.name.trim() || formProdName.trim(),
-        sku: v.sku.trim() || generateSku(formBrand, formProdName, v.size || 'std'),
-        size: v.size?.trim(),
-        color: v.color?.trim(),
-        purchasePricePaise: rupeeToPaise(parseFloat(v.purchasePriceRs || '0')),
-        sellingPricePaise: rupeeToPaise(parseFloat(v.sellingPriceRs || '0')),
-        taxRatePercent: parseFloat(v.taxRatePercent || '18'),
-        openingStock: parseFloat(v.openingStock || '0'),
-        minStockLevel: parseFloat(v.minStockLevel || '5'),
-        rackLocation: v.rackLocation?.trim(),
-        preferredSupplierId: formPreferredSupplierId || undefined,
-        customValues: v.customValues,
-      }));
+      const variantsPayload: Array<Partial<ProductVariant>> = [
+        {
+          id: editingProductId && variantsDraft[0]?.id ? variantsDraft[0].id : undefined,
+          name: formProdName.trim(),
+          sku:
+            editingProductId && variantsDraft[0]?.sku
+              ? variantsDraft[0].sku
+              : generateSku(formBrand || 'General', formProdName, formBaseUnit),
+          size: formSize.trim() || 'Standard',
+          purchasePricePaise: costPaise,
+          sellingPricePaise: sellPaise,
+          taxRatePercent: 18,
+          openingStock: stockQty,
+          minStockLevel: minStock,
+          rackLocation: formRackLocation.trim() || undefined,
+        },
+      ];
 
       if (editingProductId) {
         await ProductRepository.updateProduct(editingProductId, productPayload, variantsPayload, storeId, deviceId);
         Alert.alert('Success', 'Product updated successfully.');
       } else {
         await ProductRepository.createProduct(productPayload, variantsPayload, storeId, deviceId, user?.id);
-        Alert.alert('Success', 'New product created with variants & opening stock.');
+        Alert.alert('Success', 'New product created and added to stock!');
       }
 
       setFormVisible(false);
@@ -794,12 +821,12 @@ export default function ProductsScreen() {
               {/* Action Buttons Footer */}
               <View style={styles.productCardFooter}>
                 <TouchableOpacity
-                  style={styles.cardFooterActionBtn}
-                  onPress={() => router.push('/(tabs)/purchases')}
+                  style={styles.cardAddStockBtn}
+                  onPress={() => handleOpenQuickStockForProduct(item)}
                   activeOpacity={0.7}
                 >
-                  <MaterialCommunityIcons name="truck-delivery-outline" size={16} color={colors.primary} />
-                  <Text style={styles.cardFooterActionText}>Stock Inward</Text>
+                  <MaterialCommunityIcons name="plus-circle" size={16} color="#16A34A" />
+                  <Text style={styles.cardAddStockBtnText}>+ Add Stock</Text>
                 </TouchableOpacity>
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -853,268 +880,193 @@ export default function ProductsScreen() {
         <MaterialCommunityIcons name="plus" size={26} color="#FFFFFF" />
       </TouchableOpacity>
 
-      {/* 5. ADD / EDIT PRODUCT MODAL (Guided Mobile Single-Column Form) */}
+      {/* 5. ADD / EDIT PRODUCT MODAL (Clean, Non-Cluttered, User-Friendly) */}
       <Portal>
         <Dialog
           visible={formVisible}
           onDismiss={() => setFormVisible(false)}
           style={styles.modalDialog}
         >
-          <Dialog.Title style={styles.dialogTitle}>
-            {editingProductId ? 'Edit Product' : 'Add New Product'}
-          </Dialog.Title>
+          <View style={styles.dialogHeaderRow}>
+            <View style={{ flex: 1 }}>
+              <Dialog.Title style={styles.dialogTitle}>
+                {editingProductId ? 'Edit Product' : 'Add New Product'}
+              </Dialog.Title>
+              <Text style={styles.dialogSubtitle}>
+                {editingProductId ? 'Update product details & pricing' : 'नया सामान और उसका रेट/स्टॉक जोड़ें'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setFormVisible(false)}
+              style={styles.dialogCloseBtn}
+            >
+              <MaterialCommunityIcons name="close" size={22} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
 
           <Dialog.ScrollArea style={styles.dialogScrollArea}>
-            <ScrollView contentContainerStyle={styles.modalScrollContent}>
-              {/* Section 1: Basic Information */}
-              <Text style={styles.formSectionHeader}>1. Basic Information</Text>
-
-              <TextInput
-                label="Product Name *"
-                value={formProdName}
-                onChangeText={setFormProdName}
-                mode="outlined"
-                style={styles.formInput}
-                placeholder="e.g. Astral CPVC Pro Pipe"
-              />
-
-              <View style={styles.fieldRow}>
+            <ScrollView contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
+              {/* Product Name */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formFieldLabel}>Product Name (सामान का नाम) *</Text>
                 <TextInput
-                  label="Brand"
+                  value={formProdName}
+                  onChangeText={setFormProdName}
+                  mode="outlined"
+                  style={styles.cleanInput}
+                  placeholder="e.g. Astral 1 inch CPVC Pipe, Asian Paints 1L"
+                />
+              </View>
+
+              {/* Brand (Optional) */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formFieldLabel}>Brand / Company (ब्रैंड)</Text>
+                <TextInput
                   value={formBrand}
                   onChangeText={setFormBrand}
                   mode="outlined"
-                  style={[styles.formInput, { flex: 1, marginRight: spacing.xs }]}
-                />
-                <TextInput
-                  label="Model Number"
-                  value={formModelNumber}
-                  onChangeText={setFormModelNumber}
-                  mode="outlined"
-                  style={[styles.formInput, { flex: 1, marginLeft: spacing.xs }]}
+                  style={styles.cleanInput}
+                  placeholder="e.g. Astral, Finolex, Asian Paints, Supreme"
                 />
               </View>
 
-              <TextInput
-                label="Description"
-                value={formDescription}
-                onChangeText={setFormDescription}
-                mode="outlined"
-                multiline
-                numberOfLines={2}
-                style={styles.formInput}
-              />
-
-              {/* Section 2: Category & Subcategory */}
-              <Text style={styles.formSectionHeader}>2. Category & Subcategory</Text>
-
-              {/* Category Picker Row */}
-              <View style={styles.pickerHeaderRow}>
-                <Text style={styles.fieldSublabel}>Category:</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    setQuickCreateType('category');
-                    setQuickCreateName('');
-                  }}
-                >
-                  <Text style={styles.inlineActionText}>+ New Category</Text>
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorScroll}>
-                {categories.map((c) => (
-                  <Chip
-                    key={c.id}
-                    selected={formCategoryId === c.id}
-                    onPress={() => setFormCategoryId(c.id)}
-                    style={[styles.selectorChip, formCategoryId === c.id && styles.selectorChipSelected]}
-                    textStyle={[styles.selectorChipText, formCategoryId === c.id && styles.selectorChipTextSelected]}
-                    showSelectedOverlay={false}
+              {/* Category Selection */}
+              <View style={styles.formGroup}>
+                <View style={styles.pickerHeaderRow}>
+                  <Text style={styles.formFieldLabel}>Category (कैटेगरी) *</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setQuickCreateType('category');
+                      setQuickCreateName('');
+                    }}
                   >
-                    {c.name}
-                  </Chip>
-                ))}
-              </ScrollView>
+                    <Text style={styles.inlineActionText}>+ New Category</Text>
+                  </TouchableOpacity>
+                </View>
 
-              {/* Subcategory Picker Row */}
-              <View style={styles.pickerHeaderRow}>
-                <Text style={styles.fieldSublabel}>Subcategory:</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    setQuickCreateType('subcategory');
-                    setQuickCreateName('');
-                  }}
-                >
-                  <Text style={styles.inlineActionText}>+ New Subcategory</Text>
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorScroll}>
-                {subcategories
-                  .filter((s) => !formCategoryId || s.categoryId === formCategoryId)
-                  .map((s) => (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorScroll}>
+                  {categories.map((c) => (
                     <Chip
-                      key={s.id}
-                      selected={formSubcategoryId === s.id}
-                      onPress={() => setFormSubcategoryId(s.id)}
-                      style={[styles.selectorChip, formSubcategoryId === s.id && styles.selectorChipSelected]}
-                      textStyle={[styles.selectorChipText, formSubcategoryId === s.id && styles.selectorChipTextSelected]}
+                      key={c.id}
+                      selected={formCategoryId === c.id}
+                      onPress={() => setFormCategoryId(c.id)}
+                      style={[styles.selectorChip, formCategoryId === c.id && styles.selectorChipSelected]}
+                      textStyle={[styles.selectorChipText, formCategoryId === c.id && styles.selectorChipTextSelected]}
                       showSelectedOverlay={false}
                     >
-                      {s.name}
+                      {c.name}
                     </Chip>
                   ))}
-              </ScrollView>
-
-              {/* Section 3: Product Type & Units */}
-              <Text style={styles.formSectionHeader}>3. Product Type & Units</Text>
-
-              <SegmentedButtons
-                value={formMeasurementType}
-                onValueChange={(val) => {
-                  setFormMeasurementType(val as any);
-                  if (val === 'length') setFormBaseUnit('m');
-                  else if (val === 'weight') setFormBaseUnit('kg');
-                  else if (val === 'volume') setFormBaseUnit('l');
-                  else if (val === 'pack') setFormBaseUnit('box');
-                  else setFormBaseUnit('piece');
-                }}
-                buttons={[
-                  { value: 'count', label: 'Piece' },
-                  { value: 'length', label: 'Length' },
-                  { value: 'weight', label: 'Weight' },
-                  { value: 'pack', label: 'Pack' },
-                ]}
-                style={{ marginBottom: spacing.sm }}
-              />
-
-              {formMeasurementType === 'length' && (
-                <View style={styles.pipeConfigCard}>
-                  <Text style={styles.pipeConfigTitle}>Pipe Configuration</Text>
-                  <View style={styles.fieldRow}>
-                    <TextInput
-                      label="Outer Diameter (mm)"
-                      value={formPipeDiameterMm}
-                      onChangeText={setFormPipeDiameterMm}
-                      keyboardType="numeric"
-                      mode="outlined"
-                      style={[styles.formInput, { flex: 1, marginRight: spacing.xs }]}
-                    />
-                    <TextInput
-                      label="Standard Length (m)"
-                      value={formStandardLengthM}
-                      onChangeText={setFormStandardLengthM}
-                      keyboardType="numeric"
-                      mode="outlined"
-                      style={[styles.formInput, { flex: 1, marginLeft: spacing.xs }]}
-                    />
-                  </View>
-                </View>
-              )}
-
-              {/* Section 4: Dynamic Custom Specifications */}
-              {availableCustomFields.length > 0 && (
-                <>
-                  <Text style={styles.formSectionHeader}>4. Custom Specifications</Text>
-                  {availableCustomFields.map((field) => (
-                    <View key={field.id} style={{ marginBottom: spacing.xs }}>
-                      <TextInput
-                        label={`${field.label} ${field.unit ? `(${field.unit})` : ''}`}
-                        value={customFieldValues[field.name] || ''}
-                        onChangeText={(txt) => setCustomFieldValues({ ...customFieldValues, [field.name]: txt })}
-                        mode="outlined"
-                        style={styles.formInput}
-                      />
-                    </View>
-                  ))}
-                </>
-              )}
-
-              {/* Section 5: Variants & Sizes */}
-              <View style={styles.variantsHeaderRow}>
-                <Text style={styles.formSectionHeader}>5. Sizes & Variants</Text>
-                <TouchableOpacity onPress={handleAddVariantRow}>
-                  <Text style={styles.inlineActionText}>+ Add Variant</Text>
-                </TouchableOpacity>
+                </ScrollView>
               </View>
 
-              {variantsDraft.map((v, idx) => (
-                <Surface key={idx} style={styles.variantDraftCard}>
-                  <View style={styles.variantDraftHeader}>
-                    <Text style={styles.variantDraftTitle}>Variant #{idx + 1}</Text>
-                    {variantsDraft.length > 1 && (
-                      <TouchableOpacity onPress={() => handleRemoveVariantRow(idx)}>
-                        <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  <View style={styles.fieldRow}>
-                    <TextInput
-                      label="Size / Name *"
-                      value={v.size}
-                      onChangeText={(txt) => handleUpdateVariantDraft(idx, 'size', txt)}
-                      mode="outlined"
-                      style={[styles.formInput, { flex: 1, marginRight: spacing.xs }]}
-                      placeholder="e.g. 20mm"
-                    />
-                    <TextInput
-                      label="SKU Code"
-                      value={v.sku}
-                      onChangeText={(txt) => handleUpdateVariantDraft(idx, 'sku', txt)}
-                      mode="outlined"
-                      style={[styles.formInput, { flex: 1, marginLeft: spacing.xs }]}
-                    />
-                  </View>
-
-                  <View style={styles.fieldRow}>
-                    <TextInput
-                      label="Purchase Cost (₹)"
-                      value={v.purchasePriceRs}
-                      onChangeText={(txt) => handleUpdateVariantDraft(idx, 'purchasePriceRs', txt)}
-                      keyboardType="numeric"
-                      mode="outlined"
-                      style={[styles.formInput, { flex: 1, marginRight: spacing.xs }]}
-                    />
-                    <TextInput
-                      label="Selling Price (₹) *"
-                      value={v.sellingPriceRs}
-                      onChangeText={(txt) => handleUpdateVariantDraft(idx, 'sellingPriceRs', txt)}
-                      keyboardType="numeric"
-                      mode="outlined"
-                      style={[styles.formInput, { flex: 1, marginLeft: spacing.xs }]}
-                    />
-                  </View>
-
-                  <View style={styles.fieldRow}>
-                    <TextInput
-                      label="Opening Stock"
-                      value={v.openingStock}
-                      onChangeText={(txt) => handleUpdateVariantDraft(idx, 'openingStock', txt)}
-                      keyboardType="numeric"
-                      mode="outlined"
-                      style={[styles.formInput, { flex: 1, marginRight: spacing.xs }]}
-                    />
-                    <TextInput
-                      label="Min Stock Threshold"
-                      value={v.minStockLevel}
-                      onChangeText={(txt) => handleUpdateVariantDraft(idx, 'minStockLevel', txt)}
-                      keyboardType="numeric"
-                      mode="outlined"
-                      style={[styles.formInput, { flex: 1, marginLeft: spacing.xs }]}
-                    />
-                  </View>
-
+              {/* Pricing Row: Selling Price & Purchase Cost */}
+              <View style={styles.formRowTwoCol}>
+                <View style={{ flex: 1, marginRight: spacing.xs }}>
+                  <Text style={styles.formFieldLabel}>Selling Price (₹) *</Text>
                   <TextInput
-                    label="Rack / Shelf Location"
-                    value={v.rackLocation}
-                    onChangeText={(txt) => handleUpdateVariantDraft(idx, 'rackLocation', txt)}
+                    value={formSellingPrice}
+                    onChangeText={setFormSellingPrice}
+                    keyboardType="numeric"
                     mode="outlined"
-                    style={styles.formInput}
-                    placeholder="e.g. A-12"
+                    style={styles.cleanInput}
+                    placeholder="e.g. 150"
                   />
-                </Surface>
-              ))}
+                </View>
+
+                <View style={{ flex: 1, marginLeft: spacing.xs }}>
+                  <Text style={styles.formFieldLabel}>Cost Price (₹)</Text>
+                  <TextInput
+                    value={formPurchasePrice}
+                    onChangeText={setFormPurchasePrice}
+                    keyboardType="numeric"
+                    mode="outlined"
+                    style={styles.cleanInput}
+                    placeholder="e.g. 110"
+                  />
+                </View>
+              </View>
+
+              {/* Stock & Min Alert Row */}
+              <View style={styles.formRowTwoCol}>
+                <View style={{ flex: 1, marginRight: spacing.xs }}>
+                  <Text style={styles.formFieldLabel}>Current Stock (स्टॉक)</Text>
+                  <TextInput
+                    value={formOpeningStock}
+                    onChangeText={setFormOpeningStock}
+                    keyboardType="numeric"
+                    mode="outlined"
+                    style={styles.cleanInput}
+                    placeholder="e.g. 20"
+                  />
+                </View>
+
+                <View style={{ flex: 1, marginLeft: spacing.xs }}>
+                  <Text style={styles.formFieldLabel}>Min Stock Alert</Text>
+                  <TextInput
+                    value={formMinStockLevel}
+                    onChangeText={setFormMinStockLevel}
+                    keyboardType="numeric"
+                    mode="outlined"
+                    style={styles.cleanInput}
+                    placeholder="e.g. 5"
+                  />
+                </View>
+              </View>
+
+              {/* Unit Selector */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formFieldLabel}>Unit (इकाई)</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorScroll}>
+                  {[
+                    { unit: 'piece', label: 'Piece (पीस)', type: 'count' },
+                    { unit: 'm', label: 'Meter (मीटर)', type: 'length' },
+                    { unit: 'box', label: 'Box (बॉक्स)', type: 'pack' },
+                    { unit: 'kg', label: 'Kg (किलो)', type: 'weight' },
+                    { unit: 'l', label: 'Liter (लीटर)', type: 'volume' },
+                  ].map((u) => (
+                    <Chip
+                      key={u.unit}
+                      selected={formBaseUnit === u.unit}
+                      onPress={() => {
+                        setFormBaseUnit(u.unit as any);
+                        setFormMeasurementType(u.type as any);
+                      }}
+                      style={[styles.selectorChip, formBaseUnit === u.unit && styles.selectorChipSelected]}
+                      textStyle={[styles.selectorChipText, formBaseUnit === u.unit && styles.selectorChipTextSelected]}
+                      showSelectedOverlay={false}
+                    >
+                      {u.label}
+                    </Chip>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Shelf / Rack Location */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formFieldLabel}>Shelf / Rack Location (रैक नंबर)</Text>
+                <TextInput
+                  value={formRackLocation}
+                  onChangeText={setFormRackLocation}
+                  mode="outlined"
+                  style={styles.cleanInput}
+                  placeholder="e.g. Rack A-1, Shelf 3, Floor"
+                />
+              </View>
+
+              {/* Product Description */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formFieldLabel}>Description / Notes (विवरण)</Text>
+                <TextInput
+                  value={formDescription}
+                  onChangeText={setFormDescription}
+                  mode="outlined"
+                  multiline
+                  numberOfLines={3}
+                  style={[styles.cleanInput, { minHeight: 70 }]}
+                  placeholder="Size, specifications, warranty, or item notes..."
+                />
+              </View>
             </ScrollView>
           </Dialog.ScrollArea>
 
@@ -1127,7 +1079,98 @@ export default function ProductsScreen() {
               onPress={handleSaveProduct}
               style={styles.primarySaveBtn}
             >
-              Save Product
+              {editingProductId ? 'Update Product' : 'Save Product (सेव करें)'}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      {/* Direct Quick Add Stock Dialog */}
+      <Portal>
+        <Dialog
+          visible={quickStockTarget !== null}
+          onDismiss={() => setQuickStockTarget(null)}
+          style={styles.quickStockDialog}
+        >
+          <Dialog.Title style={styles.quickStockDialogTitle}>
+            Add Stock / स्टॉक जोड़ें
+          </Dialog.Title>
+          <Dialog.Content>
+            {quickStockTarget && (
+              <View>
+                <Text style={styles.quickStockProdName}>{quickStockTarget.productName}</Text>
+                {quickStockTarget.brand ? (
+                  <Text style={styles.quickStockBrandText}>Brand: {quickStockTarget.brand}</Text>
+                ) : null}
+
+                <View style={styles.currentStockPillRow}>
+                  <Text style={styles.currentStockLabel}>Current Stock:</Text>
+                  <View style={styles.currentStockBadge}>
+                    <Text style={styles.currentStockBadgeText}>
+                      {quickStockTarget.currentStock} {quickStockTarget.unit}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={[styles.currentStockLabel, { marginTop: spacing.md, marginBottom: 6 }]}>
+                  Quick Quantity to Add:
+                </Text>
+                <View style={styles.quickQtyChipsRow}>
+                  {['5', '10', '20', '50', '100'].map((preset) => (
+                    <Chip
+                      key={preset}
+                      selected={quickStockQty === preset}
+                      onPress={() => setQuickStockQty(preset)}
+                      style={[
+                        styles.qtyChip,
+                        quickStockQty === preset && styles.qtyChipSelected,
+                      ]}
+                      textStyle={[
+                        styles.qtyChipText,
+                        quickStockQty === preset && styles.qtyChipTextSelected,
+                      ]}
+                      showSelectedOverlay={false}
+                    >
+                      +{preset}
+                    </Chip>
+                  ))}
+                </View>
+
+                <TextInput
+                  label={`Quantity to Add (${quickStockTarget.unit}) *`}
+                  value={quickStockQty}
+                  onChangeText={setQuickStockQty}
+                  keyboardType="numeric"
+                  mode="outlined"
+                  style={{ marginTop: spacing.sm, backgroundColor: '#FFFFFF' }}
+                  placeholder="e.g. 10"
+                />
+
+                {/* Live Preview */}
+                <View style={styles.livePreviewCard}>
+                  <Text style={styles.livePreviewText}>
+                    New Stock will be:{' '}
+                    <Text style={{ fontWeight: '800', color: '#16A34A' }}>
+                      {Math.max(0, quickStockTarget.currentStock) + (parseFloat(quickStockQty) || 0)}{' '}
+                      {quickStockTarget.unit}
+                    </Text>
+                  </Text>
+                </View>
+              </View>
+            )}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setQuickStockTarget(null)} textColor={colors.textSecondary}>
+              Cancel
+            </Button>
+            <Button
+              mode="contained"
+              loading={stockUpdating}
+              disabled={stockUpdating}
+              onPress={handleConfirmQuickStock}
+              style={styles.confirmStockBtn}
+            >
+              Add to Stock
             </Button>
           </Dialog.Actions>
         </Dialog>
@@ -1526,6 +1569,22 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xs + 2,
     marginTop: 2,
   },
+  cardAddStockBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 6,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  cardAddStockBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#16A34A',
+  },
   cardFooterActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1539,6 +1598,124 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: colors.primary,
+  },
+  dialogHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingRight: spacing.md,
+    paddingTop: spacing.xs,
+  },
+  dialogSubtitle: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    paddingHorizontal: 24,
+    marginTop: -8,
+    marginBottom: spacing.xs,
+  },
+  dialogCloseBtn: {
+    padding: 6,
+    marginTop: 12,
+  },
+  formGroup: {
+    marginBottom: spacing.sm + 2,
+  },
+  formFieldLabel: {
+    ...typography.labelSmall,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  cleanInput: {
+    backgroundColor: colors.surface,
+    fontSize: 14,
+  },
+  formRowTwoCol: {
+    flexDirection: 'row',
+    marginBottom: spacing.sm + 2,
+  },
+  quickStockDialog: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+  },
+  quickStockDialogTitle: {
+    ...typography.titleMedium,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  quickStockProdName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  quickStockBrandText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  currentStockPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: spacing.sm,
+  },
+  currentStockLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  currentStockBadge: {
+    backgroundColor: colors.surfaceSubtle,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: borderRadius.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  currentStockBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  quickQtyChipsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  qtyChip: {
+    backgroundColor: colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  qtyChipSelected: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#16A34A',
+  },
+  qtyChipText: {
+    fontSize: 12,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  qtyChipTextSelected: {
+    color: '#16A34A',
+    fontWeight: '700',
+  },
+  livePreviewCard: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: borderRadius.sm,
+    padding: spacing.sm,
+    marginTop: spacing.md,
+  },
+  livePreviewText: {
+    fontSize: 13,
+    color: '#166534',
+    fontWeight: '600',
+  },
+  confirmStockBtn: {
+    backgroundColor: '#16A34A',
+    borderRadius: borderRadius.md,
   },
   cardFooterEditBtn: {
     flexDirection: 'row',

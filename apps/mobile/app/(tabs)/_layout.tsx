@@ -84,15 +84,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="purchases"
         options={{
+          href: null, // Hidden per user requirement: replaced by simple direct Add Stock
           title: language === 'hi' ? 'स्टॉक इनवर्ड' : 'Stock Inward',
           headerShown: false,
-          tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons
-              name={focused ? 'truck-delivery' : 'truck-delivery-outline'}
-              size={24}
-              color={color}
-            />
-          ),
         }}
       />
       <Tabs.Screen

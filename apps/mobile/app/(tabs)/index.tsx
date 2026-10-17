@@ -7,12 +7,13 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { Text, Surface, Button } from 'react-native-paper';
+import { Text, Surface, Button, Portal, Dialog, TextInput, Chip } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppStore } from '../../src/store/useAppStore.js';
 import { formatPaiseToINR } from '@hardware-store/shared';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
+import { InventoryRepository } from '../../src/database/repositories/inventoryRepository.js';
 import { SyncEngine } from '../../src/sync/SyncEngine.js';
 import { t } from '../../src/i18n/strings.js';
 import { colors, spacing, borderRadius, shadows, typography } from '../../src/theme/tokens.js';
@@ -74,6 +75,46 @@ export default function DashboardScreen() {
 
   const [categorySummaries, setCategorySummaries] = useState<CategoryStockSummary[]>([]);
   const [restockWatchlist, setRestockWatchlist] = useState<RestockItem[]>([]);
+
+  // Quick Add Stock Dialog State
+  const [quickStockTarget, setQuickStockTarget] = useState<RestockItem | null>(null);
+  const [quickStockQty, setQuickStockQty] = useState('10');
+  const [stockUpdating, setStockUpdating] = useState(false);
+
+  const handleConfirmQuickStock = async () => {
+    if (!quickStockTarget) return;
+    const qty = parseFloat(quickStockQty);
+    if (isNaN(qty) || qty <= 0) {
+      Alert.alert('Invalid Quantity', 'Please enter a valid stock quantity (e.g. 10)');
+      return;
+    }
+    try {
+      setStockUpdating(true);
+      const storeId = store?.id || 'store-1';
+      await InventoryRepository.adjustStock(
+        quickStockTarget.variantId,
+        qty,
+        (quickStockTarget.unit as any) || 'piece',
+        'increase',
+        'Quick Stock Add from Dashboard',
+        storeId,
+        deviceId,
+        undefined
+      );
+      Alert.alert(
+        'Stock Added!',
+        `Successfully added +${qty} ${quickStockTarget.unit} to "${quickStockTarget.productName}".`
+      );
+      setQuickStockTarget(null);
+      setQuickStockQty('10');
+      await loadLocalStats();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not add stock';
+      Alert.alert('Stock Update Error', msg);
+    } finally {
+      setStockUpdating(false);
+    }
+  };
 
   const loadLocalStats = useCallback(async () => {
     try {
@@ -366,17 +407,22 @@ export default function DashboardScreen() {
           <Text style={styles.quickActionSubtext}>New SKU / Size</Text>
         </TouchableOpacity>
 
-        {/* Stock Inward (Purchases) */}
+        {/* Quick Add Stock */}
         <TouchableOpacity
           style={styles.quickActionCard}
-          onPress={() => router.push('/(tabs)/purchases')}
+          onPress={() =>
+            router.push({
+              pathname: '/(tabs)/products',
+              params: { action: 'addStock' },
+            })
+          }
           activeOpacity={0.8}
         >
-          <View style={[styles.iconCircle, { backgroundColor: colors.accentLight }]}>
-            <MaterialCommunityIcons name="truck-delivery-outline" size={24} color={colors.accent} />
+          <View style={[styles.iconCircle, { backgroundColor: '#DCFCE7' }]}>
+            <MaterialCommunityIcons name="plus-circle" size={24} color="#16A34A" />
           </View>
-          <Text style={styles.quickActionText}>Stock Inward</Text>
-          <Text style={styles.quickActionSubtext}>Receive Goods</Text>
+          <Text style={styles.quickActionText}>Add Stock</Text>
+          <Text style={styles.quickActionSubtext}>स्टॉक जोड़ें</Text>
         </TouchableOpacity>
       </View>
 
@@ -607,12 +653,15 @@ export default function DashboardScreen() {
                 </View>
 
                 <TouchableOpacity
-                  style={styles.inwardButton}
-                  onPress={() => router.push('/(tabs)/purchases')}
+                  style={styles.addStockQuickBtn}
+                  onPress={() => {
+                    setQuickStockTarget(item);
+                    setQuickStockQty('10');
+                  }}
                   activeOpacity={0.7}
                 >
-                  <MaterialCommunityIcons name="plus" size={14} color={colors.primary} />
-                  <Text style={styles.inwardButtonText}>Inward</Text>
+                  <MaterialCommunityIcons name="plus-circle-outline" size={14} color="#FFFFFF" />
+                  <Text style={styles.addStockQuickBtnText}>+ Stock</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -627,6 +676,97 @@ export default function DashboardScreen() {
           </Text>
         </Surface>
       )}
+
+      {/* Direct Quick Add Stock Dialog */}
+      <Portal>
+        <Dialog
+          visible={quickStockTarget !== null}
+          onDismiss={() => setQuickStockTarget(null)}
+          style={styles.quickStockDialog}
+        >
+          <Dialog.Title style={styles.quickStockDialogTitle}>
+            Add Stock / स्टॉक जोड़ें
+          </Dialog.Title>
+          <Dialog.Content>
+            {quickStockTarget && (
+              <View>
+                <Text style={styles.quickStockProdName}>{quickStockTarget.productName}</Text>
+                <Text style={styles.quickStockVariantName}>
+                  {quickStockTarget.variantName} {quickStockTarget.brand ? `• ${quickStockTarget.brand}` : ''}
+                </Text>
+
+                <View style={styles.currentStockPillRow}>
+                  <Text style={styles.currentStockLabel}>Current Stock:</Text>
+                  <View style={styles.currentStockBadge}>
+                    <Text style={styles.currentStockBadgeText}>
+                      {quickStockTarget.currentStock} {quickStockTarget.unit}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={[styles.currentStockLabel, { marginTop: spacing.md, marginBottom: 6 }]}>
+                  Quick Quantity to Add:
+                </Text>
+                <View style={styles.quickQtyChipsRow}>
+                  {['5', '10', '20', '50', '100'].map((preset) => (
+                    <Chip
+                      key={preset}
+                      selected={quickStockQty === preset}
+                      onPress={() => setQuickStockQty(preset)}
+                      style={[
+                        styles.qtyChip,
+                        quickStockQty === preset && styles.qtyChipSelected,
+                      ]}
+                      textStyle={[
+                        styles.qtyChipText,
+                        quickStockQty === preset && styles.qtyChipTextSelected,
+                      ]}
+                      showSelectedOverlay={false}
+                    >
+                      +{preset}
+                    </Chip>
+                  ))}
+                </View>
+
+                <TextInput
+                  label={`Quantity to Add (${quickStockTarget.unit}) *`}
+                  value={quickStockQty}
+                  onChangeText={setQuickStockQty}
+                  keyboardType="numeric"
+                  mode="outlined"
+                  style={{ marginTop: spacing.sm, backgroundColor: '#FFFFFF' }}
+                  placeholder="e.g. 10"
+                />
+
+                {/* Live Preview */}
+                <View style={styles.livePreviewCard}>
+                  <Text style={styles.livePreviewText}>
+                    New Stock will be:{' '}
+                    <Text style={{ fontWeight: '800', color: '#16A34A' }}>
+                      {Math.max(0, quickStockTarget.currentStock) + (parseFloat(quickStockQty) || 0)}{' '}
+                      {quickStockTarget.unit}
+                    </Text>
+                  </Text>
+                </View>
+              </View>
+            )}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setQuickStockTarget(null)} textColor={colors.textSecondary}>
+              Cancel
+            </Button>
+            <Button
+              mode="contained"
+              loading={stockUpdating}
+              disabled={stockUpdating}
+              onPress={handleConfirmQuickStock}
+              style={styles.confirmStockBtn}
+            >
+              Add to Stock
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </ScrollView>
   );
 }
@@ -1012,19 +1152,102 @@ const styles = StyleSheet.create({
   stockStatusTextLow: {
     color: colors.warning,
   },
-  inwardButton: {
+  addStockQuickBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-    backgroundColor: colors.primaryLight,
+    gap: 4,
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: borderRadius.sm,
+  },
+  addStockQuickBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  quickStockDialog: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+  },
+  quickStockDialogTitle: {
+    ...typography.titleMedium,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  quickStockProdName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  quickStockVariantName: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  currentStockPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: spacing.sm,
+  },
+  currentStockLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  currentStockBadge: {
+    backgroundColor: colors.surfaceSubtle,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: borderRadius.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  inwardButtonText: {
-    fontSize: 11,
+  currentStockBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  quickQtyChipsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  qtyChip: {
+    backgroundColor: colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  qtyChipSelected: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#16A34A',
+  },
+  qtyChipText: {
+    fontSize: 12,
+    color: colors.textPrimary,
     fontWeight: '600',
-    color: colors.primary,
+  },
+  qtyChipTextSelected: {
+    color: '#16A34A',
+    fontWeight: '700',
+  },
+  livePreviewCard: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: borderRadius.sm,
+    padding: spacing.sm,
+    marginTop: spacing.md,
+  },
+  livePreviewText: {
+    fontSize: 13,
+    color: '#166534',
+    fontWeight: '600',
+  },
+  confirmStockBtn: {
+    backgroundColor: '#16A34A',
+    borderRadius: borderRadius.md,
   },
   emptyWatchlistCard: {
     backgroundColor: colors.surface,
