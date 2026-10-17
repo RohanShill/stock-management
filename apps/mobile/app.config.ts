@@ -57,6 +57,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       'expo-router',
       'expo-sqlite',
       'expo-secure-store',
+      'expo-font',
     ],
     owner: 'rohanshill',
     extra: {

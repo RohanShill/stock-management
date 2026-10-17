@@ -8,6 +8,7 @@
     "apps/*"
   ],
   "scripts": {
+    "postinstall": "npm run build:shared",
     "build:shared": "npm run --workspace=@hardware-store/shared build",
     "test:shared": "npm test --workspace=@hardware-store/shared",
     "test:api": "npm test --workspace=@hardware-store/api",
