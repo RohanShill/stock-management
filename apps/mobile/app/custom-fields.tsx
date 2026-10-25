@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Alert, FlatList } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, FlatList, Platform } from 'react-native';
 import {
   Text,
   Button,
@@ -131,6 +131,22 @@ export default function CustomFieldsScreen() {
 
   const handleArchiveField = async (f: CustomFieldDefinition) => {
     const storeId = store?.id || 'default-store';
+
+    const doArchiveField = async () => {
+      await CustomFieldRepository.archiveCustomField(f.id, storeId, deviceId);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Archived', `'${f.label}' specification archived.`);
+      }
+      loadData();
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Archive '${f.label}'? Existing product specifications will remain preserved in historical records.`)) {
+        await doArchiveField();
+      }
+      return;
+    }
+
     Alert.alert(
       'Archive Specification',
       `Archive '${f.label}'? Existing product specifications will remain preserved in historical records.`,
@@ -139,11 +155,7 @@ export default function CustomFieldsScreen() {
         {
           text: 'Archive',
           style: 'destructive',
-          onPress: async () => {
-            await CustomFieldRepository.archiveCustomField(f.id, storeId, deviceId);
-            Alert.alert('Archived', `'${f.label}' specification archived.`);
-            loadData();
-          },
+          onPress: doArchiveField,
         },
       ]
     );
@@ -306,7 +318,7 @@ export default function CustomFieldsScreen() {
                 outlineColor={colors.border}
                 activeOutlineColor={colors.primary}
               />
-              {fieldType === 'select' && (
+              {fieldType === 'dropdown' && (
                 <TextInput
                   label="Dropdown Options (comma-separated)"
                   value={fieldOptionsStr}

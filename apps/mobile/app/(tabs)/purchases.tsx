@@ -35,7 +35,7 @@ import { ProductRepository } from '../../src/database/repositories/productReposi
 import { PartiesRepository } from '../../src/database/repositories/partiesRepository.js';
 import { useAppStore } from '../../src/store/useAppStore.js';
 import { t } from '../../src/i18n/strings.js';
-import { colors, spacing, borderRadius, shadows, typography } from '../../src/theme/tokens.js';
+import { lightColors, darkColors, colors, spacing, borderRadius, shadows, getThemeShadows, typography } from '../../src/theme/tokens.js';
 
 interface PurchaseLineItem {
   id: string;
@@ -51,7 +51,9 @@ interface PurchaseLineItem {
 }
 
 export default function PurchasesScreen() {
-  const { store, deviceId, user, language } = useAppStore();
+  const { store, deviceId, user, language, isDarkMode } = useAppStore();
+  const activeColors = isDarkMode ? darkColors : lightColors;
+  const themeShadows = getThemeShadows(isDarkMode);
 
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [products, setProducts] = useState<Array<Product & { variants: ProductVariant[] }>>([]);
@@ -276,39 +278,65 @@ export default function PurchasesScreen() {
   const selectedSupplierObj = suppliers.find((s) => s.id === selectedSupplierId);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={[styles.container, { backgroundColor: activeColors.background }]} contentContainerStyle={styles.content}>
       {/* 1. Header Card */}
-      <Surface style={styles.headerCard}>
-        <Text style={styles.headerTitle}>Record Goods Inward</Text>
-        <Text style={styles.headerSubtitle}>
-          Receive products from vendors, update stock levels & record supplier bills.
-        </Text>
+      <Surface style={[styles.headerCard, { backgroundColor: activeColors.surface, borderColor: activeColors.border, ...themeShadows.card }]}>
+        <View style={styles.headerTitleRow}>
+          <MaterialCommunityIcons name="truck-delivery" size={26} color={activeColors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.headerTitle, { color: activeColors.textPrimary }]}>Record Goods Inward</Text>
+            <Text style={[styles.headerSubtitle, { color: activeColors.textSecondary }]}>
+              Receive products from vendors, update stock levels & record supplier bills.
+            </Text>
+          </View>
+        </View>
       </Surface>
 
       {/* Step 1: Supplier & Bill Reference */}
-      <Surface style={styles.sectionCard}>
+      <Surface style={[styles.sectionCard, { backgroundColor: activeColors.surface, borderColor: activeColors.border, ...themeShadows.card }]}>
         <View style={styles.sectionTitleRow}>
-          <Text style={styles.sectionHeading}>Step 1: Supplier Details</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <MaterialCommunityIcons name="account-tie" size={18} color={activeColors.primary} />
+            <Text style={[styles.sectionHeading, { color: activeColors.primary }]}>Step 1: Supplier Details</Text>
+          </View>
           <TouchableOpacity onPress={() => setAddSupplierVisible(true)}>
-            <Text style={styles.actionText}>+ Add Supplier</Text>
+            <Text style={[styles.actionText, { color: activeColors.primary }]}>+ Add Supplier</Text>
           </TouchableOpacity>
         </View>
 
         {/* Supplier Horizontal Scroll */}
-        <Text style={styles.fieldLabel}>Select Supplier:</Text>
+        <Text style={[styles.fieldLabel, { color: activeColors.textSecondary }]}>Select Supplier:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-          {suppliers.map((s) => (
-            <Chip
-              key={s.id}
-              selected={selectedSupplierId === s.id}
-              onPress={() => setSelectedSupplierId(s.id)}
-              style={[styles.chip, selectedSupplierId === s.id && styles.chipSelected]}
-              textStyle={[styles.chipText, selectedSupplierId === s.id && styles.chipTextSelected]}
-              showSelectedOverlay={false}
-            >
-              {s.name}
-            </Chip>
-          ))}
+          {suppliers.map((s) => {
+            const isSelected = selectedSupplierId === s.id;
+            return (
+              <Chip
+                key={s.id}
+                selected={isSelected}
+                onPress={() => setSelectedSupplierId(s.id)}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: isSelected
+                      ? (isDarkMode ? '#1E293B' : '#EFF6FF')
+                      : (isDarkMode ? '#111827' : '#F1F5F9'),
+                    borderColor: isSelected ? activeColors.primary : activeColors.border,
+                    borderWidth: isSelected ? 1.5 : 1,
+                  },
+                ]}
+                textStyle={[
+                  styles.chipText,
+                  {
+                    color: isSelected ? activeColors.primary : activeColors.textSecondary,
+                    fontWeight: isSelected ? '700' : '600',
+                  },
+                ]}
+                showSelectedOverlay={false}
+              >
+                {s.name}
+              </Chip>
+            );
+          })}
         </ScrollView>
 
         <TextInput
@@ -316,56 +344,99 @@ export default function PurchasesScreen() {
           value={supplierBillNo}
           onChangeText={setSupplierBillNo}
           mode="outlined"
-          style={styles.input}
+          style={[styles.input, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+          textColor={activeColors.textPrimary}
+          placeholderTextColor={activeColors.textMuted}
+          outlineColor={activeColors.border}
+          activeOutlineColor={activeColors.primary}
           placeholder="e.g. INV-2026-904"
         />
       </Surface>
 
       {/* Step 2: Add Products Received */}
-      <Surface style={styles.sectionCard}>
-        <Text style={styles.sectionHeading}>Step 2: Add Products</Text>
+      <Surface style={[styles.sectionCard, { backgroundColor: activeColors.surface, borderColor: activeColors.border, ...themeShadows.card }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.xs }}>
+          <MaterialCommunityIcons name="cube-send" size={18} color={activeColors.primary} />
+          <Text style={[styles.sectionHeading, { color: activeColors.primary }]}>Step 2: Add Products</Text>
+        </View>
 
-        <Text style={styles.fieldLabel}>1. Select Product:</Text>
+        <Text style={[styles.fieldLabel, { color: activeColors.textSecondary }]}>1. Select Product:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-          {products.map((p) => (
-            <Chip
-              key={p.id}
-              selected={selectedProduct?.id === p.id}
-              onPress={() => handleProductSelect(p)}
-              style={[styles.chip, selectedProduct?.id === p.id && styles.chipSelected]}
-              textStyle={[styles.chipText, selectedProduct?.id === p.id && styles.chipTextSelected]}
-              showSelectedOverlay={false}
-            >
-              {p.name}
-            </Chip>
-          ))}
+          {products.map((p) => {
+            const isSelected = selectedProduct?.id === p.id;
+            return (
+              <Chip
+                key={p.id}
+                selected={isSelected}
+                onPress={() => handleProductSelect(p)}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: isSelected
+                      ? (isDarkMode ? '#1E293B' : '#EFF6FF')
+                      : (isDarkMode ? '#111827' : '#F1F5F9'),
+                    borderColor: isSelected ? activeColors.primary : activeColors.border,
+                    borderWidth: isSelected ? 1.5 : 1,
+                  },
+                ]}
+                textStyle={[
+                  styles.chipText,
+                  {
+                    color: isSelected ? activeColors.primary : activeColors.textSecondary,
+                    fontWeight: isSelected ? '700' : '600',
+                  },
+                ]}
+                showSelectedOverlay={false}
+              >
+                {p.name}
+              </Chip>
+            );
+          })}
         </ScrollView>
 
         {selectedProduct && selectedProduct.variants.length > 0 && (
           <>
-            <Text style={styles.fieldLabel}>2. Select Variant / Size:</Text>
+            <Text style={[styles.fieldLabel, { color: activeColors.textSecondary }]}>2. Select Variant / Size:</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-              {selectedProduct.variants.map((v) => (
-                <Chip
-                  key={v.id}
-                  selected={selectedVariant?.id === v.id}
-                  onPress={() => handleVariantSelect(v)}
-                  style={[styles.chip, selectedVariant?.id === v.id && styles.chipSelected]}
-                  textStyle={[styles.chipText, selectedVariant?.id === v.id && styles.chipTextSelected]}
-                  showSelectedOverlay={false}
-                >
-                  {v.name} {v.size ? `(${v.size})` : ''}
-                </Chip>
-              ))}
+              {selectedProduct.variants.map((v) => {
+                const isSelected = selectedVariant?.id === v.id;
+                return (
+                  <Chip
+                    key={v.id}
+                    selected={isSelected}
+                    onPress={() => handleVariantSelect(v)}
+                    style={[
+                      styles.chip,
+                      {
+                        backgroundColor: isSelected
+                          ? (isDarkMode ? '#1E293B' : '#EFF6FF')
+                          : (isDarkMode ? '#111827' : '#F1F5F9'),
+                        borderColor: isSelected ? activeColors.primary : activeColors.border,
+                        borderWidth: isSelected ? 1.5 : 1,
+                      },
+                    ]}
+                    textStyle={[
+                      styles.chipText,
+                      {
+                        color: isSelected ? activeColors.primary : activeColors.textSecondary,
+                        fontWeight: isSelected ? '700' : '600',
+                      },
+                    ]}
+                    showSelectedOverlay={false}
+                  >
+                    {v.name} {v.size ? `(${v.size})` : ''}
+                  </Chip>
+                );
+              })}
             </ScrollView>
           </>
         )}
 
         {/* Pipe Specific Helper or Standard Quantity */}
         {selectedProduct?.measurementType === 'length' ? (
-          <View style={styles.pipeHelperCard}>
-            <Text style={styles.pipeHelperTitle}>
-              Pipe Inward Helper ({selectedProduct.name})
+          <View style={[styles.pipeHelperCard, { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' }]}>
+            <Text style={[styles.pipeHelperTitle, { color: activeColors.primary }]}>
+              ✂️ Pipe Inward Helper ({selectedProduct.name})
             </Text>
             <View style={styles.rowFields}>
               <TextInput
@@ -374,7 +445,11 @@ export default function PurchasesScreen() {
                 onChangeText={setNumPipesInput}
                 keyboardType="numeric"
                 mode="outlined"
-                style={[styles.input, { flex: 1, marginRight: spacing.xs }]}
+                style={[styles.input, { flex: 1, marginRight: spacing.xs, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+                textColor={activeColors.textPrimary}
+                placeholderTextColor={activeColors.textMuted}
+                outlineColor={activeColors.border}
+                activeOutlineColor={activeColors.primary}
               />
               <TextInput
                 label="Length per Pipe (m)"
@@ -382,10 +457,14 @@ export default function PurchasesScreen() {
                 onChangeText={setLengthPerPipeMInput}
                 keyboardType="numeric"
                 mode="outlined"
-                style={[styles.input, { flex: 1, marginLeft: spacing.xs }]}
+                style={[styles.input, { flex: 1, marginLeft: spacing.xs, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+                textColor={activeColors.textPrimary}
+                placeholderTextColor={activeColors.textMuted}
+                outlineColor={activeColors.border}
+                activeOutlineColor={activeColors.primary}
               />
             </View>
-            <Text style={styles.pipeCalculatedText}>
+            <Text style={[styles.pipeCalculatedText, { color: activeColors.primary }]}>
               Total Received Length = {(parseFloat(numPipesInput || '0') * parseFloat(lengthPerPipeMInput || '0')).toFixed(1)} metres
             </Text>
           </View>
@@ -397,7 +476,11 @@ export default function PurchasesScreen() {
               onChangeText={setQuantityInput}
               keyboardType="numeric"
               mode="outlined"
-              style={[styles.input, { flex: 1, marginRight: spacing.xs }]}
+              style={[styles.input, { flex: 1, marginRight: spacing.xs, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+              textColor={activeColors.textPrimary}
+              placeholderTextColor={activeColors.textMuted}
+              outlineColor={activeColors.border}
+              activeOutlineColor={activeColors.primary}
             />
           </View>
         )}
@@ -408,15 +491,19 @@ export default function PurchasesScreen() {
           onChangeText={setUnitCostInput}
           keyboardType="numeric"
           mode="outlined"
-          style={styles.input}
+          style={[styles.input, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+          textColor={activeColors.textPrimary}
+          placeholderTextColor={activeColors.textMuted}
+          outlineColor={activeColors.border}
+          activeOutlineColor={activeColors.primary}
         />
 
         <Button
-          mode="contained-tonal"
+          mode="contained"
           icon="plus-circle-outline"
           onPress={handleAddLineItem}
-          style={styles.addLineBtn}
-          textColor={colors.primary}
+          style={[styles.addLineBtn, { backgroundColor: activeColors.primary }]}
+          contentStyle={{ height: 46 }}
         >
           Add Item to Bill
         </Button>
@@ -424,29 +511,32 @@ export default function PurchasesScreen() {
 
       {/* Step 3: Purchase Line Items Cart */}
       {lineItems.length > 0 && (
-        <Surface style={styles.sectionCard}>
-          <Text style={styles.sectionHeading}>
-            Step 3: Items in Bill ({lineItems.length})
-          </Text>
+        <Surface style={[styles.sectionCard, { backgroundColor: activeColors.surface, borderColor: activeColors.border, ...themeShadows.card }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.xs }}>
+            <MaterialCommunityIcons name="format-list-checks" size={18} color={activeColors.primary} />
+            <Text style={[styles.sectionHeading, { color: activeColors.primary }]}>
+              Step 3: Items in Bill ({lineItems.length})
+            </Text>
+          </View>
 
           {lineItems.map((item) => (
-            <View key={item.id} style={styles.lineItemRow}>
+            <View key={item.id} style={[styles.lineItemRow, { borderBottomColor: activeColors.border }]}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.lineItemTitle}>{item.productName}</Text>
-                <Text style={styles.lineItemSubtitle}>
+                <Text style={[styles.lineItemTitle, { color: activeColors.textPrimary }]}>{item.productName}</Text>
+                <Text style={[styles.lineItemSubtitle, { color: activeColors.textSecondary }]}>
                   {item.variantName} • {item.quantity} {item.unit} @ ₹{item.unitCostRs}/{item.unit}
                 </Text>
                 {item.numberOfPieces && (
-                  <Text style={styles.lineItemPipeNote}>
+                  <Text style={[styles.lineItemPipeNote, { color: activeColors.accent }]}>
                     {item.numberOfPieces} pipes of {(item.pipeLengthPerPieceMm! / 1000).toFixed(1)}m each
                   </Text>
                 )}
               </View>
 
-              <View style={{ alignItems: 'flex-end', flexDirection: 'row', gap: 6 }}>
-                <Text style={styles.lineItemTotal}>₹{item.totalCostRs.toFixed(2)}</Text>
+              <View style={{ alignItems: 'flex-end', flexDirection: 'row', gap: 8 }}>
+                <Text style={[styles.lineItemTotal, { color: activeColors.textPrimary }]}>₹{item.totalCostRs.toFixed(2)}</Text>
                 <TouchableOpacity onPress={() => handleRemoveLineItem(item.id)}>
-                  <MaterialCommunityIcons name="close-circle-outline" size={20} color={colors.danger} />
+                  <MaterialCommunityIcons name="close-circle-outline" size={20} color={activeColors.danger} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -455,12 +545,15 @@ export default function PurchasesScreen() {
       )}
 
       {/* Step 4: Payment Details & Summary */}
-      <Surface style={styles.sectionCard}>
-        <Text style={styles.sectionHeading}>Step 4: Bill Summary & Payment</Text>
+      <Surface style={[styles.sectionCard, { backgroundColor: activeColors.surface, borderColor: activeColors.border, ...themeShadows.card }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.xs }}>
+          <MaterialCommunityIcons name="calculator" size={18} color={activeColors.primary} />
+          <Text style={[styles.sectionHeading, { color: activeColors.primary }]}>Step 4: Bill Summary & Payment</Text>
+        </View>
 
         <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Total Purchase Value:</Text>
-          <Text style={styles.summaryValueBig}>₹{grandTotalRs.toFixed(2)}</Text>
+          <Text style={[styles.summaryLabel, { color: activeColors.textSecondary }]}>Total Purchase Value:</Text>
+          <Text style={[styles.summaryValueBig, { color: activeColors.primary }]}>₹{grandTotalRs.toFixed(2)}</Text>
         </View>
 
         <View style={styles.rowFields}>
@@ -470,26 +563,37 @@ export default function PurchasesScreen() {
             onChangeText={setPaidAmountRs}
             keyboardType="numeric"
             mode="outlined"
-            style={[styles.input, { flex: 1, marginRight: spacing.xs }]}
+            style={[styles.input, { flex: 1, marginRight: spacing.xs, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+            textColor={activeColors.textPrimary}
+            placeholderTextColor={activeColors.textMuted}
+            outlineColor={activeColors.border}
+            activeOutlineColor={activeColors.primary}
           />
           <View style={{ flex: 1, marginLeft: spacing.xs, justifyContent: 'center' }}>
-            <Text style={styles.outstandingLabel}>Outstanding Balance:</Text>
-            <Text style={[styles.outstandingValue, outstandingRs > 0 && { color: colors.danger }]}>
+            <Text style={[styles.outstandingLabel, { color: activeColors.textSecondary }]}>Outstanding Balance:</Text>
+            <Text style={[styles.outstandingValue, { color: outstandingRs > 0 ? activeColors.danger : activeColors.success }]}>
               ₹{outstandingRs.toFixed(2)}
             </Text>
           </View>
         </View>
 
-        <Text style={styles.fieldLabel}>Payment Method:</Text>
+        <Text style={[styles.fieldLabel, { color: activeColors.textSecondary }]}>Payment Method:</Text>
         <SegmentedButtons
           value={paymentMethod}
           onValueChange={(val) => setPaymentMethod(val as any)}
           buttons={[
-            { value: 'bank_transfer', label: 'Bank' },
-            { value: 'cash', label: 'Cash' },
-            { value: 'credit', label: 'Credit' },
-            { value: 'cheque', label: 'Cheque' },
+            { value: 'bank_transfer', label: 'Bank', icon: 'bank' },
+            { value: 'cash', label: 'Cash', icon: 'cash' },
+            { value: 'credit', label: 'Credit', icon: 'book-open' },
+            { value: 'cheque', label: 'Cheque', icon: 'checkbook' },
           ]}
+          theme={{
+            colors: {
+              secondaryContainer: isDarkMode ? '#1E3A8A' : '#DBEAFE',
+              onSecondaryContainer: activeColors.primary,
+              outline: activeColors.border,
+            },
+          }}
           style={{ marginVertical: spacing.xs }}
         />
 
@@ -499,7 +603,7 @@ export default function PurchasesScreen() {
           icon="check-circle-outline"
           onPress={() => setConfirmDialogVisible(true)}
           disabled={lineItems.length === 0 || !supplierBillNo.trim()}
-          style={styles.confirmBtn}
+          style={[styles.confirmBtn, { backgroundColor: activeColors.primary }]}
           contentStyle={{ height: 48 }}
         >
           Confirm Goods Received
@@ -511,36 +615,36 @@ export default function PurchasesScreen() {
         <Dialog
           visible={confirmDialogVisible}
           onDismiss={() => setConfirmDialogVisible(false)}
-          style={styles.dialog}
+          style={[styles.dialog, { backgroundColor: activeColors.surface }]}
         >
-          <Dialog.Title style={styles.dialogTitle}>Confirm Purchase Receipt</Dialog.Title>
+          <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>Confirm Purchase Receipt</Dialog.Title>
           <Dialog.Content>
-            <Text style={styles.dialogText}>
+            <Text style={[styles.dialogText, { color: activeColors.textSecondary }]}>
               Are you sure you want to confirm this purchase?
             </Text>
-            <View style={styles.dialogSummaryBox}>
-              <Text style={styles.dialogSummaryItem}>
+            <View style={[styles.dialogSummaryBox, { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' }]}>
+              <Text style={[styles.dialogSummaryItem, { color: activeColors.textPrimary }]}>
                 • Bill No: <Text style={{ fontWeight: '700' }}>{supplierBillNo}</Text>
               </Text>
-              <Text style={styles.dialogSummaryItem}>
+              <Text style={[styles.dialogSummaryItem, { color: activeColors.textPrimary }]}>
                 • Supplier: {selectedSupplierObj?.name || 'Unassigned'}
               </Text>
-              <Text style={styles.dialogSummaryItem}>
+              <Text style={[styles.dialogSummaryItem, { color: activeColors.textPrimary }]}>
                 • Items Count: {lineItems.length} products
               </Text>
-              <Text style={styles.dialogSummaryItem}>
+              <Text style={[styles.dialogSummaryItem, { color: activeColors.textPrimary }]}>
                 • Total Bill: ₹{grandTotalRs.toFixed(2)}
               </Text>
             </View>
-            <Text style={styles.dialogHelpText}>
+            <Text style={[styles.dialogHelpText, { color: activeColors.textMuted }]}>
               This will immediately increment variant stock balances and record the movement in the audit ledger.
             </Text>
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setConfirmDialogVisible(false)} textColor={colors.textSecondary}>
+            <Button onPress={() => setConfirmDialogVisible(false)} textColor={activeColors.textSecondary}>
               Cancel
             </Button>
-            <Button mode="contained" onPress={handleConfirmPurchase} style={{ backgroundColor: colors.primary }}>
+            <Button mode="contained" onPress={handleConfirmPurchase} style={{ backgroundColor: activeColors.primary }}>
               Confirm & Inward
             </Button>
           </Dialog.Actions>
@@ -549,15 +653,19 @@ export default function PurchasesScreen() {
 
       {/* Add Supplier Dialog */}
       <Portal>
-        <Dialog visible={addSupplierVisible} onDismiss={() => setAddSupplierVisible(false)} style={styles.dialog}>
-          <Dialog.Title style={styles.dialogTitle}>Add New Supplier</Dialog.Title>
+        <Dialog visible={addSupplierVisible} onDismiss={() => setAddSupplierVisible(false)} style={[styles.dialog, { backgroundColor: activeColors.surface }]}>
+          <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>Add New Supplier</Dialog.Title>
           <Dialog.Content>
             <TextInput
               label="Supplier / Business Name *"
               value={newSupName}
               onChangeText={setNewSupName}
               mode="outlined"
-              style={styles.input}
+              style={[styles.input, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+              textColor={activeColors.textPrimary}
+              placeholderTextColor={activeColors.textMuted}
+              outlineColor={activeColors.border}
+              activeOutlineColor={activeColors.primary}
             />
             <TextInput
               label="Phone Number *"
@@ -565,14 +673,18 @@ export default function PurchasesScreen() {
               onChangeText={setNewSupPhone}
               keyboardType="phone-pad"
               mode="outlined"
-              style={styles.input}
+              style={[styles.input, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+              textColor={activeColors.textPrimary}
+              placeholderTextColor={activeColors.textMuted}
+              outlineColor={activeColors.border}
+              activeOutlineColor={activeColors.primary}
             />
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setAddSupplierVisible(false)} textColor={colors.textSecondary}>
+            <Button onPress={() => setAddSupplierVisible(false)} textColor={activeColors.textSecondary}>
               Cancel
             </Button>
-            <Button mode="contained" onPress={handleCreateSupplier} style={{ backgroundColor: colors.primary }}>
+            <Button mode="contained" onPress={handleCreateSupplier} style={{ backgroundColor: activeColors.primary }}>
               Save Supplier
             </Button>
           </Dialog.Actions>
@@ -585,38 +697,35 @@ export default function PurchasesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   content: {
     padding: spacing.md,
-    paddingBottom: 50,
+    paddingBottom: 60,
   },
   headerCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   headerTitle: {
     ...typography.titleMedium,
-    color: colors.textPrimary,
+    fontWeight: '700',
   },
   headerSubtitle: {
     ...typography.bodySmall,
-    color: colors.textSecondary,
     marginTop: 2,
   },
   sectionCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
   },
   sectionTitleRow: {
     flexDirection: 'row',
@@ -626,44 +735,34 @@ const styles = StyleSheet.create({
   },
   sectionHeading: {
     ...typography.titleSmall,
-    color: colors.primary,
     fontWeight: '700',
   },
   actionText: {
     ...typography.labelSmall,
-    color: colors.primary,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   fieldLabel: {
     ...typography.labelSmall,
-    color: colors.textSecondary,
     marginBottom: 4,
     marginTop: spacing.xs,
+    fontWeight: '600',
   },
   chipScroll: {
     marginBottom: spacing.sm,
   },
   chip: {
-    backgroundColor: colors.surfaceSubtle,
     marginRight: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-    height: 32,
+    height: 34,
+    borderRadius: borderRadius.full,
   },
-  chipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
+  chipSelected: {},
   chipText: {
     fontSize: 12,
-    color: colors.textSecondary,
   },
   chipTextSelected: {
-    color: '#FFFFFF',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   input: {
-    backgroundColor: colors.surface,
     marginBottom: spacing.sm,
     fontSize: 14,
   },
@@ -672,22 +771,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   pipeHelperCard: {
-    backgroundColor: colors.surfaceSubtle,
-    padding: spacing.sm,
+    padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
   },
   pipeHelperTitle: {
     ...typography.labelSmall,
-    color: colors.textSecondary,
-    fontWeight: '600',
+    fontWeight: '700',
     marginBottom: spacing.xs,
   },
   pipeCalculatedText: {
     ...typography.labelSmall,
-    color: colors.primary,
-    fontWeight: '600',
-    marginTop: 2,
+    fontWeight: '700',
+    marginTop: 4,
   },
   addLineBtn: {
     marginTop: spacing.xs,
@@ -699,25 +795,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   lineItemTitle: {
     ...typography.labelLarge,
-    color: colors.textPrimary,
+    fontWeight: '700',
   },
   lineItemSubtitle: {
     ...typography.bodySmall,
-    color: colors.textSecondary,
     marginTop: 2,
   },
   lineItemPipeNote: {
     fontSize: 11,
-    color: colors.accent,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   lineItemTotal: {
     ...typography.labelLarge,
-    color: colors.textPrimary,
     fontWeight: '700',
   },
   summaryRow: {
@@ -729,52 +821,45 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     ...typography.bodyLarge,
-    color: colors.textSecondary,
   },
   summaryValueBig: {
     ...typography.currencyLarge,
-    color: colors.primary,
+    fontWeight: '800',
   },
   outstandingLabel: {
     ...typography.labelSmall,
-    color: colors.textSecondary,
   },
   outstandingValue: {
     ...typography.labelLarge,
-    color: colors.textPrimary,
+    fontWeight: '700',
     marginTop: 2,
   },
   confirmBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.lg,
     marginTop: spacing.md,
   },
   dialog: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
+    paddingBottom: spacing.xs,
   },
   dialogTitle: {
-    ...typography.titleSmall,
-    color: colors.textPrimary,
+    ...typography.titleMedium,
+    fontWeight: '700',
   },
   dialogText: {
     ...typography.bodyMedium,
-    color: colors.textSecondary,
     marginBottom: spacing.sm,
   },
   dialogSummaryBox: {
-    backgroundColor: colors.surfaceSubtle,
     padding: spacing.sm,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
   },
   dialogSummaryItem: {
     ...typography.bodySmall,
-    color: colors.textPrimary,
     marginVertical: 2,
   },
   dialogHelpText: {
     ...typography.labelSmall,
-    color: colors.textMuted,
   },
 });

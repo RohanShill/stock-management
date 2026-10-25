@@ -14,7 +14,7 @@ export class InventoryRepository {
     variantId: string,
     quantityChange: number,
     unit: StandardUnit,
-    type: 'increase' | 'decrease' | 'damaged' | 'loss' | 'reconciliation',
+    type: 'increase' | 'decrease' | 'sale' | 'damaged' | 'loss' | 'reconciliation',
     reason: string,
     storeId: string,
     deviceId: string,
@@ -25,25 +25,38 @@ export class InventoryRepository {
     const now = new Date().toISOString();
 
     const variantRow = await db.getFirstAsync<any>(
-      `SELECT v.*, p.measurementType, p.packMultiplier FROM product_variants v JOIN products p ON v.productId = p.id WHERE v.id = ? AND v.storeId = ?;`,
-      [variantId, storeId]
+      `SELECT * FROM product_variants WHERE id = ?;`,
+      [variantId]
     );
 
     if (!variantRow) {
       throw new Error('Product variant not found');
     }
 
+    const productRow = await db.getFirstAsync<any>(
+      `SELECT * FROM products WHERE id = ?;`,
+      [variantRow.productId]
+    );
+
+    const measurementType = productRow?.measurementType || 'count';
+    const packMultiplier = productRow?.packMultiplier || 1;
+
     const baseQuantity = toCanonicalBaseQuantity(
       quantityChange,
       unit,
-      variantRow.measurementType,
-      variantRow.packMultiplier
+      measurementType,
+      packMultiplier
     );
 
     let movementType: StockMovementType = 'adjustment_increase';
     let delta = baseQuantity;
+    let referenceType: 'sale' | 'purchase' | 'adjustment' | 'return' | 'manual' = 'adjustment';
 
-    if (type === 'decrease') {
+    if (type === 'sale') {
+      movementType = 'sale';
+      delta = -baseQuantity;
+      referenceType = 'sale';
+    } else if (type === 'decrease') {
       movementType = 'adjustment_decrease';
       delta = -baseQuantity;
     } else if (type === 'damaged') {
@@ -58,7 +71,7 @@ export class InventoryRepository {
     const balanceAfter = balanceBefore + delta;
 
     if (balanceAfter < 0) {
-      throw new Error(`Insufficient stock for adjustment (Current: ${balanceBefore}, Requested reduction: ${Math.abs(delta)})`);
+      throw new Error(`Insufficient stock for ${type === 'sale' ? 'sale' : 'adjustment'} (Current: ${balanceBefore}, Requested reduction: ${Math.abs(delta)})`);
     }
 
     const movementId = uuidv4();
@@ -70,7 +83,7 @@ export class InventoryRepository {
       quantityChangeBase: delta,
       balanceBeforeBase: balanceBefore,
       balanceAfterBase: balanceAfter,
-      referenceType: 'adjustment',
+      referenceType,
       reason,
       notes,
       deviceId,
@@ -95,7 +108,7 @@ export class InventoryRepository {
           delta,
           balanceBefore,
           balanceAfter,
-          'adjustment',
+          referenceType,
           reason,
           notes ?? null,
           deviceId,
@@ -125,6 +138,80 @@ export class InventoryRepository {
       [variantId, limit]
     );
     return rows;
+  }
+
+  static async getAllStockHistory(
+    storeId: string,
+    limit = 100
+  ): Promise<
+    Array<
+      StockMovement & {
+        productName: string;
+        variantName: string;
+        size?: string;
+        unit: string;
+        brand?: string;
+      }
+    >
+  > {
+    const db = await getDatabase();
+    // 1. Fetch raw stock movements for store
+    let movements = await db.getAllAsync<StockMovement>(
+      `SELECT * FROM stock_movements WHERE storeId = ? ORDER BY createdAt DESC LIMIT ?;`,
+      [storeId, limit]
+    );
+
+    // Fallback: If 0 movements found with storeId filter, fetch all stock movements
+    if (!movements || movements.length === 0) {
+      movements = await db.getAllAsync<StockMovement>(
+        `SELECT * FROM stock_movements ORDER BY createdAt DESC LIMIT ?;`,
+        [limit]
+      );
+    }
+
+    if (!movements || movements.length === 0) {
+      return [];
+    }
+
+    // 2. Fetch variants and products for in-memory resolution (100% cross-platform)
+    const [variants, products] = await Promise.all([
+      db.getAllAsync<any>(`SELECT * FROM product_variants;`),
+      db.getAllAsync<any>(`SELECT * FROM products;`),
+    ]);
+
+    const variantMap = new Map<string, any>();
+    (variants || []).forEach((v) => variantMap.set(v.id, v));
+
+    const productMap = new Map<string, any>();
+    (products || []).forEach((p) => productMap.set(p.id, p));
+
+    const result = movements.map((sm) => {
+      const v = variantMap.get(sm.variantId);
+      const p = v ? productMap.get(v.productId) : null;
+      const isSale =
+        sm.movementType === 'sale' ||
+        sm.quantityChangeBase < 0 ||
+        String(sm.referenceType || '').toLowerCase().includes('sale');
+
+      return {
+        ...sm,
+        movementType: isSale ? ('sale' as const) : sm.movementType,
+        productName: p?.name || (isSale ? 'Sold Hardware Item' : 'Hardware Item'),
+        variantName: v?.name || v?.size || 'Standard',
+        size: v?.size,
+        unit: p?.baseUnit || 'pcs',
+        brand: p?.brand,
+      };
+    });
+
+    // Ensure sorted by createdAt DESC
+    result.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    return result;
   }
 
   static async getPipeSegments(variantId: string): Promise<PipeSegment[]> {

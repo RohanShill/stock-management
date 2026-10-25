@@ -38,7 +38,7 @@ import { ProductRepository } from '../../src/database/repositories/productReposi
 import { SalesRepository } from '../../src/database/repositories/salesRepository.js';
 import { useAppStore } from '../../src/store/useAppStore.js';
 import { t } from '../../src/i18n/strings.js';
-import { colors, spacing, borderRadius, shadows, typography } from '../../src/theme/tokens.js';
+import { lightColors, darkColors, colors, spacing, borderRadius, shadows, getThemeShadows, typography } from '../../src/theme/tokens.js';
 
 interface CartLine {
   variantId: string;
@@ -55,7 +55,9 @@ interface CartLine {
 }
 
 export default function SalesScreen() {
-  const { store, deviceId, user, language } = useAppStore();
+  const { store, deviceId, user, language, isDarkMode } = useAppStore();
+  const activeColors = isDarkMode ? darkColors : lightColors;
+  const themeShadows = getThemeShadows(isDarkMode);
 
   const [products, setProducts] = useState<Array<Product & { variants: ProductVariant[] }>>([]);
   const [productSearch, setProductSearch] = useState('');
@@ -276,68 +278,110 @@ export default function SalesScreen() {
   });
 
   return (
-    <View style={styles.container}>
-      {/* 1. Top Search Bar */}
-      <Surface style={styles.searchHeaderCard}>
-        <Text style={styles.headerTitle}>New Bill / Sale</Text>
+    <View style={[styles.container, { backgroundColor: activeColors.background }]}>
+      {/* 1. Top Header & Search Bar */}
+      <Surface style={[styles.searchHeaderCard, { backgroundColor: activeColors.surface, borderBottomColor: activeColors.border }]}>
+        <View style={styles.headerTitleRow}>
+          <MaterialCommunityIcons name="point-of-sale" size={24} color={activeColors.primary} />
+          <Text style={[styles.headerTitle, { color: activeColors.textPrimary }]}>New Bill / Sale</Text>
+        </View>
         <Searchbar
           placeholder="Search products or SKU to bill..."
           onChangeText={setProductSearch}
           value={productSearch}
-          style={styles.searchBar}
-          inputStyle={styles.searchInput}
-          iconColor={colors.textSecondary}
-          placeholderTextColor={colors.textMuted}
+          style={[styles.searchBar, { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' }]}
+          inputStyle={[styles.searchInput, { color: activeColors.textPrimary }]}
+          iconColor={activeColors.textSecondary}
+          placeholderTextColor={activeColors.textMuted}
         />
       </Surface>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContent}>
         {/* 2. Product & Variant Selector Card */}
-        <Surface style={styles.selectorCard}>
-          <Text style={styles.sectionHeaderTitle}>Select Item to Bill</Text>
+        <Surface style={[styles.selectorCard, { backgroundColor: activeColors.surface, borderColor: activeColors.border, ...themeShadows.card }]}>
+          <View style={styles.cardHeaderTitleRow}>
+            <MaterialCommunityIcons name="package-variant" size={18} color={activeColors.primary} />
+            <Text style={[styles.sectionHeaderTitle, { color: activeColors.primary }]}>Select Item to Bill</Text>
+          </View>
 
           {/* Horizontal Product Chips */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
-            {filteredProducts.slice(0, 10).map((p) => (
-              <Chip
-                key={p.id}
-                selected={selectedProduct?.id === p.id}
-                onPress={() => handleSelectProduct(p)}
-                style={[styles.chip, selectedProduct?.id === p.id && styles.chipSelected]}
-                textStyle={[styles.chipText, selectedProduct?.id === p.id && styles.chipTextSelected]}
-                showSelectedOverlay={false}
-              >
-                {p.name}
-              </Chip>
-            ))}
+            {filteredProducts.slice(0, 15).map((p) => {
+              const isSelected = selectedProduct?.id === p.id;
+              return (
+                <Chip
+                  key={p.id}
+                  selected={isSelected}
+                  onPress={() => handleSelectProduct(p)}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: isSelected
+                        ? (isDarkMode ? '#1E293B' : '#EFF6FF')
+                        : (isDarkMode ? '#111827' : '#F1F5F9'),
+                      borderColor: isSelected ? activeColors.primary : activeColors.border,
+                      borderWidth: isSelected ? 1.5 : 1,
+                    },
+                  ]}
+                  textStyle={[
+                    styles.chipText,
+                    {
+                      color: isSelected ? activeColors.primary : activeColors.textSecondary,
+                      fontWeight: isSelected ? '700' : '600',
+                    },
+                  ]}
+                  showSelectedOverlay={false}
+                >
+                  {p.name}
+                </Chip>
+              );
+            })}
           </ScrollView>
 
           {/* Variants row if selected */}
           {selectedProduct && selectedProduct.variants.length > 0 && (
             <View style={{ marginTop: spacing.xs }}>
-              <Text style={styles.fieldLabel}>Choose Variant / Size:</Text>
+              <Text style={[styles.fieldLabel, { color: activeColors.textSecondary }]}>Choose Variant / Size:</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
-                {selectedProduct.variants.map((v) => (
-                  <Chip
-                    key={v.id}
-                    selected={selectedVariant?.id === v.id}
-                    onPress={() => handleSelectVariant(v)}
-                    style={[styles.chip, selectedVariant?.id === v.id && styles.chipSelected]}
-                    textStyle={[styles.chipText, selectedVariant?.id === v.id && styles.chipTextSelected]}
-                    showSelectedOverlay={false}
-                  >
-                    {v.name} {v.size ? `(${v.size})` : ''} • Stock: {v.currentStock}
-                  </Chip>
-                ))}
+                {selectedProduct.variants.map((v) => {
+                  const isSelected = selectedVariant?.id === v.id;
+                  return (
+                    <Chip
+                      key={v.id}
+                      selected={isSelected}
+                      onPress={() => handleSelectVariant(v)}
+                      style={[
+                        styles.chip,
+                        {
+                          backgroundColor: isSelected
+                            ? (isDarkMode ? '#1E293B' : '#EFF6FF')
+                            : (isDarkMode ? '#111827' : '#F1F5F9'),
+                          borderColor: isSelected ? activeColors.primary : activeColors.border,
+                          borderWidth: isSelected ? 1.5 : 1,
+                        },
+                      ]}
+                      textStyle={[
+                        styles.chipText,
+                        {
+                          color: isSelected ? activeColors.primary : activeColors.textSecondary,
+                          fontWeight: isSelected ? '700' : '600',
+                        },
+                      ]}
+                      showSelectedOverlay={false}
+                    >
+                      {v.name} {v.size ? `(${v.size})` : ''} • Stock: {v.currentStock}
+                    </Chip>
+                  );
+                })}
               </ScrollView>
             </View>
           )}
 
           {/* Quantity and Price Entry */}
           {selectedProduct?.measurementType === 'length' ? (
-            <View style={styles.pipeHelperCard}>
-              <Text style={styles.pipeHelperLabel}>
-                Pipe Cutting Sale ({selectedProduct.name})
+            <View style={[styles.pipeHelperCard, { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' }]}>
+              <Text style={[styles.pipeHelperLabel, { color: activeColors.primary }]}>
+                ✂️ Pipe Cutting Sale ({selectedProduct.name})
               </Text>
               <View style={styles.fieldRow}>
                 <TextInput
@@ -346,7 +390,11 @@ export default function SalesScreen() {
                   onChangeText={setPipeCutLengthInput}
                   keyboardType="numeric"
                   mode="outlined"
-                  style={[styles.input, { flex: 1, marginRight: spacing.xs }]}
+                  style={[styles.input, { flex: 1, marginRight: spacing.xs, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+                  textColor={activeColors.textPrimary}
+                  placeholderTextColor={activeColors.textMuted}
+                  outlineColor={activeColors.border}
+                  activeOutlineColor={activeColors.primary}
                 />
                 <TextInput
                   label="Rate / metre (₹) *"
@@ -354,7 +402,11 @@ export default function SalesScreen() {
                   onChangeText={setUnitPriceInput}
                   keyboardType="numeric"
                   mode="outlined"
-                  style={[styles.input, { flex: 1, marginLeft: spacing.xs }]}
+                  style={[styles.input, { flex: 1, marginLeft: spacing.xs, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+                  textColor={activeColors.textPrimary}
+                  placeholderTextColor={activeColors.textMuted}
+                  outlineColor={activeColors.border}
+                  activeOutlineColor={activeColors.primary}
                 />
               </View>
             </View>
@@ -366,7 +418,11 @@ export default function SalesScreen() {
                 onChangeText={setQuantityInput}
                 keyboardType="numeric"
                 mode="outlined"
-                style={[styles.input, { flex: 1, marginRight: spacing.xs }]}
+                style={[styles.input, { flex: 1, marginRight: spacing.xs, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+                textColor={activeColors.textPrimary}
+                placeholderTextColor={activeColors.textMuted}
+                outlineColor={activeColors.border}
+                activeOutlineColor={activeColors.primary}
               />
               <TextInput
                 label="Unit Price (₹)"
@@ -374,7 +430,11 @@ export default function SalesScreen() {
                 onChangeText={setUnitPriceInput}
                 keyboardType="numeric"
                 mode="outlined"
-                style={[styles.input, { flex: 1, marginLeft: spacing.xs }]}
+                style={[styles.input, { flex: 1, marginLeft: spacing.xs, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+                textColor={activeColors.textPrimary}
+                placeholderTextColor={activeColors.textMuted}
+                outlineColor={activeColors.border}
+                activeOutlineColor={activeColors.primary}
               />
             </View>
           )}
@@ -383,100 +443,106 @@ export default function SalesScreen() {
             mode="contained"
             icon="cart-plus"
             onPress={handleAddToCart}
-            style={styles.addCartBtn}
-            contentStyle={{ height: 44 }}
+            style={[styles.addCartBtn, { backgroundColor: activeColors.primary }]}
+            contentStyle={{ height: 46 }}
           >
             Add to Bill Cart
           </Button>
         </Surface>
 
         {/* 3. Cart Line Items Card */}
-        <Surface style={styles.cartCard}>
+        <Surface style={[styles.cartCard, { backgroundColor: activeColors.surface, borderColor: activeColors.border, ...themeShadows.card }]}>
           <View style={styles.cartHeaderRow}>
-            <Text style={styles.sectionHeaderTitle}>
-              Bill Items ({cart.length})
-            </Text>
+            <View style={styles.cardHeaderTitleRow}>
+              <MaterialCommunityIcons name="cart-outline" size={18} color={activeColors.primary} />
+              <Text style={[styles.sectionHeaderTitle, { color: activeColors.textPrimary, marginBottom: 0 }]}>
+                Bill Items ({cart.length})
+              </Text>
+            </View>
             {cart.length > 0 && (
               <TouchableOpacity onPress={() => setCart([])}>
-                <Text style={styles.clearCartText}>Clear All</Text>
+                <Text style={[styles.clearCartText, { color: activeColors.danger }]}>Clear All</Text>
               </TouchableOpacity>
             )}
           </View>
 
           {cart.length > 0 ? (
             cart.map((item, idx) => (
-              <View key={idx} style={styles.cartItemRow}>
+              <View key={idx} style={[styles.cartItemRow, { borderBottomColor: activeColors.border }]}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.cartItemName}>{item.productName}</Text>
-                  <Text style={styles.cartItemMeta}>
+                  <Text style={[styles.cartItemName, { color: activeColors.textPrimary }]}>{item.productName}</Text>
+                  <Text style={[styles.cartItemMeta, { color: activeColors.textSecondary }]}>
                     {item.variantName} • ₹{paiseToRupee(item.unitPricePaise)}/{item.unit}
                   </Text>
                   {item.pipeCutSummary && (
-                    <Text style={styles.cartItemCutNote}>{item.pipeCutSummary}</Text>
+                    <Text style={[styles.cartItemCutNote, { color: activeColors.accent }]}>{item.pipeCutSummary}</Text>
                   )}
                 </View>
 
                 {/* Quantity Controls */}
-                <View style={styles.qtyControlsContainer}>
+                <View style={[styles.qtyControlsContainer, { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' }]}>
                   <TouchableOpacity
                     style={styles.qtyBtn}
                     onPress={() => handleDecrementQty(idx)}
                   >
-                    <MaterialCommunityIcons name="minus" size={16} color={colors.textPrimary} />
+                    <MaterialCommunityIcons name="minus" size={16} color={activeColors.textPrimary} />
                   </TouchableOpacity>
-                  <Text style={styles.qtyNumber}>{item.quantity}</Text>
+                  <Text style={[styles.qtyNumber, { color: activeColors.textPrimary }]}>{item.quantity}</Text>
                   <TouchableOpacity
                     style={styles.qtyBtn}
                     onPress={() => handleIncrementQty(idx)}
                   >
-                    <MaterialCommunityIcons name="plus" size={16} color={colors.textPrimary} />
+                    <MaterialCommunityIcons name="plus" size={16} color={activeColors.textPrimary} />
                   </TouchableOpacity>
                 </View>
 
-                <View style={{ width: 80, alignItems: 'flex-end' }}>
-                  <Text style={styles.cartItemTotal}>
+                <View style={{ width: 85, alignItems: 'flex-end' }}>
+                  <Text style={[styles.cartItemTotal, { color: activeColors.textPrimary }]}>
                     {formatPaiseToINR(item.totalPaise)}
                   </Text>
                   <TouchableOpacity
                     onPress={() => handleRemoveItem(idx)}
-                    style={{ marginTop: 2 }}
+                    style={{ marginTop: 4 }}
                   >
-                    <MaterialCommunityIcons name="delete-outline" size={16} color={colors.danger} />
+                    <MaterialCommunityIcons name="delete-outline" size={18} color={activeColors.danger} />
                   </TouchableOpacity>
                 </View>
               </View>
             ))
           ) : (
             <View style={styles.emptyCartBox}>
-              <MaterialCommunityIcons name="cart-outline" size={32} color={colors.textMuted} />
-              <Text style={styles.emptyCartText}>Cart is empty. Select products above.</Text>
+              <MaterialCommunityIcons name="cart-outline" size={36} color={activeColors.textMuted} />
+              <Text style={[styles.emptyCartText, { color: activeColors.textMuted }]}>Cart is empty. Select products above.</Text>
             </View>
           )}
         </Surface>
 
         {/* 4. Bill Summary Card */}
         {cart.length > 0 && (
-          <Surface style={styles.summaryCard}>
+          <Surface style={[styles.summaryCard, { backgroundColor: activeColors.surface, borderColor: activeColors.border, ...themeShadows.card }]}>
             <View style={styles.summaryItemRow}>
-              <Text style={styles.summaryLabel}>Subtotal:</Text>
-              <Text style={styles.summaryValue}>{formatPaiseToINR(subtotalPaise)}</Text>
+              <Text style={[styles.summaryLabel, { color: activeColors.textSecondary }]}>Subtotal:</Text>
+              <Text style={[styles.summaryValue, { color: activeColors.textPrimary }]}>{formatPaiseToINR(subtotalPaise)}</Text>
             </View>
 
             <View style={styles.summaryItemRow}>
-              <Text style={styles.summaryLabel}>Discount (₹):</Text>
+              <Text style={[styles.summaryLabel, { color: activeColors.textSecondary }]}>Discount (₹):</Text>
               <TextInput
                 value={invoiceDiscountRs}
                 onChangeText={setInvoiceDiscountRs}
                 keyboardType="numeric"
                 mode="outlined"
                 dense
-                style={styles.discountInput}
+                style={[styles.discountInput, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+                textColor={activeColors.textPrimary}
+                outlineColor={activeColors.border}
+                activeOutlineColor={activeColors.primary}
               />
             </View>
 
-            <View style={[styles.summaryItemRow, styles.grandTotalRow]}>
-              <Text style={styles.grandTotalLabel}>Grand Total:</Text>
-              <Text style={styles.grandTotalValue}>
+            <View style={[styles.summaryItemRow, styles.grandTotalRow, { borderTopColor: activeColors.border }]}>
+              <Text style={[styles.grandTotalLabel, { color: activeColors.textPrimary }]}>Grand Total:</Text>
+              <Text style={[styles.grandTotalValue, { color: activeColors.primary }]}>
                 {formatPaiseToINR(grandTotalPaise)}
               </Text>
             </View>
@@ -486,18 +552,19 @@ export default function SalesScreen() {
 
       {/* 5. Sticky Bottom Checkout Bar */}
       {cart.length > 0 && (
-        <Surface style={styles.bottomCheckoutBar}>
+        <Surface style={[styles.bottomCheckoutBar, { backgroundColor: activeColors.surface, borderTopColor: activeColors.border, ...themeShadows.floating }]}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.bottomBarLabel}>Total Payable</Text>
-            <Text style={styles.bottomBarAmount}>
+            <Text style={[styles.bottomBarLabel, { color: activeColors.textSecondary }]}>Total Payable</Text>
+            <Text style={[styles.bottomBarAmount, { color: activeColors.primary }]}>
               {formatPaiseToINR(grandTotalPaise)}
             </Text>
           </View>
           <Button
             mode="contained"
             onPress={handleOpenCheckout}
-            style={styles.checkoutBtn}
+            style={[styles.checkoutBtn, { backgroundColor: activeColors.primary }]}
             contentStyle={{ height: 46 }}
+            icon="check-circle-outline"
           >
             Complete Bill
           </Button>
@@ -509,16 +576,20 @@ export default function SalesScreen() {
         <Dialog
           visible={checkoutModalVisible}
           onDismiss={() => setCheckoutModalVisible(false)}
-          style={styles.checkoutDialog}
+          style={[styles.checkoutDialog, { backgroundColor: activeColors.surface }]}
         >
-          <Dialog.Title style={styles.dialogTitle}>Complete Sale & Invoice</Dialog.Title>
+          <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>Complete Sale & Invoice</Dialog.Title>
           <Dialog.Content>
             <TextInput
               label="Customer Name"
               value={customerName}
               onChangeText={setCustomerName}
               mode="outlined"
-              style={styles.input}
+              style={[styles.input, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+              textColor={activeColors.textPrimary}
+              placeholderTextColor={activeColors.textMuted}
+              outlineColor={activeColors.border}
+              activeOutlineColor={activeColors.primary}
               placeholder="e.g. Ramesh Plumbing / Walk-in"
             />
             <TextInput
@@ -527,19 +598,30 @@ export default function SalesScreen() {
               onChangeText={setCustomerPhone}
               keyboardType="phone-pad"
               mode="outlined"
-              style={styles.input}
+              style={[styles.input, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+              textColor={activeColors.textPrimary}
+              placeholderTextColor={activeColors.textMuted}
+              outlineColor={activeColors.border}
+              activeOutlineColor={activeColors.primary}
             />
 
-            <Text style={styles.fieldLabel}>Payment Method:</Text>
+            <Text style={[styles.fieldLabel, { color: activeColors.textSecondary, marginTop: 4 }]}>Payment Method:</Text>
             <SegmentedButtons
               value={paymentMethod}
               onValueChange={(val) => setPaymentMethod(val as any)}
               buttons={[
-                { value: 'cash', label: 'Cash' },
-                { value: 'upi', label: 'UPI' },
-                { value: 'card', label: 'Card' },
-                { value: 'credit', label: 'Credit / Khata' },
+                { value: 'cash', label: 'Cash', icon: 'cash' },
+                { value: 'upi', label: 'UPI', icon: 'qrcode' },
+                { value: 'card', label: 'Card', icon: 'credit-card' },
+                { value: 'credit', label: 'Khata', icon: 'book-open' },
               ]}
+              theme={{
+                colors: {
+                  secondaryContainer: isDarkMode ? '#1E3A8A' : '#DBEAFE',
+                  onSecondaryContainer: activeColors.primary,
+                  outline: activeColors.border,
+                },
+              }}
               style={{ marginBottom: spacing.sm }}
             />
 
@@ -549,24 +631,28 @@ export default function SalesScreen() {
               onChangeText={setPaidAmountRs}
               keyboardType="numeric"
               mode="outlined"
-              style={styles.input}
+              style={[styles.input, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+              textColor={activeColors.textPrimary}
+              placeholderTextColor={activeColors.textMuted}
+              outlineColor={activeColors.border}
+              activeOutlineColor={activeColors.primary}
             />
 
             {outstandingPaise > 0 && (
-              <Text style={styles.creditWarning}>
+              <Text style={[styles.creditWarning, { color: activeColors.warning }]}>
                 Remaining balance of {formatPaiseToINR(outstandingPaise)} will be recorded as customer credit.
               </Text>
             )}
           </Dialog.Content>
 
           <Dialog.Actions>
-            <Button onPress={() => setCheckoutModalVisible(false)} textColor={colors.textSecondary}>
+            <Button onPress={() => setCheckoutModalVisible(false)} textColor={activeColors.textSecondary}>
               Cancel
             </Button>
             <Button
               mode="contained"
               onPress={handleCompleteSale}
-              style={{ backgroundColor: colors.primary }}
+              style={{ backgroundColor: activeColors.primary }}
             >
               Generate Bill
             </Button>
@@ -579,22 +665,22 @@ export default function SalesScreen() {
         <Dialog
           visible={lastSaleReceipt !== null}
           onDismiss={() => setLastSaleReceipt(null)}
-          style={styles.checkoutDialog}
+          style={[styles.checkoutDialog, { backgroundColor: activeColors.surface }]}
         >
-          <Dialog.Title style={[styles.dialogTitle, { color: colors.success }]}>
+          <Dialog.Title style={[styles.dialogTitle, { color: activeColors.success }]}>
             Bill Generated Successfully!
           </Dialog.Title>
           <Dialog.Content>
-            <Text style={styles.receiptInvoice}>
+            <Text style={[styles.receiptInvoice, { color: activeColors.textPrimary }]}>
               Invoice: {lastSaleReceipt?.invoiceNumber}
             </Text>
-            <Text style={styles.receiptCustomer}>
+            <Text style={[styles.receiptCustomer, { color: activeColors.textSecondary }]}>
               Customer: {lastSaleReceipt?.customerName || 'Walk-in'}
             </Text>
-            <Text style={styles.receiptAmount}>
+            <Text style={[styles.receiptAmount, { color: activeColors.primary }]}>
               Amount: {lastSaleReceipt ? formatPaiseToINR(lastSaleReceipt.grandTotalPaise) : ''}
             </Text>
-            <Text style={styles.receiptStockNote}>
+            <Text style={[styles.receiptStockNote, { color: activeColors.textMuted }]}>
               Stock balances and financial movements have been updated locally in SQLite.
             </Text>
           </Dialog.Content>
@@ -602,7 +688,7 @@ export default function SalesScreen() {
             <Button
               mode="contained"
               onPress={() => setLastSaleReceipt(null)}
-              style={{ backgroundColor: colors.primary }}
+              style={{ backgroundColor: activeColors.primary }}
             >
               Done / Next Bill
             </Button>
@@ -616,122 +702,109 @@ export default function SalesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   searchHeaderCard: {
-    backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
     elevation: 2,
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: spacing.xs,
   },
   headerTitle: {
     ...typography.titleMedium,
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
+    fontWeight: '700',
   },
   searchBar: {
-    backgroundColor: colors.surfaceSubtle,
     borderRadius: borderRadius.lg,
     elevation: 0,
     height: 44,
   },
   searchInput: {
     fontSize: 14,
-    color: colors.textPrimary,
   },
   scrollContent: {
     padding: spacing.md,
-    paddingBottom: 90,
+    paddingBottom: 110,
   },
   selectorCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
+  },
+  cardHeaderTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: spacing.xs,
   },
   sectionHeaderTitle: {
     ...typography.titleSmall,
-    color: colors.primary,
-    marginBottom: spacing.xs,
+    fontWeight: '700',
   },
   chipRow: {
     marginBottom: spacing.sm,
   },
   chip: {
-    backgroundColor: colors.surfaceSubtle,
     marginRight: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-    height: 32,
+    height: 34,
+    borderRadius: borderRadius.full,
   },
-  chipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
+  chipSelected: {},
   chipText: {
     fontSize: 12,
-    color: colors.textSecondary,
   },
   chipTextSelected: {
-    color: '#FFFFFF',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   fieldLabel: {
     ...typography.labelSmall,
-    color: colors.textSecondary,
     marginBottom: 4,
+    fontWeight: '600',
   },
   fieldRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   input: {
-    backgroundColor: colors.surface,
     marginBottom: spacing.sm,
     fontSize: 14,
   },
   pipeHelperCard: {
-    backgroundColor: colors.surfaceSubtle,
-    padding: spacing.sm,
+    padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
   },
   pipeHelperLabel: {
     ...typography.labelSmall,
-    color: colors.primary,
     marginBottom: spacing.xs,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   addCartBtn: {
-    backgroundColor: colors.primary,
     borderRadius: borderRadius.md,
     marginTop: spacing.xs,
   },
   cartCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
   },
   cartHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
   },
   clearCartText: {
     ...typography.labelSmall,
-    color: colors.danger,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   cartItemRow: {
     flexDirection: 'row',
@@ -739,26 +812,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   cartItemName: {
     ...typography.labelMedium,
-    color: colors.textPrimary,
+    fontWeight: '700',
   },
   cartItemMeta: {
     ...typography.bodySmall,
-    color: colors.textSecondary,
     marginTop: 1,
   },
   cartItemCutNote: {
     fontSize: 11,
-    color: colors.accent,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   qtyControlsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceSubtle,
     borderRadius: borderRadius.sm,
     paddingHorizontal: 4,
   },
@@ -767,31 +836,27 @@ const styles = StyleSheet.create({
   },
   qtyNumber: {
     ...typography.labelMedium,
-    color: colors.textPrimary,
-    minWidth: 20,
+    minWidth: 24,
     textAlign: 'center',
+    fontWeight: '700',
   },
   cartItemTotal: {
     ...typography.labelLarge,
-    color: colors.textPrimary,
+    fontWeight: '700',
   },
   emptyCartBox: {
-    padding: spacing.lg,
+    padding: spacing.xl,
     alignItems: 'center',
     justifyContent: 'center',
   },
   emptyCartText: {
     ...typography.bodySmall,
-    color: colors.textMuted,
     marginTop: spacing.xs,
   },
   summaryCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
   },
   summaryItemRow: {
     flexDirection: 'row',
@@ -801,89 +866,79 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     ...typography.bodyMedium,
-    color: colors.textSecondary,
   },
   summaryValue: {
     ...typography.labelLarge,
-    color: colors.textPrimary,
+    fontWeight: '700',
   },
   discountInput: {
-    width: 80,
-    height: 36,
-    backgroundColor: colors.surfaceSubtle,
+    width: 90,
+    height: 38,
     fontSize: 13,
   },
   grandTotalRow: {
     borderTopWidth: 1,
-    borderTopColor: colors.border,
     paddingTop: spacing.sm,
     marginTop: spacing.xs,
   },
   grandTotalLabel: {
     ...typography.titleSmall,
-    color: colors.textPrimary,
+    fontWeight: '700',
   },
   grandTotalValue: {
     ...typography.currencyLarge,
-    color: colors.primary,
+    fontWeight: '800',
   },
   bottomCheckoutBar: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: colors.surface,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
     elevation: 8,
   },
   bottomBarLabel: {
     ...typography.labelSmall,
-    color: colors.textSecondary,
   },
   bottomBarAmount: {
     ...typography.titleMedium,
-    color: colors.primary,
+    fontWeight: '800',
   },
   checkoutBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    minWidth: 140,
+    borderRadius: borderRadius.lg,
+    minWidth: 150,
   },
   checkoutDialog: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
+    paddingBottom: spacing.xs,
   },
   dialogTitle: {
-    ...typography.titleSmall,
-    color: colors.textPrimary,
+    ...typography.titleMedium,
+    fontWeight: '700',
   },
   creditWarning: {
     ...typography.bodySmall,
-    color: colors.warning,
     marginTop: spacing.xs,
   },
   receiptInvoice: {
     ...typography.labelLarge,
-    color: colors.textPrimary,
+    fontWeight: '700',
   },
   receiptCustomer: {
     ...typography.bodyMedium,
-    color: colors.textSecondary,
     marginTop: 2,
   },
   receiptAmount: {
     ...typography.currencyLarge,
-    color: colors.primary,
     marginVertical: spacing.sm,
+    fontWeight: '800',
   },
   receiptStockNote: {
     ...typography.bodySmall,
-    color: colors.textMuted,
   },
 });

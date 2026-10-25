@@ -5,228 +5,456 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
 import {
   Text,
-  List,
-  Card,
-  Button,
+  Surface,
   Portal,
   Dialog,
   TextInput,
-  SegmentedButtons,
   Divider,
-  Surface,
-  Chip,
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import { Category } from '@hardware-store/shared';
 import { useAppStore } from '../../src/store/useAppStore.js';
-import { formatPaiseToINR, rupeeToPaise } from '@hardware-store/shared';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
-import { InventoryRepository } from '../../src/database/repositories/inventoryRepository.js';
-import { PartiesRepository, ExpensesRepository } from '../../src/database/repositories/partiesRepository.js';
-import { SyncQueueRepository } from '../../src/database/repositories/syncQueueRepository.js';
-import { SyncEngine } from '../../src/sync/SyncEngine.js';
-import { getDatabase } from '../../src/database/db.js';
-import { t } from '../../src/i18n/strings.js';
-import { colors, spacing, borderRadius, shadows, typography } from '../../src/theme/tokens.js';
-import { isDemoMode, resetDemoData, DEMO_NOTICE_TEXT } from '../../src/demo/index.js';
+import { CategoryRepository } from '../../src/database/repositories/categoryRepository.js';
+import { resetDemoData } from '../../src/demo/index.js';
+import { lightColors, darkColors, spacing, borderRadius, shadows } from '../../src/theme/tokens.js';
 
-export default function MoreScreen() {
-  const router = useRouter();
-  const {
-    store,
-    token,
-    apiUrl,
-    deviceId,
-    user,
-    language,
-    setLanguage,
-    setApiUrl,
-    pendingSyncCount,
-  } = useAppStore();
+export default function SettingsScreen() {
+  const { store, deviceId, isDarkMode, toggleTheme } = useAppStore();
+  const activeColors = isDarkMode ? darkColors : lightColors;
 
-  // Dialog states
-  const [activeDialog, setActiveDialog] = useState<
-    'adjust' | 'expense' | 'supplier' | 'customer' | 'sync' | 'backup' | 'settings' | null
-  >(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
-  // Stock Adjustment state
-  const [variantsList, setVariantsList] = useState<any[]>([]);
-  const [selectedVariantId, setSelectedVariantId] = useState('');
-  const [adjustQty, setAdjustQty] = useState('1');
-  const [adjustType, setAdjustType] = useState<'increase' | 'decrease' | 'damaged'>('increase');
-  const [adjustReason, setAdjustReason] = useState('Physical audit correction');
+  // Add / Edit Category Dialog
+  const [catDialogVisible, setCatDialogVisible] = useState(false);
+  const [editingCat, setEditingCat] = useState<Category | null>(null);
+  const [catNameInput, setCatNameInput] = useState('');
 
-  // Expense state
-  const [expenseCategory, setExpenseCategory] = useState<'transport' | 'rent' | 'electricity' | 'miscellaneous'>('transport');
-  const [expenseAmountRs, setExpenseAmountRs] = useState('500');
-  const [expenseDesc, setExpenseDesc] = useState('Tempo transport freight');
-
-  // Supplier state
-  const [newSupName, setNewSupName] = useState('');
-  const [newSupPhone, setNewSupPhone] = useState('');
-  const [newSupBiz, setNewSupBiz] = useState('');
-
-  // Customer state
-  const [newCustName, setNewCustName] = useState('');
-  const [newCustPhone, setNewCustPhone] = useState('');
-
-  // Settings
-  const [tempApiUrl, setTempApiUrl] = useState(apiUrl);
-
-  const loadVariants = useCallback(async () => {
+  const loadData = useCallback(async () => {
     try {
-      const storeId = store?.id || 'default-store';
-      const prods = await ProductRepository.getProductsWithVariants(storeId);
-      const allVars: any[] = [];
-      for (const p of prods) {
-        for (const v of p.variants) {
-          allVars.push({ ...v, productName: p.name });
-        }
-      }
-      setVariantsList(allVars);
-      if (allVars.length > 0 && !selectedVariantId) {
-        setSelectedVariantId(allVars[0].id);
-      }
-    } catch (e) {
-      console.error(e);
+      setLoading(true);
+      const storeId = store?.id || 'store-1';
+      const cats = await ProductRepository.getCategories(storeId);
+      setCategories(cats);
+    } catch (err) {
+      console.error('Error loading settings categories:', err);
+    } finally {
+      setLoading(false);
     }
   }, [store]);
 
   useEffect(() => {
-    loadVariants();
-  }, [loadVariants]);
+    loadData();
+  }, [loadData]);
 
-  const handleApplyAdjustment = async () => {
-    if (!selectedVariantId) {
-      Alert.alert('Required', 'Please select a variant');
-      return;
-    }
-    if (!adjustReason.trim()) {
-      Alert.alert('Required', 'Reason is mandatory for stock adjustment');
-      return;
-    }
-
-    try {
-      const storeId = store?.id || 'default-store';
-      const qty = parseFloat(adjustQty);
-      const res = await InventoryRepository.adjustStock(
-        selectedVariantId,
-        qty,
-        'piece',
-        adjustType,
-        adjustReason,
-        storeId,
-        deviceId,
-        user?.id
-      );
-
-      Alert.alert('Stock Adjusted', `New balance: ${res.balanceAfter}. Movement recorded and queued for sync.`);
-      setActiveDialog(null);
-      loadVariants();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Adjustment failed';
-      Alert.alert('Adjustment Error', msg);
-    }
+  // Category Actions
+  const handleOpenAddCategory = () => {
+    setEditingCat(null);
+    setCatNameInput('');
+    setCatDialogVisible(true);
   };
 
-  const handleAddExpense = async () => {
+  const handleOpenEditCategory = (cat: Category) => {
+    setEditingCat(cat);
+    setCatNameInput(cat.name);
+    setCatDialogVisible(true);
+  };
+
+  const handleSaveCategory = async () => {
+    if (!catNameInput.trim()) {
+      Alert.alert('Required', 'Please enter a category name.');
+      return;
+    }
+
     try {
-      const storeId = store?.id || 'default-store';
-      await ExpensesRepository.createExpense(
-        {
-          category: expenseCategory,
-          amountPaise: rupeeToPaise(parseFloat(expenseAmountRs || '0')),
-          description: expenseDesc,
-          date: new Date().toISOString(),
-        },
-        storeId,
-        deviceId
-      );
-      Alert.alert('Expense Recorded', 'Expense entry saved locally.');
-      setActiveDialog(null);
+      const storeId = store?.id || 'store-1';
+      if (editingCat) {
+        await CategoryRepository.updateCategory(
+          editingCat.id,
+          { name: catNameInput.trim() },
+          storeId,
+          deviceId
+        );
+        Alert.alert('Updated', `Category "${catNameInput.trim()}" updated.`);
+      } else {
+        await ProductRepository.createCategory(
+          { name: catNameInput.trim(), displayOrder: categories.length },
+          storeId,
+          deviceId
+        );
+        Alert.alert('Created', `Category "${catNameInput.trim()}" created.`);
+      }
+
+      setCatDialogVisible(false);
+      setEditingCat(null);
+      setCatNameInput('');
+      await loadData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Expense error';
+      const msg = err instanceof Error ? err.message : 'Could not save category';
       Alert.alert('Error', msg);
     }
   };
 
-  const handleAddSupplier = async () => {
-    if (!newSupName || !newSupPhone) {
-      Alert.alert('Required', 'Supplier name and phone are mandatory');
-      return;
-    }
-    try {
-      const storeId = store?.id || 'default-store';
-      await PartiesRepository.createSupplier(
-        { name: newSupName, phone: newSupPhone, businessName: newSupBiz },
-        storeId,
-        deviceId
-      );
-      Alert.alert('Supplier Added', 'Supplier saved and queued for sync.');
-      setActiveDialog(null);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Supplier error';
-      Alert.alert('Error', msg);
-    }
-  };
-
-  const handleAddCustomer = async () => {
-    if (!newCustName) {
-      Alert.alert('Required', 'Customer name is mandatory');
-      return;
-    }
-    try {
-      const storeId = store?.id || 'default-store';
-      await PartiesRepository.createCustomer(
-        { name: newCustName, phone: newCustPhone },
-        storeId,
-        deviceId
-      );
-      Alert.alert('Customer Added', 'Customer saved and queued for sync.');
-      setActiveDialog(null);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Customer error';
-      Alert.alert('Error', msg);
-    }
-  };
-
-  const handleBackupExport = async () => {
-    try {
-      const db = await getDatabase();
-      const [prods, variants, sales, purchases, movements] = await Promise.all([
-        db.getAllAsync(`SELECT * FROM products;`),
-        db.getAllAsync(`SELECT * FROM product_variants;`),
-        db.getAllAsync(`SELECT * FROM sales;`),
-        db.getAllAsync(`SELECT * FROM purchases;`),
-        db.getAllAsync(`SELECT * FROM stock_movements;`),
-      ]);
-
-      Alert.alert(
-        'Database Backup Generated',
-        `Structured backup JSON generated (${movements.length} stock movements, ${sales.length} sales, ${prods.length} products). Ready for export.`
-      );
-    } catch (err: unknown) {
-      Alert.alert('Backup Error', 'Could not export backup data');
-    }
-  };
-
-  const handleResetDemoData = () => {
+  const handleDeleteCategory = (cat: Category) => {
     Alert.alert(
-      'Reset Demo Data',
-      'This will reset all categories, products, stock levels, purchases, and sales to their original clean evaluation values.',
+      'Delete Category',
+      `Are you sure you want to delete category "${cat.name}"? Products in this category will remain intact.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Reset Demo Data',
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const storeId = store?.id || 'store-1';
+              await CategoryRepository.archiveCategory(cat.id, storeId, deviceId);
+              Alert.alert('Deleted', `Category "${cat.name}" deleted.`);
+              await loadData();
+            } catch (err) {
+              Alert.alert('Error', 'Could not delete category.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Export Stock as PDF
+  const handleExportPDF = async () => {
+    try {
+      setExportingPdf(true);
+      const storeId = store?.id || 'store-1';
+      const prods = await ProductRepository.getProductsWithVariants(storeId);
+      const cats = await ProductRepository.getCategories(storeId);
+      const catMap = new Map<string, string>();
+      cats.forEach((c) => catMap.set(c.id, c.name));
+
+      let totalStockUnits = 0;
+      let lowCount = 0;
+      let outCount = 0;
+      let rowIdx = 1;
+      let rowsHtml = '';
+
+      for (const p of prods) {
+        const catName = catMap.get(p.categoryId) || 'Hardware';
+        for (const v of p.variants) {
+          const stock = Number(v.currentStock || 0);
+          const minStock = Number(v.minStockLevel || 5);
+          totalStockUnits += Math.max(0, stock);
+
+          let statusBadge = '';
+          if (stock <= 0) {
+            outCount++;
+            statusBadge = '<span class="badge badge-out">Out of Stock</span>';
+          } else if (stock <= minStock) {
+            lowCount++;
+            statusBadge = '<span class="badge badge-low">Low Stock</span>';
+          } else {
+            statusBadge = '<span class="badge badge-in">In Stock</span>';
+          }
+
+          rowsHtml += `
+            <tr>
+              <td>${rowIdx++}</td>
+              <td class="font-bold">${p.name || ''}</td>
+              <td>${p.brand || '-'}</td>
+              <td>${catName}</td>
+              <td>${v.size || v.name || 'Standard'}</td>
+              <td class="font-bold">${stock} ${p.baseUnit || 'pcs'}</td>
+              <td>${statusBadge}</td>
+            </tr>
+          `;
+        }
+      }
+
+      const generatedAt = new Date().toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Manju Hardware Store - Stock Inventory Report</title>
+          <style>
+            @page { size: A4; margin: 15mm; }
+            * { box-sizing: border-box; }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              color: #0F172A;
+              margin: 0;
+              padding: 0;
+              background-color: #FFFFFF;
+            }
+            .header {
+              border-bottom: 2px solid #1E3A8A;
+              padding-bottom: 12px;
+              margin-bottom: 16px;
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-end;
+            }
+            .store-name {
+              font-size: 24px;
+              font-weight: 800;
+              color: #1E3A8A;
+              margin: 0;
+              letter-spacing: -0.5px;
+            }
+            .store-sub {
+              font-size: 13px;
+              color: #64748B;
+              margin: 4px 0 0 0;
+            }
+            .report-meta {
+              text-align: right;
+              font-size: 12px;
+              color: #64748B;
+            }
+            .summary-cards {
+              display: flex;
+              gap: 12px;
+              margin-bottom: 20px;
+            }
+            .card {
+              flex: 1;
+              border: 1px solid #E2E8F0;
+              border-radius: 8px;
+              padding: 10px 14px;
+              background: #F8FAFC;
+            }
+            .card-label {
+              font-size: 11px;
+              text-transform: uppercase;
+              color: #64748B;
+              font-weight: 700;
+              letter-spacing: 0.5px;
+            }
+            .card-val {
+              font-size: 22px;
+              font-weight: 800;
+              color: #0F172A;
+              margin-top: 4px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 10px;
+              font-size: 12px;
+            }
+            th {
+              background: #1E3A8A;
+              color: #FFFFFF;
+              text-align: left;
+              padding: 8px 10px;
+              font-weight: 700;
+              font-size: 11px;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            td {
+              padding: 8px 10px;
+              border-bottom: 1px solid #E2E8F0;
+            }
+            tr:nth-child(even) {
+              background-color: #F8FAFC;
+            }
+            .font-bold {
+              font-weight: 700;
+            }
+            .badge {
+              display: inline-block;
+              padding: 2px 7px;
+              border-radius: 12px;
+              font-size: 10px;
+              font-weight: 700;
+            }
+            .badge-in {
+              background: #DCFCE7;
+              color: #15803D;
+            }
+            .badge-low {
+              background: #FEF3C7;
+              color: #B45309;
+            }
+            .badge-out {
+              background: #FEE2E2;
+              color: #DC2626;
+            }
+            .footer {
+              margin-top: 24px;
+              text-align: center;
+              font-size: 11px;
+              color: #94A3B8;
+              border-top: 1px solid #E2E8F0;
+              padding-top: 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <h1 class="store-name">Manju Hardware Store</h1>
+              <p class="store-sub">Complete Stock Inventory & Catalogue Report</p>
+            </div>
+            <div class="report-meta">
+              <strong>Generated:</strong> ${generatedAt}<br/>
+              <strong>System:</strong> Offline-First SQLite
+            </div>
+          </div>
+
+          <div class="summary-cards">
+            <div class="card">
+              <div class="card-label">Total Products</div>
+              <div class="card-val">${prods.length}</div>
+            </div>
+            <div class="card">
+              <div class="card-label">Total Stock Units</div>
+              <div class="card-val">${totalStockUnits}</div>
+            </div>
+            <div class="card">
+              <div class="card-label">Low Stock Alerts</div>
+              <div class="card-val" style="color: #D97706;">${lowCount}</div>
+            </div>
+            <div class="card">
+              <div class="card-label">Out of Stock</div>
+              <div class="card-val" style="color: #DC2626;">${outCount}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 5%;">#</th>
+                <th style="width: 25%;">Product Name</th>
+                <th style="width: 15%;">Brand</th>
+                <th style="width: 15%;">Category</th>
+                <th style="width: 15%;">Size / Spec</th>
+                <th style="width: 13%;">Available</th>
+                <th style="width: 12%;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml || '<tr><td colspan="7" style="text-align:center; padding: 20px;">No products found in catalogue.</td></tr>'}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            Manju Hardware Store • Official Stock Record • Offline Database
+          </div>
+        </body>
+        </html>
+      `;
+
+      if (Platform.OS === 'web') {
+        await Print.printAsync({ html });
+      } else {
+        const { uri } = await Print.printToFileAsync({ html });
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+        } else {
+          Alert.alert('PDF Saved', `Exported to ${uri}`);
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not generate PDF.';
+      Alert.alert('Export Error', msg);
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
+  // Export Stock CSV
+  const handleExportCSV = async () => {
+    try {
+      const storeId = store?.id || 'store-1';
+      const prods = await ProductRepository.getProductsWithVariants(storeId);
+      const cats = await ProductRepository.getCategories(storeId);
+      const catMap = new Map<string, string>();
+      cats.forEach((c) => catMap.set(c.id, c.name));
+
+      let csv = 'Product Name,Brand,Category,Size/Variant,Selling Price (Rs),Cost Price (Rs),Stock Units,Unit,Min Alert,Rack Location\n';
+
+      for (const p of prods) {
+        const cat = catMap.get(p.categoryId) || 'General';
+        for (const v of p.variants) {
+          const row = [
+            `"${(p.name || '').replace(/"/g, '""')}"`,
+            `"${(p.brand || '').replace(/"/g, '""')}"`,
+            `"${cat.replace(/"/g, '""')}"`,
+            `"${(v.name || v.size || 'Standard').replace(/"/g, '""')}"`,
+            ((v.sellingPricePaise || 0) / 100).toFixed(2),
+            ((v.purchasePricePaise || 0) / 100).toFixed(2),
+            v.currentStock || 0,
+            `"${p.baseUnit || 'pcs'}"`,
+            v.minStockLevel || 5,
+            `"${(v.rackLocation || '').replace(/"/g, '""')}"`,
+          ].join(',');
+          csv += row + '\n';
+        }
+      }
+
+      // Web Download
+      if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `Stock_Export_${new Date().toISOString().slice(0, 10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        Alert.alert('Export Complete', 'Stock catalogue downloaded as CSV spreadsheet.');
+      } else {
+        // Native Mobile
+        try {
+          const FileSystem = require('expo-file-system');
+          const fileUri = `${FileSystem.documentDirectory}stock_catalogue.csv`;
+          await FileSystem.writeAsStringAsync(fileUri, csv, {
+            encoding: FileSystem.EncodingType.UTF8,
+          });
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(fileUri);
+          } else {
+            Alert.alert('CSV Created', `Saved to ${fileUri}`);
+          }
+        } catch {
+          Alert.alert('Export Generated', `CSV file generated with ${prods.length} products.`);
+        }
+      }
+    } catch (e) {
+      Alert.alert('Export Error', 'Could not export catalogue.');
+    }
+  };
+
+  // Reset Data to Factory State
+  const handleResetData = () => {
+    Alert.alert(
+      'Reset All Data',
+      'This will reset your store catalogue and stock back to clean starting hardware samples.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset Store Data',
           style: 'destructive',
           onPress: async () => {
             const res = await resetDemoData();
             if (res.success) {
-              Alert.alert('Success', 'Demo dataset successfully restored to original factory sample state.');
-              loadVariants();
+              Alert.alert('Reset Done', 'Database reset to fresh hardware store catalogue.');
+              await loadData();
               if (typeof window !== 'undefined' && window.location) {
                 window.location.reload();
               }
@@ -240,406 +468,399 @@ export default function MoreScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header */}
-      <Surface style={styles.headerCard}>
-        <Text style={styles.headerTitle}>More Options</Text>
-        <Text style={styles.headerSubtitle}>
-          Store configuration, ledger, dynamic catalogue, and offline sync.
-        </Text>
+    <ScrollView
+      style={[styles.container, { backgroundColor: activeColors.background }]}
+      contentContainerStyle={styles.content}
+    >
+      {/* 1. Header */}
+      <Surface
+        style={[
+          styles.headerCard,
+          {
+            backgroundColor: activeColors.surface,
+            borderColor: activeColors.border,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.headerIconBox,
+            { backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF' },
+          ]}
+        >
+          <MaterialCommunityIcons name="cog" size={26} color={activeColors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.headerTitle, { color: activeColors.textPrimary }]}>Settings</Text>
+          <Text style={[styles.headerSub, { color: activeColors.textSecondary }]}>
+            Store info, appearance, categories, and data export
+          </Text>
+        </View>
       </Surface>
 
-      {/* 1. Inventory Management */}
-      <Surface style={styles.menuCard}>
-        <Text style={styles.groupHeader}>INVENTORY & AUDIT</Text>
-
-        <List.Item
-          title={t('stockAdjustment', language)}
-          description="Audit corrections, damages, returns"
-          left={(props) => <List.Icon {...props} icon="tune-vertical" color={colors.primary} />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
-          onPress={() => setActiveDialog('adjust')}
-          style={styles.listItem}
-          titleStyle={styles.listItemTitle}
-          descriptionStyle={styles.listItemDesc}
-        />
-        <Divider style={styles.divider} />
-
-        <List.Item
-          title="Low Stock Review"
-          description="View products below minimum threshold"
-          left={(props) => <List.Icon {...props} icon="alert-outline" color={colors.warning} />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
-          onPress={() => router.push('/(tabs)/products')}
-          style={styles.listItem}
-          titleStyle={styles.listItemTitle}
-          descriptionStyle={styles.listItemDesc}
-        />
-      </Surface>
-
-      {/* 2. Business & Parties */}
-      <Surface style={styles.menuCard}>
-        <Text style={styles.groupHeader}>BUSINESS & PARTIES</Text>
-
-
-
-        <List.Item
-          title="Suppliers"
-          description="Manage vendors, wholesale partners"
-          left={(props) => <List.Icon {...props} icon="account-tie" color={colors.primary} />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
-          onPress={() => setActiveDialog('supplier')}
-          style={styles.listItem}
-          titleStyle={styles.listItemTitle}
-          descriptionStyle={styles.listItemDesc}
-        />
-        <Divider style={styles.divider} />
-
-        <List.Item
-          title="Customers & Credit"
-          description="Accounts, credit balances, phone numbers"
-          left={(props) => <List.Icon {...props} icon="account-group" color={colors.success} />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
-          onPress={() => setActiveDialog('customer')}
-          style={styles.listItem}
-          titleStyle={styles.listItemTitle}
-          descriptionStyle={styles.listItemDesc}
-        />
-      </Surface>
-
-      {/* 3. Catalogue & Dynamic Structure */}
-      <Surface style={styles.menuCard}>
-        <Text style={styles.groupHeader}>CATALOGUE & DYNAMIC STRUCTURE</Text>
-
-        <List.Item
-          title="Categories & Subcategories"
-          description="Manage categories, reorder display, move parent"
-          left={(props) => <List.Icon {...props} icon="shape-outline" color={colors.primary} />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
-          onPress={() => router.push('/categories-management')}
-          style={styles.listItem}
-          titleStyle={styles.listItemTitle}
-          descriptionStyle={styles.listItemDesc}
-        />
-        <Divider style={styles.divider} />
-
-        <List.Item
-          title="Custom Specifications"
-          description="Configure attributes (Pressure Rating, Wire Gauge, etc.)"
-          left={(props) => <List.Icon {...props} icon="form-select" color={colors.accent} />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
-          onPress={() => router.push('/custom-fields')}
-          style={styles.listItem}
-          titleStyle={styles.listItemTitle}
-          descriptionStyle={styles.listItemDesc}
-        />
-        <Divider style={styles.divider} />
-
-        <List.Item
-          title="Catalogue CSV Bulk Import"
-          description="Import product batches from CSV spreadsheet"
-          left={(props) => <List.Icon {...props} icon="file-delimited-outline" color={colors.success} />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
-          onPress={() => router.push('/catalogue-import')}
-          style={styles.listItem}
-          titleStyle={styles.listItemTitle}
-          descriptionStyle={styles.listItemDesc}
-        />
-      </Surface>
-
-      {/* 4. Data, Sync & System Settings */}
-      <Surface style={styles.menuCard}>
-        <Text style={styles.groupHeader}>DATA, SYNC & SYSTEM</Text>
-
-        <List.Item
-          title="Offline Synchronization Outbox"
-          description={`${pendingSyncCount} changes in persistent queue • Tap to sync`}
-          left={(props) => (
-            <List.Icon
-              {...props}
-              icon="cloud-sync"
-              color={pendingSyncCount > 0 ? colors.warning : colors.success}
-            />
-          )}
-          right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
-          onPress={async () => {
-            const res = await SyncEngine.synchronize(apiUrl, token || '', store?.id || '', deviceId);
-            Alert.alert('Sync Status', res.error || `Successfully pushed ${res.pushed} changes`);
-          }}
-          style={styles.listItem}
-          titleStyle={styles.listItemTitle}
-          descriptionStyle={styles.listItemDesc}
-        />
-        <Divider style={styles.divider} />
-
-        <List.Item
-          title="Backup & Restore"
-          description="Generate JSON database backup"
-          left={(props) => <List.Icon {...props} icon="database-export" color={colors.primary} />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
-          onPress={handleBackupExport}
-          style={styles.listItem}
-          titleStyle={styles.listItemTitle}
-          descriptionStyle={styles.listItemDesc}
-        />
-        <Divider style={styles.divider} />
-
-        <List.Item
-          title="Settings & Language"
-          description={`Language: ${language === 'en' ? 'English' : 'हिंदी'} • Server URL`}
-          left={(props) => <List.Icon {...props} icon="cog-outline" color={colors.textSecondary} />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
-          onPress={() => setActiveDialog('settings')}
-          style={styles.listItem}
-          titleStyle={styles.listItemTitle}
-          descriptionStyle={styles.listItemDesc}
-        />
-      </Surface>
-
-      {/* Demo Controls Card (Shown in Demo Mode) */}
-      {isDemoMode() && (
-        <Surface style={[styles.menuCard, { borderColor: '#F59E0B', borderWidth: 1.5, backgroundColor: '#FFFBEB' }]}>
-          <Text style={[styles.groupHeader, { color: '#B45309' }]}>DEMO EVALUATION SANDBOX</Text>
-          <List.Item
-            title="Reset Sample Demo Data"
-            description="Restore fictional stock, sales and purchases to initial clean state"
-            left={(props) => <List.Icon {...props} icon="restore" color="#D97706" />}
-            right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
-            onPress={handleResetDemoData}
-            style={styles.listItem}
-            titleStyle={[styles.listItemTitle, { color: '#92400E', fontWeight: '700' }]}
-            descriptionStyle={styles.listItemDesc}
-          />
-          <Divider style={styles.divider} />
-          <List.Item
-            title="Environment & Security"
-            description="Operating in isolated local database • Production sync strictly blocked"
-            left={(props) => <List.Icon {...props} icon="shield-check" color="#059669" />}
-            style={styles.listItem}
-            titleStyle={styles.listItemTitle}
-            descriptionStyle={styles.listItemDesc}
-          />
-        </Surface>
-      )}
-
-      <View style={{ alignItems: 'center', marginTop: spacing.md, marginBottom: spacing.xl }}>
-        <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>
-          {isDemoMode() ? 'Hardware Store (Demo)' : 'Manju Store Management'}
-        </Text>
-        <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
-          {isDemoMode() ? 'Demo Evaluation • Sample Data Sandbox' : 'Beta v1.0 • Offline-Ready Hardware Suite'}
+      {/* 2. Store Identity (Hardcoded, No Config) */}
+      <View style={styles.sectionHeaderRow}>
+        <Text style={[styles.sectionTitle, { color: activeColors.textPrimary }]}>
+          Store Information
         </Text>
       </View>
 
-      {/* Stock Adjustment Dialog */}
-      <Portal>
-        <Dialog visible={activeDialog === 'adjust'} onDismiss={() => setActiveDialog(null)} style={styles.dialog}>
-          <Dialog.Title style={styles.dialogTitle}>Stock Adjustment</Dialog.Title>
-          <Dialog.Content>
-            <Text style={styles.fieldLabel}>Select Variant to Correct:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-              {variantsList.map((v) => (
-                <Chip
-                  key={v.id}
-                  selected={selectedVariantId === v.id}
-                  onPress={() => setSelectedVariantId(v.id)}
-                  style={[styles.variantChip, selectedVariantId === v.id && styles.variantChipSelected]}
-                  textStyle={[styles.variantChipText, selectedVariantId === v.id && styles.variantChipTextSelected]}
-                  showSelectedOverlay={false}
-                >
-                  {v.productName} ({v.name}) [Cur: {v.currentStock}]
-                </Chip>
-              ))}
-            </ScrollView>
-
-            <SegmentedButtons
-              value={adjustType}
-              onValueChange={(val) => setAdjustType(val as any)}
-              buttons={[
-                { value: 'increase', label: 'Increase (+)' },
-                { value: 'decrease', label: 'Decrease (-)' },
-                { value: 'damaged', label: 'Damaged' },
+      <Surface
+        style={[
+          styles.card,
+          {
+            backgroundColor: activeColors.surface,
+            borderColor: activeColors.border,
+          },
+        ]}
+      >
+        <View style={styles.storeInfoRow}>
+          <View
+            style={[
+              styles.storeIconCircle,
+              { backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF' },
+            ]}
+          >
+            <MaterialCommunityIcons name="storefront" size={22} color={activeColors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.storeNameLabel, { color: activeColors.textPrimary }]}>
+              Manju Hardware Store
+            </Text>
+            <Text style={[styles.storeOwnerSub, { color: activeColors.textSecondary }]}>
+              Authorized Hardware & Sanitary • Offline First
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.hardcodedBadge,
+              {
+                backgroundColor: isDarkMode ? '#064E3B' : '#DCFCE7',
+                borderColor: isDarkMode ? '#059669' : '#BBF7D0',
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="lock-check"
+              size={13}
+              color={isDarkMode ? '#34D399' : '#15803D'}
+            />
+            <Text
+              style={[
+                styles.hardcodedBadgeText,
+                { color: isDarkMode ? '#34D399' : '#15803D' },
               ]}
-              style={{ marginBottom: 10 }}
-            />
-
-            <TextInput
-              label="Quantity to adjust"
-              value={adjustQty}
-              onChangeText={setAdjustQty}
-              keyboardType="numeric"
-              mode="outlined"
-              style={styles.input}
-            />
-            <TextInput
-              label="Reason (Mandatory for audit trail) *"
-              value={adjustReason}
-              onChangeText={setAdjustReason}
-              mode="outlined"
-              style={styles.input}
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setActiveDialog(null)} textColor={colors.textSecondary}>
-              Cancel
-            </Button>
-            <Button mode="contained" onPress={handleApplyAdjustment} style={{ backgroundColor: colors.primary }}>
-              Apply Adjustment
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
-
-      {/* Expense Dialog */}
-      <Portal>
-        <Dialog visible={activeDialog === 'expense'} onDismiss={() => setActiveDialog(null)} style={styles.dialog}>
-          <Dialog.Title style={styles.dialogTitle}>Record Store Expense</Dialog.Title>
-          <Dialog.Content>
-            <SegmentedButtons
-              value={expenseCategory}
-              onValueChange={(val) => setExpenseCategory(val as any)}
-              buttons={[
-                { value: 'transport', label: 'Transport' },
-                { value: 'rent', label: 'Rent' },
-                { value: 'electricity', label: 'Power' },
-                { value: 'miscellaneous', label: 'Other' },
-              ]}
-              style={{ marginBottom: 10 }}
-            />
-            <TextInput
-              label="Amount (₹) *"
-              value={expenseAmountRs}
-              onChangeText={setExpenseAmountRs}
-              keyboardType="numeric"
-              mode="outlined"
-              style={styles.input}
-            />
-            <TextInput
-              label="Description / Note"
-              value={expenseDesc}
-              onChangeText={setExpenseDesc}
-              mode="outlined"
-              style={styles.input}
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setActiveDialog(null)} textColor={colors.textSecondary}>
-              Cancel
-            </Button>
-            <Button mode="contained" onPress={handleAddExpense} style={{ backgroundColor: colors.danger }}>
-              Save Expense
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
-
-      {/* Supplier Dialog */}
-      <Portal>
-        <Dialog visible={activeDialog === 'supplier'} onDismiss={() => setActiveDialog(null)} style={styles.dialog}>
-          <Dialog.Title style={styles.dialogTitle}>Add Supplier</Dialog.Title>
-          <Dialog.Content>
-            <TextInput
-              label="Contact Person Name *"
-              value={newSupName}
-              onChangeText={setNewSupName}
-              mode="outlined"
-              style={styles.input}
-            />
-            <TextInput
-              label="Business Name"
-              value={newSupBiz}
-              onChangeText={setNewSupBiz}
-              mode="outlined"
-              style={styles.input}
-            />
-            <TextInput
-              label="Phone Number *"
-              value={newSupPhone}
-              onChangeText={setNewSupPhone}
-              keyboardType="phone-pad"
-              mode="outlined"
-              style={styles.input}
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setActiveDialog(null)} textColor={colors.textSecondary}>
-              Cancel
-            </Button>
-            <Button mode="contained" onPress={handleAddSupplier} style={{ backgroundColor: colors.primary }}>
-              Save Supplier
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
-
-      {/* Customer Dialog */}
-      <Portal>
-        <Dialog visible={activeDialog === 'customer'} onDismiss={() => setActiveDialog(null)} style={styles.dialog}>
-          <Dialog.Title style={styles.dialogTitle}>Add Customer</Dialog.Title>
-          <Dialog.Content>
-            <TextInput
-              label="Customer Name *"
-              value={newCustName}
-              onChangeText={setNewCustName}
-              mode="outlined"
-              style={styles.input}
-            />
-            <TextInput
-              label="Phone Number"
-              value={newCustPhone}
-              onChangeText={setNewCustPhone}
-              keyboardType="phone-pad"
-              mode="outlined"
-              style={styles.input}
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setActiveDialog(null)} textColor={colors.textSecondary}>
-              Cancel
-            </Button>
-            <Button mode="contained" onPress={handleAddCustomer} style={{ backgroundColor: colors.primary }}>
-              Save Customer
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
-
-      {/* Settings Dialog */}
-      <Portal>
-        <Dialog visible={activeDialog === 'settings'} onDismiss={() => setActiveDialog(null)} style={styles.dialog}>
-          <Dialog.Title style={styles.dialogTitle}>Settings & Language</Dialog.Title>
-          <Dialog.Content>
-            <Text style={styles.fieldLabel}>Language (भाषा):</Text>
-            <SegmentedButtons
-              value={language}
-              onValueChange={(val) => setLanguage(val as any)}
-              buttons={[
-                { value: 'en', label: 'English' },
-                { value: 'hi', label: 'हिंदी (Hindi)' },
-              ]}
-              style={{ marginBottom: 12 }}
-            />
-
-            <TextInput
-              label="Backend Server API URL"
-              value={tempApiUrl}
-              onChangeText={setTempApiUrl}
-              mode="outlined"
-              style={styles.input}
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button
-              onPress={() => {
-                setApiUrl(tempApiUrl);
-                setActiveDialog(null);
-                Alert.alert('Saved', 'Settings updated');
-              }}
-              mode="contained"
-              style={{ backgroundColor: colors.primary }}
             >
-              Save Settings
-            </Button>
+              Permanent
+            </Text>
+          </View>
+        </View>
+      </Surface>
+
+      {/* 3. Appearance / Dark Mode Section */}
+      <View style={[styles.sectionHeaderRow, { marginTop: spacing.lg }]}>
+        <Text style={[styles.sectionTitle, { color: activeColors.textPrimary }]}>
+          Appearance
+        </Text>
+      </View>
+
+      <Surface
+        style={[
+          styles.card,
+          {
+            backgroundColor: activeColors.surface,
+            borderColor: activeColors.border,
+          },
+        ]}
+      >
+        <View style={styles.themeRow}>
+          <View
+            style={[
+              styles.menuIconCircle,
+              { backgroundColor: isDarkMode ? '#1E293B' : '#FEF3C7' },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={isDarkMode ? 'weather-night' : 'white-balance-sunny'}
+              size={20}
+              color={isDarkMode ? '#60A5FA' : '#D97706'}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuTitle, { color: activeColors.textPrimary }]}>
+              {isDarkMode ? 'Dark Mode' : 'Light Mode'}
+            </Text>
+            <Text style={[styles.menuSub, { color: activeColors.textSecondary }]}>
+              {isDarkMode ? 'Comfortable high-contrast dark theme' : 'Crisp clean daylight theme'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.themeToggleBtn,
+              {
+                backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
+                borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
+              },
+            ]}
+            onPress={toggleTheme}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons
+              name={isDarkMode ? 'weather-night' : 'white-balance-sunny'}
+              size={16}
+              color={isDarkMode ? '#60A5FA' : '#1E3A8A'}
+            />
+            <Text
+              style={[
+                styles.themeToggleText,
+                { color: isDarkMode ? '#60A5FA' : '#1E3A8A' },
+              ]}
+            >
+              {isDarkMode ? 'Dark' : 'Light'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Surface>
+
+      {/* 4. Categories Management */}
+      <View style={[styles.sectionHeaderRow, { marginTop: spacing.lg }]}>
+        <Text style={[styles.sectionTitle, { color: activeColors.textPrimary }]}>
+          Categories ({categories.length})
+        </Text>
+        <TouchableOpacity style={styles.addCategoryBtn} onPress={handleOpenAddCategory}>
+          <MaterialCommunityIcons name="plus" size={14} color="#FFFFFF" />
+          <Text style={styles.addCategoryBtnText}>Add Category</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Surface
+        style={[
+          styles.card,
+          {
+            backgroundColor: activeColors.surface,
+            borderColor: activeColors.border,
+          },
+        ]}
+      >
+        {categories.map((cat, idx) => (
+          <View key={cat.id}>
+            <View style={styles.catItemRow}>
+              <View
+                style={[
+                  styles.catIconCircle,
+                  { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="shape-outline"
+                  size={18}
+                  color={activeColors.primary}
+                />
+              </View>
+              <Text style={[styles.catItemName, { color: activeColors.textPrimary }]}>
+                {cat.name}
+              </Text>
+
+              <View style={styles.catItemActions}>
+                <TouchableOpacity
+                  onPress={() => handleOpenEditCategory(cat)}
+                  style={styles.catActionIcon}
+                >
+                  <MaterialCommunityIcons
+                    name="pencil-outline"
+                    size={18}
+                    color={activeColors.textSecondary}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleDeleteCategory(cat)}
+                  style={styles.catActionIcon}
+                >
+                  <MaterialCommunityIcons name="trash-can-outline" size={18} color="#DC2626" />
+                </TouchableOpacity>
+              </View>
+            </View>
+            {idx !== categories.length - 1 && (
+              <Divider
+                style={[
+                  styles.divider,
+                  { backgroundColor: isDarkMode ? '#1F2937' : '#F1F5F9' },
+                ]}
+              />
+            )}
+          </View>
+        ))}
+      </Surface>
+
+      {/* 5. Data & Export */}
+      <View style={[styles.sectionHeaderRow, { marginTop: spacing.lg }]}>
+        <Text style={[styles.sectionTitle, { color: activeColors.textPrimary }]}>
+          Data & Backup
+        </Text>
+      </View>
+
+      <Surface
+        style={[
+          styles.card,
+          {
+            backgroundColor: activeColors.surface,
+            borderColor: activeColors.border,
+          },
+        ]}
+      >
+        {/* Export PDF */}
+        <TouchableOpacity
+          style={styles.menuRow}
+          onPress={handleExportPDF}
+          activeOpacity={0.7}
+          disabled={exportingPdf}
+        >
+          <View
+            style={[
+              styles.menuIconCircle,
+              { backgroundColor: isDarkMode ? '#450A0A' : '#FEE2E2' },
+            ]}
+          >
+            <MaterialCommunityIcons name="file-pdf-box" size={22} color="#DC2626" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuTitle, { color: activeColors.textPrimary }]}>
+              {exportingPdf ? 'Preparing PDF...' : 'Export Stock as PDF'}
+            </Text>
+            <Text style={[styles.menuSub, { color: activeColors.textSecondary }]}>
+              Print or save formatted A4 inventory report
+            </Text>
+          </View>
+          <MaterialCommunityIcons name="printer" size={20} color={activeColors.primary} />
+        </TouchableOpacity>
+
+        <Divider
+          style={[
+            styles.divider,
+            { backgroundColor: isDarkMode ? '#1F2937' : '#F1F5F9' },
+          ]}
+        />
+
+        {/* Export CSV */}
+        <TouchableOpacity style={styles.menuRow} onPress={handleExportCSV} activeOpacity={0.7}>
+          <View
+            style={[
+              styles.menuIconCircle,
+              { backgroundColor: isDarkMode ? '#052E16' : '#DCFCE7' },
+            ]}
+          >
+            <MaterialCommunityIcons name="file-excel-box" size={22} color="#16A34A" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuTitle, { color: activeColors.textPrimary }]}>
+              Export Stock as CSV
+            </Text>
+            <Text style={[styles.menuSub, { color: activeColors.textSecondary }]}>
+              Download Excel-compatible inventory spreadsheet
+            </Text>
+          </View>
+          <MaterialCommunityIcons name="download" size={20} color={activeColors.primary} />
+        </TouchableOpacity>
+
+        <Divider
+          style={[
+            styles.divider,
+            { backgroundColor: isDarkMode ? '#1F2937' : '#F1F5F9' },
+          ]}
+        />
+
+        {/* Reset Data */}
+        <TouchableOpacity style={styles.menuRow} onPress={handleResetData} activeOpacity={0.7}>
+          <View
+            style={[
+              styles.menuIconCircle,
+              { backgroundColor: isDarkMode ? '#450A0A' : '#FEE2E2' },
+            ]}
+          >
+            <MaterialCommunityIcons name="restore" size={20} color="#DC2626" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuTitle, { color: activeColors.textPrimary }]}>
+              Reset Sample Data
+            </Text>
+            <Text style={[styles.menuSub, { color: activeColors.textSecondary }]}>
+              Restore clean default hardware store inventory
+            </Text>
+          </View>
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={20}
+            color={activeColors.textSecondary}
+          />
+        </TouchableOpacity>
+      </Surface>
+
+      {/* 6. About */}
+      <Surface
+        style={[
+          styles.aboutCard,
+          {
+            backgroundColor: activeColors.surface,
+            borderColor: activeColors.border,
+          },
+        ]}
+      >
+        <MaterialCommunityIcons name="shield-check" size={28} color={activeColors.primary} />
+        <Text style={[styles.aboutTitle, { color: activeColors.textPrimary }]}>
+          Manju Hardware Store Management
+        </Text>
+        <Text style={[styles.aboutVersion, { color: activeColors.textSecondary }]}>
+          Version 1.0.0 • Offline First
+        </Text>
+        <Text style={[styles.aboutFootnote, { color: activeColors.textMuted }]}>
+          Data stored safely on your device in local SQLite database.
+        </Text>
+      </Surface>
+
+      {/* Category Dialog */}
+      <Portal>
+        <Dialog
+          visible={catDialogVisible}
+          onDismiss={() => setCatDialogVisible(false)}
+          style={[styles.dialog, { backgroundColor: activeColors.surface }]}
+        >
+          <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
+            {editingCat ? 'Edit Category' : 'Add Category'}
+          </Dialog.Title>
+          <Dialog.Content>
+            <TextInput
+              label="Category Name *"
+              value={catNameInput}
+              onChangeText={setCatNameInput}
+              mode="outlined"
+              style={{ backgroundColor: activeColors.surface }}
+              textColor={activeColors.textPrimary}
+              placeholder="e.g. Pipes, Paints, Tools"
+            />
+          </Dialog.Content>
+          <Dialog.Actions>
+            <TouchableOpacity
+              onPress={() => setCatDialogVisible(false)}
+              style={styles.dialogCancelBtn}
+            >
+              <Text
+                style={[
+                  styles.dialogCancelText,
+                  { color: activeColors.textSecondary },
+                ]}
+              >
+                Cancel
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleSaveCategory}
+              style={[
+                styles.dialogConfirmBtn,
+                { backgroundColor: activeColors.primary },
+              ]}
+            >
+              <Text style={styles.dialogConfirmText}>Save</Text>
+            </TouchableOpacity>
           </Dialog.Actions>
         </Dialog>
       </Portal>
@@ -650,97 +871,232 @@ export default function MoreScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   content: {
     padding: spacing.md,
     paddingBottom: 40,
   },
+
+  // Header Card
   headerCard: {
-    backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
-    marginBottom: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
     ...shadows.card,
   },
-  headerTitle: {
-    ...typography.titleMedium,
-    color: colors.textPrimary,
+  headerIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  headerSubtitle: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  headerSub: {
+    fontSize: 12,
     marginTop: 2,
   },
-  menuCard: {
-    backgroundColor: colors.surface,
-    marginBottom: spacing.md,
+
+  // Section Headers
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  addCategoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#1E3A8A',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: borderRadius.sm,
+  },
+  addCategoryBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // Surface Card
+  card: {
     borderRadius: borderRadius.lg,
     borderWidth: 1,
-    borderColor: colors.border,
     overflow: 'hidden',
     ...shadows.card,
   },
-  groupHeader: {
+  storeInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  storeIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  storeNameLabel: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  storeOwnerSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  hardcodedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  hardcodedBadgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: colors.primary,
-    letterSpacing: 0.8,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xs,
   },
-  listItem: {
-    paddingVertical: 4,
-    paddingHorizontal: spacing.sm,
+
+  // Theme Row
+  themeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    gap: spacing.sm,
   },
-  listItemTitle: {
-    ...typography.labelLarge,
-    color: colors.textPrimary,
-  },
-  listItemDesc: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-  },
-  divider: {
-    backgroundColor: colors.border,
-  },
-  fieldLabel: {
-    ...typography.labelSmall,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  variantChip: {
-    backgroundColor: colors.surfaceSubtle,
-    marginRight: 6,
+  themeToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
     borderWidth: 1,
-    borderColor: colors.border,
   },
-  variantChipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  variantChipText: {
+  themeToggleText: {
     fontSize: 12,
-    color: colors.textSecondary,
+    fontWeight: '700',
   },
-  variantChipTextSelected: {
-    color: '#FFFFFF',
+
+  // Category Rows
+  catItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+  },
+  catIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.sm,
+  },
+  catItemName: {
+    flex: 1,
+    fontSize: 14,
     fontWeight: '600',
   },
+  catItemActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  catActionIcon: {
+    padding: 6,
+  },
+
+  // Menu Rows (Data & Export)
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  menuIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: borderRadius.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  menuTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  menuSub: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+  divider: {
+    height: 1,
+  },
+
+  // About Card
+  aboutCard: {
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    borderWidth: 1,
+    ...shadows.card,
+  },
+  aboutTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: spacing.xs,
+  },
+  aboutVersion: {
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  aboutFootnote: {
+    fontSize: 11,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+
+  // Dialogs
   dialog: {
-    backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
   },
   dialogTitle: {
-    ...typography.titleSmall,
-    color: colors.textPrimary,
+    fontSize: 17,
+    fontWeight: '700',
   },
-  input: {
-    marginBottom: 10,
-    backgroundColor: colors.surface,
+  dialogCancelBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+  },
+  dialogCancelText: {
     fontSize: 14,
+    fontWeight: '600',
+  },
+  dialogConfirmBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: borderRadius.sm,
+  },
+  dialogConfirmText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

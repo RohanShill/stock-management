@@ -1,34 +1,38 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Stack } from 'expo-router';
-import { MD3LightTheme, PaperProvider } from 'react-native-paper';
+import { MD3LightTheme, MD3DarkTheme, PaperProvider } from 'react-native-paper';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import { getDatabase } from '../src/database/db.js';
 import { SyncEngine } from '../src/sync/SyncEngine.js';
 import { useAppStore } from '../src/store/useAppStore.js';
-import { colors } from '../src/theme/tokens.js';
-import { DemoBanner } from '../src/demo/DemoBanner.js';
+import { lightColors, darkColors } from '../src/theme/tokens.js';
 
 const queryClient = new QueryClient();
 
-// Clean, calm, professional light theme for hardware store operations
-const theme = {
-  ...MD3LightTheme,
-  colors: {
-    ...MD3LightTheme.colors,
-    primary: colors.primary,
-    secondary: colors.accent,
-    background: colors.background,
-    surface: colors.surface,
-    surfaceVariant: colors.surfaceSubtle,
-    outline: colors.border,
-    error: colors.danger,
-  },
-};
-
 export default function RootLayout() {
+  const isDarkMode = useAppStore((s) => s.isDarkMode);
   const setPendingSyncCount = useAppStore((s) => s.setPendingSyncCount);
   const setLastSyncTime = useAppStore((s) => s.setLastSyncTime);
+
+  const activeColors = isDarkMode ? darkColors : lightColors;
+
+  const paperTheme = useMemo(() => {
+    const baseTheme = isDarkMode ? MD3DarkTheme : MD3LightTheme;
+    return {
+      ...baseTheme,
+      colors: {
+        ...baseTheme.colors,
+        primary: activeColors.primary,
+        secondary: activeColors.accent,
+        background: activeColors.background,
+        surface: activeColors.surface,
+        surfaceVariant: activeColors.surfaceSubtle,
+        outline: activeColors.border,
+        error: activeColors.danger,
+      },
+    };
+  }, [isDarkMode, activeColors]);
 
   useEffect(() => {
     // Initialize SQLite database
@@ -47,21 +51,20 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <PaperProvider theme={theme}>
-        <StatusBar style="dark" />
-        <DemoBanner />
+      <PaperProvider theme={paperTheme}>
+        <StatusBar style={isDarkMode ? 'light' : 'dark'} />
         <Stack
           screenOptions={{
             headerStyle: {
-              backgroundColor: colors.surface,
+              backgroundColor: activeColors.surface,
             },
-            headerTintColor: colors.textPrimary,
+            headerTintColor: activeColors.textPrimary,
             headerTitleStyle: {
               fontWeight: '700',
               fontSize: 18,
             },
             headerShadowVisible: false,
-            contentStyle: { backgroundColor: colors.background },
+            contentStyle: { backgroundColor: activeColors.background },
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -75,3 +78,4 @@ export default function RootLayout() {
     </QueryClientProvider>
   );
 }
+

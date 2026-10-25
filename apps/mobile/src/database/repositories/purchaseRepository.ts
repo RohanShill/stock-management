@@ -194,14 +194,16 @@ export class PurchaseRepository {
           const movementId = uuidv4();
           await db.runAsync(
             `INSERT INTO stock_movements (id, storeId, variantId, movementType, quantityChangeBase, balanceBeforeBase, balanceAfterBase, referenceType, referenceId, reason, deviceId, userId, createdAt)
-             VALUES (?, ?, ?, 'purchase_received', ?, ?, ?, 'purchase', ?, ?, ?, ?, ?);`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
             [
               movementId,
               storeId,
               sp.variantRow.id,
+              'purchase_received',
               sp.baseQuantity,
               balanceBefore,
               balanceAfter,
+              'purchase',
               purchaseId,
               `Goods receipt Bill ${input.invoiceNumber}`,
               deviceId,

@@ -6,74 +6,169 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Image,
+  Modal,
+  Platform,
 } from 'react-native';
 import {
   Text,
   Searchbar,
-  Card,
-  Chip,
   Portal,
   Dialog,
   TextInput,
-  Button,
-  SegmentedButtons,
+  Chip,
   IconButton,
   Surface,
 } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import {
   Product,
   ProductVariant,
   Category,
   Subcategory,
-  CustomFieldDefinition,
-  Supplier,
   MeasurementType,
   StandardUnit,
   formatPaiseToINR,
   rupeeToPaise,
   paiseToRupee,
   generateSku,
-  fromCanonicalBaseQuantity,
 } from '@hardware-store/shared';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
 import { InventoryRepository } from '../../src/database/repositories/inventoryRepository.js';
 import { CategoryRepository } from '../../src/database/repositories/categoryRepository.js';
-import { CustomFieldRepository } from '../../src/database/repositories/customFieldRepository.js';
-import { PartiesRepository } from '../../src/database/repositories/partiesRepository.js';
 import { useAppStore } from '../../src/store/useAppStore.js';
-import { t } from '../../src/i18n/strings.js';
-import { colors, spacing, borderRadius, shadows, typography } from '../../src/theme/tokens.js';
+import { lightColors, darkColors, colors, spacing, borderRadius, shadows, getThemeShadows } from '../../src/theme/tokens.js';
 
-interface VariantDraft {
+interface VariantFormItem {
   id?: string;
   name: string;
-  sku: string;
-  size?: string;
-  color?: string;
-  purchasePriceRs: string;
-  sellingPriceRs: string;
-  taxRatePercent: string;
+  size: string;
+  sellingPriceRs?: string;
+  costPriceRs?: string;
   openingStock: string;
+  currentStock?: number;
   minStockLevel: string;
-  rackLocation?: string;
-  customValues?: Record<string, any>;
+  rackLocation: string;
+}
+
+const UNIT_OPTIONS: Array<{ value: StandardUnit; label: string }> = [
+  { value: 'piece', label: 'Piece' },
+  { value: 'm', label: 'Meter' },
+  { value: 'box', label: 'Box' },
+  { value: 'kg', label: 'Kg' },
+  { value: 'l', label: 'Liter' },
+  { value: 'set', label: 'Set' },
+];
+
+function mapUnitToMeasurementType(unit: StandardUnit): MeasurementType {
+  if (unit === 'm' || unit === 'mm' || unit === 'cm' || unit === 'ft' || unit === 'inch') return 'length';
+  if (unit === 'kg' || unit === 'g') return 'weight';
+  if (unit === 'l' || unit === 'ml') return 'volume';
+  return 'count';
 }
 
 export default function ProductsScreen() {
   const router = useRouter();
-  const routerParams = useLocalSearchParams<{ categoryId?: string; filter?: 'all' | 'in' | 'low' | 'out'; action?: string }>();
-  const { store, deviceId, user, language } = useAppStore();
+  const routerParams = useLocalSearchParams<{
+    categoryId?: string;
+    filter?: 'all' | 'in' | 'low' | 'out';
+    action?: string;
+  }>();
+
+  const { store, deviceId, isDarkMode } = useAppStore();
+  const activeColors = isDarkMode ? darkColors : lightColors;
+  const themeShadows = getThemeShadows(isDarkMode);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
+
   const [products, setProducts] = useState<Array<Product & { variants: ProductVariant[] }>>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
 
+  // Form Modal State (Add / Edit)
+  const [formVisible, setFormVisible] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<(Product & { variants: ProductVariant[] }) | null>(null);
+  const [formName, setFormName] = useState('');
+  const [formBrand, setFormBrand] = useState('');
+  const [formCategoryId, setFormCategoryId] = useState('');
+  const [formSubcategoryId, setFormSubcategoryId] = useState('');
+  const [formImageUrl, setFormImageUrl] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formBaseUnit, setFormBaseUnit] = useState<StandardUnit>('piece');
+  const [formVariants, setFormVariants] = useState<VariantFormItem[]>([
+    {
+      name: 'Standard',
+      size: 'Standard',
+      openingStock: '10',
+      minStockLevel: '5',
+      rackLocation: '',
+    },
+  ]);
+  const [savingProduct, setSavingProduct] = useState(false);
+
+  // Quick Restock Dialog State
+  const [quickStockTarget, setQuickStockTarget] = useState<{
+    productId: string;
+    productName: string;
+    variant: ProductVariant;
+    unit: string;
+  } | null>(null);
+  const [quickStockMode, setQuickStockMode] = useState<'add' | 'sell'>('add');
+  const [quickStockQty, setQuickStockQty] = useState('10');
+  const [quickStockNote, setQuickStockNote] = useState('');
+  const [updatingStock, setUpdatingStock] = useState(false);
+
+  // New Category Dialog
+  const [newCatDialogVisible, setNewCatDialogVisible] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [creatingCat, setCreatingCat] = useState(false);
+
+  // New Subcategory Dialog
+  const [newSubcatDialogVisible, setNewSubcatDialogVisible] = useState(false);
+  const [newSubcatName, setNewSubcatName] = useState('');
+  const [creatingSubcat, setCreatingSubcat] = useState(false);
+
+  // Delete Product Confirmation Dialog
+  const [deleteConfirmProd, setDeleteConfirmProd] = useState<Product | null>(null);
+  const [deletingProduct, setDeletingProduct] = useState(false);
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const storeId = store?.id || 'store-1';
+      const [prods, cats, subcats] = await Promise.all([
+        ProductRepository.getProductsWithVariants(storeId),
+        ProductRepository.getCategories(storeId),
+        CategoryRepository.getSubcategories(undefined, storeId),
+      ]);
+      setProducts(prods);
+      setCategories(cats);
+      setSubcategories(subcats);
+
+      if (cats.length > 0 && !formCategoryId) {
+        setFormCategoryId(cats[0].id);
+        const firstCatSubcats = subcats.filter((s) => s.categoryId === cats[0].id && s.active);
+        setFormSubcategoryId(firstCatSubcats[0]?.id || '');
+      }
+    } catch (e) {
+      console.error('Error loading products & categories:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [store, formCategoryId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Handle URL search params
   useEffect(() => {
     if (routerParams.categoryId) {
       setSelectedCategory(routerParams.categoryId);
@@ -81,1041 +176,1694 @@ export default function ProductsScreen() {
     if (routerParams.filter && ['all', 'in', 'low', 'out'].includes(routerParams.filter)) {
       setStockFilter(routerParams.filter);
     }
-  }, [routerParams.categoryId, routerParams.filter]);
-
-  // Form State (Clean, Streamlined)
-  const [formVisible, setFormVisible] = useState(false);
-  const [editingProductId, setEditingProductId] = useState<string | null>(null);
-  const [formCategoryId, setFormCategoryId] = useState('');
-  const [formSubcategoryId, setFormSubcategoryId] = useState('');
-  const [formProdName, setFormProdName] = useState('');
-  const [formBrand, setFormBrand] = useState('');
-  const [formSellingPrice, setFormSellingPrice] = useState('');
-  const [formPurchasePrice, setFormPurchasePrice] = useState('');
-  const [formOpeningStock, setFormOpeningStock] = useState('10');
-  const [formMinStockLevel, setFormMinStockLevel] = useState('5');
-  const [formBaseUnit, setFormBaseUnit] = useState<StandardUnit>('piece');
-  const [formMeasurementType, setFormMeasurementType] = useState<MeasurementType>('count');
-  const [formSize, setFormSize] = useState('');
-  const [formRackLocation, setFormRackLocation] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-
-  // Quick Add Stock Dialog State
-  const [quickStockTarget, setQuickStockTarget] = useState<{
-    variantId: string;
-    productName: string;
-    currentStock: number;
-    unit: string;
-    brand?: string;
-  } | null>(null);
-  const [quickStockQty, setQuickStockQty] = useState('10');
-  const [stockUpdating, setStockUpdating] = useState(false);
-
-  // Dynamic Specifications State
-  const [availableCustomFields, setAvailableCustomFields] = useState<CustomFieldDefinition[]>([]);
-  const [customFieldValues, setCustomFieldValues] = useState<Record<string, any>>({});
-
-  // Multiple Variants State
-  const [variantsDraft, setVariantsDraft] = useState<VariantDraft[]>([
-    {
-      name: 'Standard',
-      sku: '',
-      size: 'Standard',
-      purchasePriceRs: '100',
-      sellingPriceRs: '140',
-      taxRatePercent: '18',
-      openingStock: '20',
-      minStockLevel: '5',
-      rackLocation: 'A-1',
-    },
-  ]);
-
-  // Quick Create Dialogs inside form
-  const [quickCreateType, setQuickCreateType] = useState<'category' | 'subcategory' | 'brand' | 'supplier' | null>(null);
-  const [quickCreateName, setQuickCreateName] = useState('');
-  const [quickCreateExtra, setQuickCreateExtra] = useState('');
-
-  const loadData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const storeId = store?.id || 'default-store';
-      const [prods, cats, subcats, sups] = await Promise.all([
-        ProductRepository.getProductsWithVariants(storeId),
-        CategoryRepository.getCategories(storeId),
-        CategoryRepository.getSubcategories(undefined, storeId),
-        PartiesRepository.getSuppliers(storeId),
-      ]);
-      setProducts(prods);
-      setCategories(cats);
-      setSubcategories(subcats);
-      setSuppliers(sups);
-    } catch (e) {
-      console.error('Error loading catalogue:', e);
-    } finally {
-      setLoading(false);
+    if (routerParams.action === 'add') {
+      openAddProductForm();
     }
-  }, [store]);
+  }, [routerParams.categoryId, routerParams.filter, routerParams.action]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // Category map for quick lookup
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, string>();
+    categories.forEach((c) => map.set(c.id, c.name));
+    return map;
+  }, [categories]);
 
-  const handleOpenAddProduct = useCallback(() => {
-    setEditingProductId(null);
-    setFormCategoryId(categories[0]?.id || '');
-    setFormSubcategoryId('');
-    setFormProdName('');
+  // Subcategory map for quick lookup
+  const subcategoryMap = useMemo(() => {
+    const map = new Map<string, string>();
+    subcategories.forEach((sc) => map.set(sc.id, sc.name));
+    return map;
+  }, [subcategories]);
+
+  // Active subcategories under currently filtered category
+  const activeSubcategories = useMemo(() => {
+    if (!selectedCategory) return [];
+    return subcategories.filter((s) => s.categoryId === selectedCategory && s.active);
+  }, [subcategories, selectedCategory]);
+
+  // Subcategories available for the current modal form category
+  const formAvailableSubcategories = useMemo(() => {
+    if (!formCategoryId) return [];
+    return subcategories.filter((s) => s.categoryId === formCategoryId && s.active);
+  }, [subcategories, formCategoryId]);
+
+  // Filtering products
+  const filteredProducts = useMemo(() => {
+    return products.filter((prod) => {
+      // 1. Search Query
+      if (searchQuery.trim()) {
+        const query = searchQuery.trim().toLowerCase();
+        const matchName = prod.name.toLowerCase().includes(query);
+        const matchBrand = (prod.brand || '').toLowerCase().includes(query);
+        const matchCategory = (categoryMap.get(prod.categoryId) || '').toLowerCase().includes(query);
+        const matchSubcategory = (subcategoryMap.get(prod.subcategoryId) || '').toLowerCase().includes(query);
+        const matchVariant = prod.variants.some(
+          (v) =>
+            v.name.toLowerCase().includes(query) ||
+            (v.size && v.size.toLowerCase().includes(query)) ||
+            (v.sku && v.sku.toLowerCase().includes(query))
+        );
+        if (!matchName && !matchBrand && !matchCategory && !matchSubcategory && !matchVariant) {
+          return false;
+        }
+      }
+
+      // 2. Category Filter
+      if (selectedCategory && prod.categoryId !== selectedCategory) {
+        return false;
+      }
+
+      // 2b. Subcategory Filter
+      if (selectedSubcategory && prod.subcategoryId !== selectedSubcategory) {
+        return false;
+      }
+
+      // 3. Stock Level Filter
+      if (stockFilter !== 'all') {
+        const totalStock = prod.variants.reduce((sum, v) => sum + (v.currentStock || 0), 0);
+        const hasLowVariant = prod.variants.some(
+          (v) => (v.currentStock || 0) <= (v.minStockLevel || 5) && (v.currentStock || 0) > 0
+        );
+        const hasOutVariant = prod.variants.some((v) => (v.currentStock || 0) <= 0);
+
+        if (stockFilter === 'out' && !hasOutVariant) return false;
+        if (stockFilter === 'low' && !hasLowVariant) return false;
+        if (stockFilter === 'in' && totalStock <= 0) return false;
+      }
+
+      return true;
+    });
+  }, [products, searchQuery, selectedCategory, selectedSubcategory, stockFilter, categoryMap, subcategoryMap]);
+
+  // Selected Category helpers for dynamic Units & Presets
+  const selectedCatObj = useMemo(
+    () => categories.find((c) => c.id === formCategoryId),
+    [categories, formCategoryId]
+  );
+  const catNameLower = (selectedCatObj?.name || '').toLowerCase();
+  const isPaintCategory = catNameLower.includes('paint');
+  const isPipeCategory = catNameLower.includes('pipe') || catNameLower.includes('plumb');
+
+  const availableUnits = useMemo(() => {
+    if (isPaintCategory) {
+      return [
+        { value: 'l' as StandardUnit, label: 'Liter (L)' },
+        { value: 'kg' as StandardUnit, label: 'Kg (Putty/Powder)' },
+        { value: 'box' as StandardUnit, label: 'Box / Carton' },
+        { value: 'piece' as StandardUnit, label: 'Piece' },
+      ];
+    }
+    if (isPipeCategory) {
+      return [
+        { value: 'piece' as StandardUnit, label: 'Piece (Pipe/Fitting)' },
+        { value: 'm' as StandardUnit, label: 'Meter (Length)' },
+        { value: 'box' as StandardUnit, label: 'Box / Bundle' },
+      ];
+    }
+    return UNIT_OPTIONS;
+  }, [isPaintCategory, isPipeCategory]);
+
+  const quickPresets = useMemo(() => {
+    if (isPaintCategory) {
+      if (formBaseUnit === 'kg') {
+        return ['1 kg', '5 kg', '10 kg', '20 kg', '40 kg (Bag)'];
+      }
+      return ['200 ml', '500 ml', '1 Liter', '4 Liter', '10 Liter', '20 Liter (Bucket)'];
+    }
+    if (isPipeCategory) {
+      return ['1/2" (15mm)', '3/4" (20mm)', '1" (25mm)', '1.25" (32mm)', '1.5" (40mm)', '2" (50mm)', '4" (110mm)'];
+    }
+    return [];
+  }, [isPaintCategory, isPipeCategory, formBaseUnit]);
+
+  // Open Form for Adding New Product
+  const openAddProductForm = () => {
+    setEditingProduct(null);
+    setFormName('');
     setFormBrand('');
-    setFormSellingPrice('');
-    setFormPurchasePrice('');
-    setFormOpeningStock('10');
-    setFormMinStockLevel('5');
-    setFormBaseUnit('piece');
-    setFormMeasurementType('count');
-    setFormSize('');
-    setFormRackLocation('');
+    const defaultCat = selectedCategory || categories[0]?.id || '';
+    setFormCategoryId(defaultCat);
+    const catSubcats = subcategories.filter((s) => s.categoryId === defaultCat && s.active);
+    setFormSubcategoryId(catSubcats[0]?.id || '');
+    setFormImageUrl('');
     setFormDescription('');
-    setVariantsDraft([
+
+    const cat = categories.find((c) => c.id === defaultCat);
+    const isPaint = cat?.name.toLowerCase().includes('paint');
+
+    setFormBaseUnit(isPaint ? 'l' : 'piece');
+    setFormVariants([
       {
-        name: 'Standard',
-        sku: '',
-        size: 'Standard',
-        purchasePriceRs: '0',
-        sellingPriceRs: '0',
-        taxRatePercent: '18',
+        name: isPaint ? '1 Liter' : 'Standard',
+        size: isPaint ? '1 Liter' : 'Standard',
         openingStock: '10',
         minStockLevel: '5',
         rackLocation: '',
       },
     ]);
     setFormVisible(true);
-  }, [categories]);
+  };
 
-  useEffect(() => {
-    if (routerParams.action === 'add' && categories.length > 0) {
-      handleOpenAddProduct();
-    }
-  }, [routerParams.action, categories.length, handleOpenAddProduct]);
-
-  const handleOpenEditProduct = (prod: Product & { variants: ProductVariant[] }) => {
-    setEditingProductId(prod.id);
-    setFormCategoryId(prod.categoryId);
-    setFormSubcategoryId(prod.subcategoryId);
-    setFormProdName(prod.name);
+  // Open Form for Editing Existing Product
+  const openEditProductForm = (prod: Product & { variants: ProductVariant[] }) => {
+    setEditingProduct(prod);
+    setFormName(prod.name);
     setFormBrand(prod.brand || '');
+    setFormCategoryId(prod.categoryId);
+    setFormSubcategoryId(prod.subcategoryId || '');
+    setFormImageUrl(prod.imageUrl || '');
     setFormDescription(prod.description || '');
-    setFormMeasurementType(prod.measurementType);
-    setFormBaseUnit(prod.baseUnit);
+    setFormBaseUnit((prod.baseUnit as StandardUnit) || 'piece');
 
-    const firstVar = prod.variants[0];
-    if (firstVar) {
-      setFormSellingPrice(paiseToRupee(firstVar.sellingPricePaise).toString());
-      setFormPurchasePrice(paiseToRupee(firstVar.purchasePricePaise).toString());
-      setFormOpeningStock(firstVar.currentStock.toString());
-      setFormMinStockLevel(firstVar.minStockLevel.toString());
-      setFormSize(firstVar.size || '');
-      setFormRackLocation(firstVar.rackLocation || '');
+    if (prod.variants && prod.variants.length > 0) {
+      setFormVariants(
+        prod.variants.map((v) => ({
+          id: v.id,
+          name: v.name || v.size || 'Standard',
+          size: v.size || v.name || 'Standard',
+          sellingPriceRs: v.sellingPricePaise ? (v.sellingPricePaise / 100).toString() : '',
+          costPriceRs: v.purchasePricePaise ? (v.purchasePricePaise / 100).toString() : '',
+          openingStock: (v.openingStock || 0).toString(),
+          currentStock: v.currentStock,
+          minStockLevel: (v.minStockLevel || 5).toString(),
+          rackLocation: v.rackLocation || '',
+        }))
+      );
+    } else {
+      setFormVariants([
+        {
+          name: 'Standard',
+          size: 'Standard',
+          openingStock: '10',
+          minStockLevel: '5',
+          rackLocation: '',
+        },
+      ]);
     }
 
-    setVariantsDraft(
-      prod.variants.map((v) => ({
-        id: v.id,
-        name: v.name,
-        sku: v.sku,
-        size: v.size || '',
-        color: v.color || '',
-        purchasePriceRs: paiseToRupee(v.purchasePricePaise).toString(),
-        sellingPriceRs: paiseToRupee(v.sellingPricePaise).toString(),
-        taxRatePercent: v.taxRatePercent.toString(),
-        openingStock: v.openingStock.toString(),
-        minStockLevel: v.minStockLevel.toString(),
-        rackLocation: v.rackLocation || '',
-        customValues: v.customValues,
-      }))
-    );
     setFormVisible(true);
   };
 
-  const handleOpenQuickStockForProduct = (prod: Product & { variants: ProductVariant[] }) => {
-    const v = prod.variants[0];
-    if (!v) {
-      Alert.alert('No Variant', 'This product has no active variant.');
-      return;
+  // Image Picking
+  const handlePickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets[0]?.uri) {
+        setFormImageUrl(result.assets[0].uri);
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Could not pick image from gallery');
     }
-    setQuickStockTarget({
-      variantId: v.id,
-      productName: prod.name + (v.size ? ` (${v.size})` : ''),
-      currentStock: v.currentStock ?? 0,
-      unit: prod.baseUnit || 'pcs',
-      brand: prod.brand,
-    });
-    setQuickStockQty('10');
   };
 
-  const handleConfirmQuickStock = async () => {
-    if (!quickStockTarget) return;
-    const qty = parseFloat(quickStockQty);
-    if (isNaN(qty) || qty <= 0) {
-      Alert.alert('Invalid Quantity', 'Please enter a valid stock quantity');
+  const handleTakePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Camera permission is required to capture photos.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets[0]?.uri) {
+        setFormImageUrl(result.assets[0].uri);
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Could not open camera');
+    }
+  };
+
+  // Variant Management inside Form
+  const addVariantRow = () => {
+    setFormVariants((prev) => [
+      ...prev,
+      {
+        name: isPaintCategory
+          ? `Pack ${prev.length + 1}`
+          : isPipeCategory
+          ? `Diameter ${prev.length + 1}`
+          : `Size ${prev.length + 1}`,
+        size: '',
+        openingStock: '10',
+        minStockLevel: '5',
+        rackLocation: '',
+      },
+    ]);
+  };
+
+  const removeVariantRow = (index: number) => {
+    if (formVariants.length <= 1) {
+      Alert.alert('Cannot Remove', 'Each product must have at least one size/variant.');
+      return;
+    }
+    setFormVariants((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const updateVariantRow = (index: number, field: keyof VariantFormItem, value: string) => {
+    setFormVariants((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  const handleSelectCategory = (catId: string) => {
+    setFormCategoryId(catId);
+    const cat = categories.find((c) => c.id === catId);
+    if (!cat) return;
+    const n = cat.name.toLowerCase();
+    const isPaint = n.includes('paint');
+    const isPipe = n.includes('pipe') || n.includes('plumb');
+
+    if (isPaint) {
+      if (formBaseUnit !== 'l' && formBaseUnit !== 'kg' && formBaseUnit !== 'box') {
+        setFormBaseUnit('l');
+      }
+      if (formVariants.length === 1 && (formVariants[0].size === 'Standard' || !formVariants[0].size)) {
+        updateVariantRow(0, 'size', '1 Liter');
+        updateVariantRow(0, 'name', '1 Liter');
+      }
+    } else if (isPipe) {
+      if (formBaseUnit === 'l' || formBaseUnit === 'kg') {
+        setFormBaseUnit('piece');
+      }
+      if (formVariants.length === 1 && formVariants[0].size === '1 Liter') {
+        updateVariantRow(0, 'size', 'Standard');
+        updateVariantRow(0, 'name', 'Standard');
+      }
+    }
+  };
+
+  const handleApplyPresetSize = (presetLabel: string) => {
+    // If only 1 variant and it has default 'Standard' or empty, replace it
+    if (
+      formVariants.length === 1 &&
+      (!formVariants[0].size ||
+        formVariants[0].size === 'Standard' ||
+        formVariants[0].size === '1 Liter')
+    ) {
+      updateVariantRow(0, 'size', presetLabel);
+      updateVariantRow(0, 'name', presetLabel);
+      return;
+    }
+
+    // Check if this preset already exists
+    const exists = formVariants.some(
+      (v) => v.size.trim().toLowerCase() === presetLabel.trim().toLowerCase()
+    );
+    if (exists) {
+      Alert.alert('Already Added', `"${presetLabel}" is already in your size list.`);
+      return;
+    }
+
+    // Otherwise append a new variant
+    setFormVariants((prev) => [
+      ...prev,
+      {
+        name: presetLabel,
+        size: presetLabel,
+        openingStock: '10',
+        minStockLevel: '5',
+        rackLocation: '',
+      },
+    ]);
+  };
+
+  // Create Category Handler
+  const handleCreateCategory = async () => {
+    if (!newCatName.trim()) {
+      Alert.alert('Required', 'Please enter a category name');
       return;
     }
     try {
-      setStockUpdating(true);
-      const storeId = store?.id || 'default-store';
-      await InventoryRepository.adjustStock(
-        quickStockTarget.variantId,
-        qty,
-        (quickStockTarget.unit as any) || 'piece',
-        'increase',
-        'Direct Stock Add',
+      setCreatingCat(true);
+      const storeId = store?.id || 'store-1';
+      const created = await ProductRepository.createCategory(
+        { name: newCatName.trim(), displayOrder: categories.length },
         storeId,
-        deviceId,
-        user?.id
+        deviceId
       );
-      Alert.alert(
-        'Stock Added!',
-        `Successfully added +${qty} ${quickStockTarget.unit} to "${quickStockTarget.productName}".`
-      );
-      setQuickStockTarget(null);
-      setQuickStockQty('10');
-      await loadData();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Could not add stock';
-      Alert.alert('Stock Error', msg);
+      setCategories((prev) => [...prev, created]);
+      setFormCategoryId(created.id);
+      setNewCatName('');
+      setNewCatDialogVisible(false);
+      Alert.alert('Success', `Category "${created.name}" created!`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Could not create category';
+      Alert.alert('Error', msg);
     } finally {
-      setStockUpdating(false);
+      setCreatingCat(false);
     }
   };
 
-  useEffect(() => {
-    if (routerParams.action === 'addStock' && products.length > 0) {
-      const target =
-        products.find((p) => p.variants.some((v) => (v.currentStock ?? 0) <= (v.minStockLevel ?? 0))) ||
-        products[0];
-      if (target) {
-        handleOpenQuickStockForProduct(target);
-      }
-    }
-  }, [routerParams.action, products.length]);
-
+  // Save Product (Create or Update)
   const handleSaveProduct = async () => {
-    if (!formProdName.trim()) {
-      Alert.alert('Required', 'Product name is mandatory (सामान का नाम लिखें)');
-      return;
-    }
-    const sellPrice = parseFloat(formSellingPrice);
-    if (isNaN(sellPrice) || sellPrice < 0) {
-      Alert.alert('Required', 'Please enter a valid Selling Price (बिक्री मूल्य लिखें)');
+    if (!formName.trim()) {
+      Alert.alert('Required', 'Product Name is mandatory.');
       return;
     }
     if (!formCategoryId) {
-      Alert.alert('Required', 'Please select a Category (कैटेगरी चुनें)');
+      Alert.alert('Required', 'Please select a Category.');
       return;
     }
 
-    try {
-      const storeId = store?.id || 'default-store';
+    // Validate Variants
+    for (let i = 0; i < formVariants.length; i++) {
+      const v = formVariants[i];
+      if (!v.size.trim() && !v.name.trim()) {
+        Alert.alert('Required', `Please enter a Size/Name for variant #${i + 1}`);
+        return;
+      }
+    }
 
-      // Auto-resolve subcategory if missing
+    try {
+      setSavingProduct(true);
+      const storeId = store?.id || 'store-1';
+
+      // Ensure a valid subcategory exists for SQLite constraint
       let subcatId = formSubcategoryId;
       if (!subcatId) {
-        const existing = subcategories.find((s) => s.categoryId === formCategoryId);
-        if (existing) {
-          subcatId = existing.id;
-        } else {
-          const newSub = await CategoryRepository.createSubcategory(
+        const existingSubcats = await ProductRepository.getSubcategories(formCategoryId, storeId);
+        subcatId = existingSubcats[0]?.id;
+        if (!subcatId) {
+          const autoSubcat = await ProductRepository.createSubcategory(
             { categoryId: formCategoryId, name: 'General' },
             storeId,
             deviceId
           );
-          subcatId = newSub.id;
+          subcatId = autoSubcat.id;
         }
       }
 
-      const costPaise = rupeeToPaise(parseFloat(formPurchasePrice || '0'));
-      const sellPaise = rupeeToPaise(sellPrice);
-      const stockQty = parseFloat(formOpeningStock || '0');
-      const minStock = parseFloat(formMinStockLevel || '5');
+      const measurementType = mapUnitToMeasurementType(formBaseUnit);
 
-      const productPayload: Partial<Product> = {
-        name: formProdName.trim(),
-        categoryId: formCategoryId,
-        subcategoryId: subcatId,
-        brand: formBrand.trim() || undefined,
-        description: formDescription.trim() || undefined,
-        measurementType: formMeasurementType,
-        baseUnit: formBaseUnit,
-        allowedUnits: [formBaseUnit],
-      };
+      if (editingProduct) {
+        // UPDATE PRODUCT
+        const productUpdates: Partial<Product> = {
+          name: formName.trim(),
+          brand: formBrand.trim() || undefined,
+          categoryId: formCategoryId,
+          subcategoryId: subcatId,
+          imageUrl: formImageUrl.trim() || undefined,
+          description: formDescription.trim() || undefined,
+          baseUnit: formBaseUnit,
+          measurementType: measurementType,
+        };
 
-      const variantsPayload: Array<Partial<ProductVariant>> = [
-        {
-          id: editingProductId && variantsDraft[0]?.id ? variantsDraft[0].id : undefined,
-          name: formProdName.trim(),
-          sku:
-            editingProductId && variantsDraft[0]?.sku
-              ? variantsDraft[0].sku
-              : generateSku(formBrand || 'General', formProdName, formBaseUnit),
-          size: formSize.trim() || 'Standard',
-          purchasePricePaise: costPaise,
-          sellingPricePaise: sellPaise,
-          taxRatePercent: 18,
-          openingStock: stockQty,
-          minStockLevel: minStock,
-          rackLocation: formRackLocation.trim() || undefined,
-        },
-      ];
+        const variantsData: Array<Partial<ProductVariant>> = formVariants.map((v) => ({
+          id: v.id,
+          name: v.name.trim() || v.size.trim() || 'Standard',
+          size: v.size.trim() || v.name.trim() || 'Standard',
+          sku: generateSku(formName, formBrand, v.size || v.name),
+          sellingPricePaise: v.sellingPriceRs ? Math.round((parseFloat(v.sellingPriceRs) || 0) * 100) : 0,
+          purchasePricePaise: v.costPriceRs ? Math.round((parseFloat(v.costPriceRs) || 0) * 100) : 0,
+          minStockLevel: parseFloat(v.minStockLevel) || 5,
+          rackLocation: v.rackLocation.trim() || undefined,
+        }));
 
-      if (editingProductId) {
-        await ProductRepository.updateProduct(editingProductId, productPayload, variantsPayload, storeId, deviceId);
-        Alert.alert('Success', 'Product updated successfully.');
+        await ProductRepository.updateProduct(
+          editingProduct.id,
+          productUpdates,
+          variantsData,
+          storeId,
+          deviceId
+        );
+
+        Alert.alert('Product Updated', `"${formName}" has been successfully updated.`);
       } else {
-        await ProductRepository.createProduct(productPayload, variantsPayload, storeId, deviceId, user?.id);
-        Alert.alert('Success', 'New product created and added to stock!');
+        // CREATE NEW PRODUCT
+        const productData: Partial<Product> = {
+          name: formName.trim(),
+          brand: formBrand.trim() || undefined,
+          categoryId: formCategoryId,
+          subcategoryId: subcatId,
+          imageUrl: formImageUrl.trim() || undefined,
+          description: formDescription.trim() || undefined,
+          baseUnit: formBaseUnit,
+          measurementType: measurementType,
+          allowedUnits: [formBaseUnit],
+        };
+
+        const variantsData: Array<Partial<ProductVariant>> = formVariants.map((v) => {
+          const openingStock = parseFloat(v.openingStock) || 0;
+          return {
+            name: v.name.trim() || v.size.trim() || 'Standard',
+            size: v.size.trim() || v.name.trim() || 'Standard',
+            sku: generateSku(formName, formBrand, v.size || v.name),
+            sellingPricePaise: v.sellingPriceRs ? Math.round((parseFloat(v.sellingPriceRs) || 0) * 100) : 0,
+            purchasePricePaise: v.costPriceRs ? Math.round((parseFloat(v.costPriceRs) || 0) * 100) : 0,
+            openingStock: openingStock,
+            currentStock: openingStock,
+            minStockLevel: parseFloat(v.minStockLevel) || 5,
+            rackLocation: v.rackLocation.trim() || undefined,
+          };
+        });
+
+        await ProductRepository.createProduct(productData, variantsData, storeId, deviceId);
+
+        Alert.alert('Product Added', `"${formName}" added with ${variantsData.length} size variant(s).`);
       }
 
       setFormVisible(false);
-      loadData();
+      await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to save product';
-      Alert.alert('Save Error', msg);
+      Alert.alert('Error', msg);
+    } finally {
+      setSavingProduct(false);
     }
   };
 
+  // Delete / Archive Product
   const handleArchiveProduct = (prod: Product) => {
-    Alert.alert(
-      'Archive Product',
-      `Are you sure you want to archive "${prod.name}"? Historical bills and purchase records will remain intact.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Archive',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const storeId = store?.id || 'default-store';
-              await ProductRepository.archiveProduct(prod.id, storeId, deviceId);
-              Alert.alert('Archived', `"${prod.name}" archived safely.`);
-              loadData();
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : 'Could not archive';
-              Alert.alert('Archive Error', msg);
-            }
-          },
-        },
-      ]
-    );
+    setDeleteConfirmProd(prod);
   };
 
-  const handleSaveQuickCreate = async () => {
-    if (!quickCreateName.trim()) {
-      Alert.alert('Required', 'Please enter a name');
+  const handleConfirmDeleteProduct = async () => {
+    if (!deleteConfirmProd) return;
+    try {
+      setDeletingProduct(true);
+      const storeId = store?.id || deleteConfirmProd.storeId || 'store-1';
+      await ProductRepository.archiveProduct(deleteConfirmProd.id, storeId, deviceId);
+      setDeleteConfirmProd(null);
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not delete product';
+      if (Platform.OS === 'web') {
+        window.alert(`Error: ${msg}`);
+      } else {
+        Alert.alert('Error', msg);
+      }
+    } finally {
+      setDeletingProduct(false);
+    }
+  };
+
+  // Quick Stock Variant (Add or Sell)
+  const handleConfirmQuickStock = async () => {
+    if (!quickStockTarget) return;
+    const qty = parseFloat(quickStockQty);
+    if (isNaN(qty) || qty <= 0) {
+      Alert.alert('Invalid Quantity', 'Please enter a valid stock quantity (e.g. 10)');
       return;
     }
-    const storeId = store?.id || 'default-store';
+
+    const currentStock = quickStockTarget.variant.currentStock || 0;
+    if (quickStockMode === 'sell' && qty > currentStock) {
+      Alert.alert(
+        'Insufficient Stock',
+        `Cannot sell ${qty} ${quickStockTarget.unit}. Current available stock is ${currentStock} ${quickStockTarget.unit}.`
+      );
+      return;
+    }
 
     try {
-      if (quickCreateType === 'category') {
-        const cat = await CategoryRepository.createCategory(
-          { name: quickCreateName.trim(), description: quickCreateExtra },
-          storeId,
-          deviceId
-        );
-        await loadData();
-        setFormCategoryId(cat.id);
-        Alert.alert('Category Created', `Selected "${cat.name}" automatically.`);
-      } else if (quickCreateType === 'subcategory') {
-        const sub = await CategoryRepository.createSubcategory(
-          { categoryId: formCategoryId, name: quickCreateName.trim(), description: quickCreateExtra },
-          storeId,
-          deviceId
-        );
-        await loadData();
-        setFormSubcategoryId(sub.id);
-        Alert.alert('Subcategory Created', `Selected "${sub.name}" automatically.`);
-      } else if (quickCreateType === 'brand') {
-        setFormBrand(quickCreateName.trim());
-      } else if (quickCreateType === 'supplier') {
-        const sup = await PartiesRepository.createSupplier(
-          { name: quickCreateName.trim(), phone: quickCreateExtra || '9800000000' },
-          storeId,
-          deviceId
-        );
-        await loadData();
-        setFormPreferredSupplierId(sup.id);
-      }
-      setQuickCreateType(null);
-      setQuickCreateName('');
-      setQuickCreateExtra('');
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'Creation failed');
+      setUpdatingStock(true);
+      const storeId = store?.id || 'store-1';
+      await InventoryRepository.adjustStock(
+        quickStockTarget.variant.id,
+        qty,
+        (quickStockTarget.unit as any) || 'piece',
+        quickStockMode === 'sell' ? 'sale' : 'increase',
+        quickStockNote.trim() ||
+          (quickStockMode === 'sell'
+            ? `Sold ${qty} ${quickStockTarget.unit}`
+            : 'Restock from Catalogue'),
+        storeId,
+        deviceId
+      );
+
+      Alert.alert(
+        quickStockMode === 'sell' ? 'Sale Recorded' : 'Stock Updated',
+        quickStockMode === 'sell'
+          ? `Sold -${qty} ${quickStockTarget.unit} of "${quickStockTarget.productName} (${quickStockTarget.variant.name})"`
+          : `Added +${qty} ${quickStockTarget.unit} to "${quickStockTarget.productName} (${quickStockTarget.variant.name})"`,
+        [
+          { text: 'Done' },
+          {
+            text: 'View History',
+            onPress: () => router.push('/(tabs)/history'),
+          },
+        ]
+      );
+      setQuickStockTarget(null);
+      setQuickStockNote('');
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not update stock';
+      Alert.alert('Error', msg);
+    } finally {
+      setUpdatingStock(false);
     }
-  };
-
-  // Responsive, Instant Filtering: Category Chip + Search Query + Stock Status
-  const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
-      // 1. Category Filter
-      if (selectedCategory !== null && p.categoryId !== selectedCategory) {
-        return false;
-      }
-
-      // 2. Search Query Filter (name, brand, model, SKU, variant size/name)
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
-        const nameMatch = p.name.toLowerCase().includes(q);
-        const brandMatch = (p.brand || '').toLowerCase().includes(q);
-        const modelMatch = (p.modelNumber || '').toLowerCase().includes(q);
-        const skuMatch = p.variants.some(
-          (v) =>
-            v.sku.toLowerCase().includes(q) ||
-            v.name.toLowerCase().includes(q) ||
-            (v.size || '').toLowerCase().includes(q)
-        );
-        if (!nameMatch && !brandMatch && !modelMatch && !skuMatch) {
-          return false;
-        }
-      }
-
-      // 3. Stock Status Filter
-      if (stockFilter !== 'all') {
-        const totalStock = p.variants.reduce((sum, v) => sum + v.currentStock, 0);
-        const minStock = p.variants.reduce((sum, v) => sum + v.minStockLevel, 0);
-        if (stockFilter === 'out' && totalStock > 0) return false;
-        if (stockFilter === 'low' && (totalStock <= 0 || totalStock > minStock)) return false;
-        if (stockFilter === 'in' && totalStock <= minStock) return false;
-      }
-
-      return true;
-    });
-  }, [products, selectedCategory, searchQuery, stockFilter]);
-
-  // Category counts map for category chips
-  const categoryCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const p of products) {
-      counts.set(p.categoryId, (counts.get(p.categoryId) || 0) + 1);
-    }
-    return counts;
-  }, [products]);
-
-  // Overall Stock counts for filter tabs
-  const stockCounts = useMemo(() => {
-    let inStock = 0;
-    let lowStock = 0;
-    let outOfStock = 0;
-
-    for (const p of products) {
-      const totalStock = p.variants.reduce((sum, v) => sum + (v.currentStock || 0), 0);
-      const minStock = p.variants.reduce((sum, v) => sum + (v.minStockLevel || 0), 0);
-      if (totalStock <= 0) {
-        outOfStock++;
-      } else if (totalStock <= minStock) {
-        lowStock++;
-      } else {
-        inStock++;
-      }
-    }
-
-    return { total: products.length, inStock, lowStock, outOfStock };
-  }, [products]);
-
-  const getCategoryIcon = (categoryName: string, icon?: string) => {
-    const name = categoryName.toLowerCase();
-    if (icon === 'pipe' || name.includes('plumb') || name.includes('pipe')) return 'pipe';
-    if (icon === 'format-paint' || name.includes('paint')) return 'format-paint';
-    if (icon === 'wrench' || icon === 'tools' || name.includes('tool') || name.includes('fasten')) return 'wrench';
-    if (icon === 'shower' || name.includes('sanit') || name.includes('bath')) return 'shower';
-    if (icon === 'wall' || name.includes('build') || name.includes('adhes')) return 'wall';
-    return 'shape-outline';
   };
 
   return (
-    <View style={styles.container}>
-      {/* 1. Header Bar with Search & Quick Summary */}
-      <Surface style={styles.searchHeaderCard}>
-        <View style={styles.headerTitleRow}>
-          <View>
-            <Text style={styles.headerTitle}>Stock & Catalogue</Text>
-            <Text style={styles.headerSubtitle}>
-              {products.length} products • {filteredProducts.length} filtered
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.headerAddBtn}
-            onPress={handleOpenAddProduct}
-            activeOpacity={0.8}
-          >
-            <MaterialCommunityIcons name="plus-circle-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.headerAddBtnText}>Add Product</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Floating Custom Search Bar */}
-        <View style={styles.searchContainer}>
-          <MaterialCommunityIcons name="magnify" size={20} color={colors.textSecondary} style={{ marginRight: 6 }} />
-          <TextInput
-            placeholder="Search by product, brand, SKU or rack location..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            style={styles.searchInputCustom}
-            placeholderTextColor={colors.textMuted}
-            autoCapitalize="none"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <MaterialCommunityIcons name="close-circle" size={18} color={colors.textMuted} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </Surface>
-
-      {/* 2. Interactive Stock Status Filter Strip */}
-      <View style={styles.stockFilterStrip}>
-        <TouchableOpacity
+    <View style={[styles.container, { backgroundColor: activeColors.background }]}>
+      {/* 1. Top Search Bar */}
+      <View
+        style={[
+          styles.topBar,
+          {
+            backgroundColor: activeColors.surface,
+            borderBottomColor: activeColors.border,
+          },
+        ]}
+      >
+        <Searchbar
+          placeholder="Search by name, brand, or size..."
+          onChangeText={setSearchQuery}
+          value={searchQuery}
           style={[
-            styles.stockFilterTab,
-            stockFilter === 'all' && styles.stockFilterTabActive,
+            styles.searchbar,
+            {
+              backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9',
+            },
           ]}
-          onPress={() => setStockFilter('all')}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.stockFilterText, stockFilter === 'all' && styles.stockFilterTextActive]}>
-            All ({stockCounts.total})
-          </Text>
-        </TouchableOpacity>
+          inputStyle={[styles.searchbarInput, { color: activeColors.textPrimary }]}
+          placeholderTextColor={activeColors.textMuted}
+          iconColor={activeColors.textSecondary}
+        />
 
-        <TouchableOpacity
-          style={[
-            styles.stockFilterTab,
-            stockFilter === 'in' && styles.stockFilterTabActiveIn,
-          ]}
-          onPress={() => setStockFilter('in')}
-          activeOpacity={0.7}
+        {/* Stock Filter Chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScroll}
         >
-          <View style={[styles.tabDot, { backgroundColor: colors.success }]} />
-          <Text style={[styles.stockFilterText, stockFilter === 'in' && styles.stockFilterTextActiveIn]}>
-            In Stock ({stockCounts.inStock})
-          </Text>
-        </TouchableOpacity>
+          {[
+            { id: 'all', label: 'All Items' },
+            { id: 'in', label: 'In Stock' },
+            { id: 'low', label: 'Low Stock' },
+            { id: 'out', label: 'Out of Stock' },
+          ].map((item) => (
+            <Chip
+              key={item.id}
+              selected={stockFilter === item.id}
+              onPress={() => setStockFilter(item.id as any)}
+              style={[
+                styles.filterChip,
+                {
+                  backgroundColor: stockFilter === item.id ? (isDarkMode ? '#1E293B' : '#EFF6FF') : (isDarkMode ? '#111827' : '#F1F5F9'),
+                  borderColor: stockFilter === item.id ? activeColors.primary : activeColors.border,
+                  borderWidth: stockFilter === item.id ? 1 : 0,
+                },
+              ]}
+              textStyle={[
+                styles.filterChipText,
+                { color: stockFilter === item.id ? activeColors.primary : activeColors.textSecondary },
+                stockFilter === item.id && styles.filterChipTextActive,
+              ]}
+              showSelectedOverlay={false}
+            >
+              {item.label}
+            </Chip>
+          ))}
+        </ScrollView>
 
-        <TouchableOpacity
-          style={[
-            styles.stockFilterTab,
-            stockFilter === 'low' && styles.stockFilterTabActiveLow,
-          ]}
-          onPress={() => setStockFilter('low')}
-          activeOpacity={0.7}
+        {/* Category Filter Chips with + Category */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryScroll}
         >
-          <View style={[styles.tabDot, { backgroundColor: colors.warning }]} />
-          <Text style={[styles.stockFilterText, stockFilter === 'low' && styles.stockFilterTextActiveLow]}>
-            Low ({stockCounts.lowStock})
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.stockFilterTab,
-            stockFilter === 'out' && styles.stockFilterTabActiveOut,
-          ]}
-          onPress={() => setStockFilter('out')}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.tabDot, { backgroundColor: colors.danger }]} />
-          <Text style={[styles.stockFilterText, stockFilter === 'out' && styles.stockFilterTextActiveOut]}>
-            Out ({stockCounts.outOfStock})
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* 3. Horizontal Category Filter Carousel */}
-      <View style={styles.categoryChipsContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryChipsScroll}>
           <TouchableOpacity
             style={[
-              styles.categoryChipCustom,
-              selectedCategory === null && styles.categoryChipSelected,
+              styles.catTab,
+              {
+                backgroundColor: selectedCategory === null ? activeColors.primary : (isDarkMode ? '#1E293B' : '#F1F5F9'),
+              },
             ]}
-            onPress={() => setSelectedCategory(null)}
-            activeOpacity={0.7}
+            onPress={() => {
+              setSelectedCategory(null);
+              setSelectedSubcategory(null);
+            }}
           >
-            <MaterialCommunityIcons
-              name="layers-outline"
-              size={15}
-              color={selectedCategory === null ? '#FFFFFF' : colors.textSecondary}
-            />
             <Text
               style={[
-                styles.categoryChipTextCustom,
-                selectedCategory === null && styles.categoryChipTextSelected,
+                styles.catTabText,
+                {
+                  color: selectedCategory === null ? '#FFFFFF' : activeColors.textSecondary,
+                  fontWeight: selectedCategory === null ? '700' : '600',
+                },
               ]}
             >
-              All Categories ({products.length})
+              All Categories
             </Text>
           </TouchableOpacity>
 
-          {categories.map((c) => {
-            const count = categoryCounts.get(c.id) || 0;
-            const isSelected = selectedCategory === c.id;
-            return (
-              <TouchableOpacity
-                key={c.id}
+          {categories.map((c) => (
+            <TouchableOpacity
+              key={c.id}
+              style={[
+                styles.catTab,
+                {
+                  backgroundColor: selectedCategory === c.id ? activeColors.primary : (isDarkMode ? '#1E293B' : '#F1F5F9'),
+                },
+              ]}
+              onPress={() => {
+                setSelectedCategory(c.id);
+                setSelectedSubcategory(null);
+              }}
+            >
+              <Text
                 style={[
-                  styles.categoryChipCustom,
-                  isSelected && styles.categoryChipSelected,
+                  styles.catTabText,
+                  {
+                    color: selectedCategory === c.id ? '#FFFFFF' : activeColors.textSecondary,
+                    fontWeight: selectedCategory === c.id ? '700' : '600',
+                  },
                 ]}
-                onPress={() => setSelectedCategory(isSelected ? null : c.id)}
-                activeOpacity={0.7}
               >
-                <MaterialCommunityIcons
-                  name={getCategoryIcon(c.name, c.icon) as any}
-                  size={15}
-                  color={isSelected ? '#FFFFFF' : colors.primary}
-                />
+                {c.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+
+          {/* Quick Add Category Button */}
+          <TouchableOpacity
+            style={[
+              styles.addCatTab,
+              {
+                backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
+                borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
+              },
+            ]}
+            onPress={() => setNewCatDialogVisible(true)}
+          >
+            <MaterialCommunityIcons name="plus" size={14} color={activeColors.primary} />
+            <Text style={[styles.addCatTabText, { color: activeColors.primary }]}>New</Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        {/* Subcategories Filter Row */}
+        {selectedCategory && activeSubcategories.length > 0 && (
+          <View
+            style={[
+              styles.subcatBar,
+              {
+                backgroundColor: isDarkMode ? '#0F172A' : '#F8FAFC',
+                borderTopColor: isDarkMode ? '#1E293B' : '#E2E8F0',
+              },
+            ]}
+          >
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.subcatScroll}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.subcatTab,
+                  {
+                    backgroundColor:
+                      selectedSubcategory === null
+                        ? activeColors.primary
+                        : (isDarkMode ? '#1E293B' : '#FFFFFF'),
+                    borderColor:
+                      selectedSubcategory === null
+                        ? activeColors.primary
+                        : (isDarkMode ? '#334155' : '#CBD5E1'),
+                  },
+                ]}
+                onPress={() => setSelectedSubcategory(null)}
+              >
                 <Text
                   style={[
-                    styles.categoryChipTextCustom,
-                    isSelected && styles.categoryChipTextSelected,
+                    styles.subcatTabText,
+                    {
+                      color:
+                        selectedSubcategory === null
+                          ? '#FFFFFF'
+                          : activeColors.textSecondary,
+                      fontWeight: selectedSubcategory === null ? '700' : '600',
+                    },
                   ]}
                 >
-                  {c.name} ({count})
+                  All {categoryMap.get(selectedCategory) || 'Items'}
                 </Text>
               </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
 
-      {/* 4. Products List */}
-      <FlatList
-        data={filteredProducts}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        refreshing={loading}
-        onRefresh={loadData}
-        renderItem={({ item }) => {
-          const category = categories.find((c) => c.id === item.categoryId);
-          const categoryName = category?.name || 'General';
-          const subcategoryName = subcategories.find((s) => s.id === item.subcategoryId)?.name || '';
-
-          const totalStock = item.variants.reduce((sum, v) => sum + (v.currentStock || 0), 0);
-          const minStock = item.variants.reduce((sum, v) => sum + (v.minStockLevel || 0), 0);
-          const isOut = totalStock <= 0;
-          const isLow = !isOut && totalStock <= minStock;
-
-          return (
-            <Surface style={styles.productCard}>
-              {/* Card Header: Category & Brand + Stock Health Badge */}
-              <View style={styles.productCardHeader}>
-                <View style={{ flex: 1, paddingRight: spacing.xs }}>
-                  <View style={styles.tagsRow}>
-                    <View style={styles.categoryBadge}>
-                      <Text style={styles.categoryBadgeText}>{categoryName}</Text>
-                    </View>
-                    {item.brand ? (
-                      <View style={styles.brandBadge}>
-                        <Text style={styles.brandBadgeText}>{item.brand}</Text>
-                      </View>
-                    ) : null}
-                    <View style={styles.measurementBadge}>
-                      <Text style={styles.measurementBadgeText}>
-                        {item.measurementType.toUpperCase()} • {item.baseUnit}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.productName}>{item.name}</Text>
-
-                  {subcategoryName || item.material || item.modelNumber ? (
-                    <Text style={styles.productMeta}>
-                      {subcategoryName ? `${subcategoryName}` : ''}
-                      {item.material ? ` • ${item.material}` : ''}
-                      {item.modelNumber ? ` • ${item.modelNumber}` : ''}
-                    </Text>
-                  ) : null}
-                </View>
-
-                {/* Overall Stock Status Indicator */}
-                <View
+              {activeSubcategories.map((sc) => (
+                <TouchableOpacity
+                  key={sc.id}
                   style={[
-                    styles.productStockBadge,
-                    isOut ? styles.badgeOut : isLow ? styles.badgeLow : styles.badgeHealthy,
+                    styles.subcatTab,
+                    {
+                      backgroundColor:
+                        selectedSubcategory === sc.id
+                          ? activeColors.primary
+                          : (isDarkMode ? '#1E293B' : '#FFFFFF'),
+                      borderColor:
+                        selectedSubcategory === sc.id
+                          ? activeColors.primary
+                          : (isDarkMode ? '#334155' : '#CBD5E1'),
+                    },
                   ]}
+                  onPress={() => setSelectedSubcategory(sc.id)}
                 >
                   <Text
                     style={[
-                      styles.productStockBadgeText,
-                      isOut ? styles.textOut : isLow ? styles.textLow : styles.textHealthy,
+                      styles.subcatTabText,
+                      {
+                        color:
+                          selectedSubcategory === sc.id
+                            ? '#FFFFFF'
+                            : activeColors.textSecondary,
+                        fontWeight: selectedSubcategory === sc.id ? '700' : '600',
+                      },
                     ]}
                   >
-                    {isOut ? 'Out of Stock' : isLow ? 'Low Stock' : 'In Stock'}
+                    {sc.name}
                   </Text>
+                </TouchableOpacity>
+              ))}
+
+              {/* Quick Add Subcategory Button */}
+              <TouchableOpacity
+                style={[
+                  styles.addSubcatTab,
+                  {
+                    backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
+                    borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
+                  },
+                ]}
+                onPress={() => {
+                  setNewSubcatName('');
+                  setNewSubcatDialogVisible(true);
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="plus"
+                  size={14}
+                  color={activeColors.primary}
+                />
+                <Text style={[styles.addSubcatTabText, { color: activeColors.primary }]}>
+                  Subcategory
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        )}
+      </View>
+
+      {/* 2. Product Catalogue List */}
+      <FlatList
+        data={filteredProducts}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={[styles.listContent, { backgroundColor: activeColors.background }]}
+        refreshing={loading}
+        onRefresh={loadData}
+        ListEmptyComponent={
+          <Surface
+            style={[
+              styles.emptyContainer,
+              {
+                backgroundColor: activeColors.surface,
+                borderColor: activeColors.border,
+              },
+            ]}
+          >
+            <MaterialCommunityIcons name="package-variant" size={48} color={activeColors.textMuted} />
+            <Text style={[styles.emptyTitle, { color: activeColors.textPrimary }]}>No Products Found</Text>
+            <Text style={[styles.emptySubtitle, { color: activeColors.textSecondary }]}>
+              {searchQuery.trim()
+                ? 'Try a different search keyword or filter.'
+                : 'Tap the "+" button below to add your first product!'}
+            </Text>
+            <TouchableOpacity
+              style={[styles.emptyBtn, { backgroundColor: activeColors.primary }]}
+              onPress={openAddProductForm}
+            >
+              <MaterialCommunityIcons name="plus" size={16} color="#FFFFFF" />
+              <Text style={styles.emptyBtnText}>Add Product</Text>
+            </TouchableOpacity>
+          </Surface>
+        }
+        renderItem={({ item }) => {
+          const totalStock = item.variants.reduce((s, v) => s + (v.currentStock || 0), 0);
+          const categoryName = categoryMap.get(item.categoryId) || 'General';
+
+          return (
+            <Surface
+              style={[
+                styles.productCard,
+                {
+                  backgroundColor: activeColors.surface,
+                  borderColor: activeColors.border,
+                  ...themeShadows.card,
+                },
+              ]}
+            >
+              {/* Product Header */}
+              <View style={styles.cardHeader}>
+                {/* Product Image / Thumbnail */}
+                <View
+                  style={[
+                    styles.thumbWrapper,
+                    { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' },
+                  ]}
+                >
+                  {item.imageUrl ? (
+                    <Image source={{ uri: item.imageUrl }} style={styles.productImage} />
+                  ) : (
+                    <MaterialCommunityIcons
+                      name="cube-outline"
+                      size={28}
+                      color={activeColors.textSecondary}
+                    />
+                  )}
+                </View>
+
+                {/* Name & Brand */}
+                <View style={styles.cardHeaderInfo}>
+                  <Text style={[styles.productName, { color: activeColors.textPrimary }]} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <View style={styles.tagRow}>
+                    {item.brand ? (
+                      <View
+                        style={[
+                          styles.brandTag,
+                          { backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF' },
+                        ]}
+                      >
+                        <Text style={[styles.brandTagText, { color: activeColors.primary }]}>{item.brand}</Text>
+                      </View>
+                    ) : null}
+                    <View
+                      style={[
+                        styles.categoryTag,
+                        { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' },
+                      ]}
+                    >
+                      <Text style={[styles.categoryTagText, { color: activeColors.textSecondary }]}>{categoryName}</Text>
+                    </View>
+                    {subcategoryMap.get(item.subcategoryId) ? (
+                      <View
+                        style={[
+                          styles.subcatTag,
+                          {
+                            backgroundColor: isDarkMode ? '#1E3A8A' : '#EEF2FF',
+                            borderColor: isDarkMode ? '#2563EB' : '#C7D2FE',
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.subcatTagText,
+                            { color: isDarkMode ? '#93C5FD' : '#4338CA' },
+                          ]}
+                        >
+                          {subcategoryMap.get(item.subcategoryId)}
+                        </Text>
+                      </View>
+                    ) : null}
+                    <View
+                      style={[
+                        styles.unitTag,
+                        {
+                          backgroundColor: isDarkMode ? '#111827' : '#F8FAFC',
+                          borderColor: activeColors.border,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.unitTagText, { color: activeColors.textMuted }]}>{item.baseUnit || 'pcs'}</Text>
+                    </View>
+                  </View>
                 </View>
               </View>
 
-              {/* Variants Section with Individual SKU Cards */}
-              <View style={styles.variantsContainer}>
-                {item.variants.map((v, vIdx) => {
-                  const vOut = (v.currentStock ?? 0) <= 0;
-                  const vLow = !vOut && (v.currentStock ?? 0) <= (v.minStockLevel ?? 0);
+              {/* Description if present */}
+              {item.description ? (
+                <Text style={[styles.productDesc, { color: activeColors.textSecondary }]} numberOfLines={2}>
+                  {item.description}
+                </Text>
+              ) : null}
+
+              {/* Variants / Sizes Section */}
+              <View
+                style={[
+                  styles.variantsBox,
+                  {
+                    backgroundColor: isDarkMode ? '#0F172A' : '#F8FAFC',
+                    borderColor: isDarkMode ? '#1F2937' : '#F1F5F9',
+                  },
+                ]}
+              >
+                <View style={styles.variantSectionHeader}>
+                  <Text style={[styles.variantHeaderTitle, { color: activeColors.textPrimary }]}>
+                    Sizes & Inventory:
+                  </Text>
+                  <Text style={[styles.totalStockLabel, { color: activeColors.textSecondary }]}>
+                    Total: <Text style={{ fontWeight: '700', color: activeColors.textPrimary }}>{totalStock} {item.baseUnit}</Text>
+                  </Text>
+                </View>
+
+                {item.variants.map((v) => {
+                  const stock = v.currentStock || 0;
+                  const min = v.minStockLevel || 5;
+                  const isOut = stock <= 0;
+                  const isLow = stock <= min;
 
                   return (
                     <View
                       key={v.id}
                       style={[
-                        styles.variantCard,
-                        vIdx !== item.variants.length - 1 && styles.variantBorderBottom,
+                        styles.variantRow,
+                        {
+                          backgroundColor: activeColors.surface,
+                          borderColor: activeColors.border,
+                        },
                       ]}
                     >
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.variantTitle}>
-                          {v.name} {v.size ? `(${v.size})` : ''}
-                        </Text>
-
-                        <View style={styles.variantDetailsRow}>
-                          <Text style={styles.variantSku}>SKU: {v.sku}</Text>
+                      <View style={styles.variantLeft}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={[styles.variantSizeName, { color: activeColors.textPrimary }]}>
+                            {v.name || v.size || 'Standard'}
+                          </Text>
                           {v.rackLocation ? (
-                            <View style={styles.rackLocationBadge}>
-                              <MaterialCommunityIcons name="map-marker-outline" size={11} color={colors.textSecondary} />
-                              <Text style={styles.rackLocationText}>{v.rackLocation}</Text>
-                            </View>
+                            <Text style={[styles.variantRack, { color: activeColors.textMuted }]}>
+                              📍 {v.rackLocation}
+                            </Text>
                           ) : null}
                         </View>
-
-                        {v.purchasePricePaise ? (
-                          <Text style={styles.costPriceText}>
-                            Cost: {formatPaiseToINR(v.purchasePricePaise)}
-                          </Text>
+                        {(v.sellingPricePaise || 0) > 0 ? (
+                          <View style={styles.variantPriceRow}>
+                            <Text style={styles.sellingPriceText}>
+                              ₹{(v.sellingPricePaise || 0) / 100}
+                            </Text>
+                            {v.purchasePricePaise ? (
+                              <Text style={styles.costPriceText}>
+                                (Cost: ₹{v.purchasePricePaise / 100})
+                              </Text>
+                            ) : null}
+                          </View>
                         ) : null}
                       </View>
 
-                      <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+                      {/* Stock Pill & Action */}
+                      <View style={styles.variantRight}>
                         <View
                           style={[
-                            styles.stockLevelPill,
-                            vOut ? styles.pillOut : vLow ? styles.pillLow : styles.pillHealthy,
+                            styles.stockStatusBadge,
+                            isOut
+                              ? styles.badgeOut
+                              : isLow
+                              ? styles.badgeLow
+                              : styles.badgeIn,
                           ]}
                         >
                           <Text
                             style={[
-                              styles.stockLevelPillText,
-                              vOut ? styles.pillTextOut : vLow ? styles.pillTextLow : styles.pillTextHealthy,
+                              styles.stockStatusBadgeText,
+                              isOut
+                                ? styles.badgeTextOut
+                                : isLow
+                                ? styles.badgeTextLow
+                                : styles.badgeTextIn,
                             ]}
                           >
-                            {vOut
-                              ? `0 ${item.baseUnit}`
-                              : vLow
-                              ? `${v.currentStock} ${item.baseUnit} (Min: ${v.minStockLevel})`
-                              : `${v.currentStock} ${item.baseUnit}`}
+                            {stock} {item.baseUnit || 'pcs'}
                           </Text>
                         </View>
-                        <Text style={styles.sellingPriceText}>
-                          {formatPaiseToINR(v.sellingPricePaise)}
-                        </Text>
+
+                        {/* Quick Stock Action Buttons: +Stock and -Sell */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <TouchableOpacity
+                            style={styles.quickAddChip}
+                            onPress={() => {
+                              setQuickStockMode('add');
+                              setQuickStockTarget({
+                                productId: item.id,
+                                productName: item.name,
+                                variant: v,
+                                unit: item.baseUnit || 'pcs',
+                              });
+                              setQuickStockQty('10');
+                              setQuickStockNote('');
+                            }}
+                          >
+                            <MaterialCommunityIcons name="plus" size={14} color="#16A34A" />
+                            <Text style={styles.quickAddChipText}>Stock</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.quickSellChip}
+                            onPress={() => {
+                              setQuickStockMode('sell');
+                              setQuickStockTarget({
+                                productId: item.id,
+                                productName: item.name,
+                                variant: v,
+                                unit: item.baseUnit || 'pcs',
+                              });
+                              setQuickStockQty('10');
+                              setQuickStockNote('');
+                            }}
+                          >
+                            <MaterialCommunityIcons name="minus" size={14} color="#DC2626" />
+                            <Text style={styles.quickSellChipText}>Sell</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     </View>
                   );
                 })}
               </View>
 
-              {/* Action Buttons Footer */}
-              <View style={styles.productCardFooter}>
+              {/* Bottom Card Actions */}
+              <View style={styles.cardActionsRow}>
                 <TouchableOpacity
-                  style={styles.cardAddStockBtn}
-                  onPress={() => handleOpenQuickStockForProduct(item)}
-                  activeOpacity={0.7}
+                  style={styles.editBtn}
+                  onPress={() => openEditProductForm(item)}
                 >
-                  <MaterialCommunityIcons name="plus-circle" size={16} color="#16A34A" />
-                  <Text style={styles.cardAddStockBtnText}>+ Add Stock</Text>
+                  <MaterialCommunityIcons name="pencil-outline" size={16} color={activeColors.primary} />
+                  <Text style={[styles.editBtnText, { color: activeColors.primary }]}>Edit Details</Text>
                 </TouchableOpacity>
 
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <TouchableOpacity
-                    style={styles.cardFooterEditBtn}
-                    onPress={() => handleOpenEditProduct(item)}
-                    activeOpacity={0.7}
-                  >
-                    <MaterialCommunityIcons name="pencil-outline" size={16} color={colors.textPrimary} />
-                    <Text style={styles.cardFooterEditText}>Edit</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.cardFooterArchiveBtn}
-                    onPress={() => handleArchiveProduct(item)}
-                    activeOpacity={0.7}
-                  >
-                    <MaterialCommunityIcons name="archive-arrow-down-outline" size={16} color={colors.textMuted} />
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  style={styles.archiveBtn}
+                  onPress={() => handleArchiveProduct(item)}
+                >
+                  <MaterialCommunityIcons name="trash-can-outline" size={16} color="#DC2626" />
+                  <Text style={styles.archiveBtnText}>Delete</Text>
+                </TouchableOpacity>
               </View>
             </Surface>
           );
         }}
-        ListEmptyComponent={
-          !loading ? (
-            <Surface style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="package-variant-closed" size={48} color={colors.textMuted} />
-              <Text style={styles.emptyTitle}>No products matching criteria</Text>
-              <Text style={styles.emptySubtitle}>
-                Try changing category filter or search keywords.
-              </Text>
-              <Button
-                mode="contained"
-                onPress={handleOpenAddProduct}
-                style={{ marginTop: spacing.md, backgroundColor: colors.primary }}
-              >
-                + Add New Product
-              </Button>
-            </Surface>
-          ) : null
-        }
       />
 
-      {/* Floating Add Product Button */}
+      {/* Floating Action Button (FAB) */}
       <TouchableOpacity
-        style={styles.fabBtn}
-        onPress={handleOpenAddProduct}
-        activeOpacity={0.8}
+        style={[
+          styles.fab,
+          {
+            backgroundColor: activeColors.primary,
+            ...themeShadows.floating,
+          },
+        ]}
+        onPress={openAddProductForm}
+        activeOpacity={0.85}
       >
-        <MaterialCommunityIcons name="plus" size={26} color="#FFFFFF" />
+        <MaterialCommunityIcons name="plus" size={28} color="#FFFFFF" />
       </TouchableOpacity>
 
-      {/* 5. ADD / EDIT PRODUCT MODAL (Clean, Non-Cluttered, User-Friendly) */}
-      <Portal>
-        <Dialog
-          visible={formVisible}
-          onDismiss={() => setFormVisible(false)}
-          style={styles.modalDialog}
-        >
-          <View style={styles.dialogHeaderRow}>
-            <View style={{ flex: 1 }}>
-              <Dialog.Title style={styles.dialogTitle}>
-                {editingProductId ? 'Edit Product' : 'Add New Product'}
-              </Dialog.Title>
-              <Text style={styles.dialogSubtitle}>
-                {editingProductId ? 'Update product details & pricing' : 'नया सामान और उसका रेट/स्टॉक जोड़ें'}
-              </Text>
-            </View>
+      {/* 3. Add / Edit Product Modal */}
+      <Modal
+        visible={formVisible}
+        animationType="slide"
+        onRequestClose={() => setFormVisible(false)}
+      >
+        <View style={[styles.modalContainer, { backgroundColor: activeColors.background }]}>
+          {/* Modal Header */}
+          <View
+            style={[
+              styles.modalHeader,
+              {
+                backgroundColor: activeColors.surface,
+                borderBottomColor: activeColors.border,
+              },
+            ]}
+          >
+            <Text style={[styles.modalTitle, { color: activeColors.textPrimary }]}>
+              {editingProduct ? 'Edit Product' : 'Add New Product'}
+            </Text>
             <TouchableOpacity
               onPress={() => setFormVisible(false)}
-              style={styles.dialogCloseBtn}
+              style={styles.modalCloseBtn}
             >
-              <MaterialCommunityIcons name="close" size={22} color={colors.textMuted} />
+              <MaterialCommunityIcons name="close" size={24} color={activeColors.textPrimary} />
             </TouchableOpacity>
           </View>
 
-          <Dialog.ScrollArea style={styles.dialogScrollArea}>
-            <ScrollView contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
-              {/* Product Name */}
-              <View style={styles.formGroup}>
-                <Text style={styles.formFieldLabel}>Product Name (सामान का नाम) *</Text>
-                <TextInput
-                  value={formProdName}
-                  onChangeText={setFormProdName}
-                  mode="outlined"
-                  style={styles.cleanInput}
-                  placeholder="e.g. Astral 1 inch CPVC Pipe, Asian Paints 1L"
-                />
-              </View>
+          <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 60 }}>
+            {/* Product Name */}
+            <TextInput
+              label="Product Name *"
+              value={formName}
+              onChangeText={setFormName}
+              mode="outlined"
+              style={[styles.input, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+              textColor={activeColors.textPrimary}
+              placeholderTextColor={activeColors.textMuted}
+              outlineColor={activeColors.border}
+              activeOutlineColor={activeColors.primary}
+              placeholder="e.g. Astral CPVC Pipe, Asian Paint Royale"
+            />
 
-              {/* Brand (Optional) */}
-              <View style={styles.formGroup}>
-                <Text style={styles.formFieldLabel}>Brand / Company (ब्रैंड)</Text>
-                <TextInput
-                  value={formBrand}
-                  onChangeText={setFormBrand}
-                  mode="outlined"
-                  style={styles.cleanInput}
-                  placeholder="e.g. Astral, Finolex, Asian Paints, Supreme"
-                />
-              </View>
+            {/* Brand Name */}
+            <TextInput
+              label="Brand Name (Optional)"
+              value={formBrand}
+              onChangeText={setFormBrand}
+              mode="outlined"
+              style={[styles.input, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+              textColor={activeColors.textPrimary}
+              placeholderTextColor={activeColors.textMuted}
+              outlineColor={activeColors.border}
+              activeOutlineColor={activeColors.primary}
+              placeholder="e.g. Astral, Berger, Havells, Godrej"
+            />
 
-              {/* Category Selection */}
-              <View style={styles.formGroup}>
-                <View style={styles.pickerHeaderRow}>
-                  <Text style={styles.formFieldLabel}>Category (कैटेगरी) *</Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setQuickCreateType('category');
-                      setQuickCreateName('');
-                    }}
+            {/* Category Selector */}
+            <Text style={[styles.fieldLabel, { color: activeColors.textSecondary, marginTop: spacing.xs }]}>
+              Category *
+            </Text>
+            <View style={styles.catChipsWrapper}>
+              {categories.map((c) => {
+                const isCatSelected = formCategoryId === c.id;
+                return (
+                  <Chip
+                    key={c.id}
+                    selected={isCatSelected}
+                    onPress={() => handleSelectCategory(c.id)}
+                    style={[
+                      styles.formCatChip,
+                      {
+                        backgroundColor: isCatSelected
+                          ? (isDarkMode ? '#1E293B' : '#EFF6FF')
+                          : (isDarkMode ? '#111827' : '#F1F5F9'),
+                        borderColor: isCatSelected ? activeColors.primary : activeColors.border,
+                        borderWidth: 1,
+                      },
+                    ]}
+                    textStyle={[
+                      styles.formCatChipText,
+                      {
+                        color: isCatSelected ? activeColors.primary : activeColors.textSecondary,
+                        fontWeight: isCatSelected ? '700' : '600',
+                      },
+                    ]}
+                    showSelectedOverlay={false}
                   >
-                    <Text style={styles.inlineActionText}>+ New Category</Text>
+                    {c.name}
+                  </Chip>
+                );
+              })}
+              <TouchableOpacity
+                style={[
+                  styles.formNewCatBtn,
+                  {
+                    backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
+                    borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
+                  },
+                ]}
+                onPress={() => setNewCatDialogVisible(true)}
+              >
+                <MaterialCommunityIcons name="plus" size={14} color={activeColors.primary} />
+                <Text style={[styles.formNewCatText, { color: activeColors.primary }]}>
+                  + New Category
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Sub-category Selector */}
+            <View style={styles.fieldHeaderRow}>
+              <Text style={[styles.fieldLabel, { color: activeColors.textSecondary }]}>
+                Sub-category *
+              </Text>
+              <Text style={styles.unitHintText}>
+                💡 E.g. CPVC Pipes, PVC Pipes, Angles & Elbows
+              </Text>
+            </View>
+            <View style={styles.catChipsWrapper}>
+              {formAvailableSubcategories.map((sc) => {
+                const isSubSelected = formSubcategoryId === sc.id;
+                return (
+                  <Chip
+                    key={sc.id}
+                    selected={isSubSelected}
+                    onPress={() => setFormSubcategoryId(sc.id)}
+                    style={[
+                      styles.formCatChip,
+                      {
+                        backgroundColor: isSubSelected
+                          ? (isDarkMode ? '#1E3A8A' : '#DBEAFE')
+                          : (isDarkMode ? '#1E293B' : '#F1F5F9'),
+                        borderColor: isSubSelected
+                          ? activeColors.primary
+                          : (isDarkMode ? '#334155' : '#E2E8F0'),
+                        borderWidth: 1,
+                      },
+                    ]}
+                    textStyle={[
+                      styles.formCatChipText,
+                      {
+                        color: isSubSelected ? activeColors.primary : activeColors.textSecondary,
+                        fontWeight: isSubSelected ? '700' : '600',
+                      },
+                    ]}
+                    showSelectedOverlay={false}
+                  >
+                    {sc.name}
+                  </Chip>
+                );
+              })}
+              <TouchableOpacity
+                style={[
+                  styles.formNewCatBtn,
+                  {
+                    backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
+                    borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
+                  },
+                ]}
+                onPress={() => {
+                  setNewSubcatName('');
+                  setNewSubcatDialogVisible(true);
+                }}
+              >
+                <MaterialCommunityIcons name="plus" size={14} color={activeColors.primary} />
+                <Text style={[styles.formNewCatText, { color: activeColors.primary }]}>
+                  + Subcategory
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Measurement Unit */}
+            <View style={styles.fieldHeaderRow}>
+              <Text style={[styles.fieldLabel, { color: activeColors.textSecondary }]}>
+                Measurement Unit *
+              </Text>
+              {isPaintCategory && (
+                <Text style={styles.unitHintText}>💡 Liquid paints in Liters, Putty in Kg</Text>
+              )}
+              {isPipeCategory && (
+                <Text style={styles.unitHintText}>💡 Pipes sold in Pieces or Meters</Text>
+              )}
+            </View>
+            <View style={styles.unitChipsRow}>
+              {availableUnits.map((u) => {
+                const isUnitSelected = formBaseUnit === u.value;
+                return (
+                  <Chip
+                    key={u.value}
+                    selected={isUnitSelected}
+                    onPress={() => setFormBaseUnit(u.value)}
+                    style={[
+                      styles.unitChip,
+                      {
+                        backgroundColor: isUnitSelected
+                          ? activeColors.primary
+                          : (isDarkMode ? '#111827' : '#F1F5F9'),
+                        borderColor: isUnitSelected ? activeColors.primary : activeColors.border,
+                        borderWidth: 1,
+                      },
+                    ]}
+                    textStyle={[
+                      styles.unitChipText,
+                      {
+                        color: isUnitSelected ? '#FFFFFF' : activeColors.textSecondary,
+                        fontWeight: isUnitSelected ? '700' : '600',
+                      },
+                    ]}
+                    showSelectedOverlay={false}
+                  >
+                    {u.label}
+                  </Chip>
+                );
+              })}
+            </View>
+
+            {/* Product Photo */}
+            <Text style={[styles.fieldLabel, { color: activeColors.textSecondary, marginTop: spacing.md }]}>
+              Photo (Optional)
+            </Text>
+            <View style={styles.photoPickerRow}>
+              <View
+                style={[
+                  styles.photoPreviewBox,
+                  {
+                    backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9',
+                    borderColor: activeColors.border,
+                  },
+                ]}
+              >
+                {formImageUrl ? (
+                  <Image source={{ uri: formImageUrl }} style={styles.photoPreviewImage} />
+                ) : (
+                  <MaterialCommunityIcons name="camera-plus" size={28} color={activeColors.textMuted} />
+                )}
+              </View>
+              <View style={styles.photoButtonsCol}>
+                <TouchableOpacity
+                  style={[
+                    styles.photoBtn,
+                    {
+                      backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
+                      borderColor: isDarkMode ? '#374151' : '#BFDBFE',
+                      borderWidth: 1,
+                    },
+                  ]}
+                  onPress={handlePickImage}
+                >
+                  <MaterialCommunityIcons name="image" size={16} color={activeColors.primary} />
+                  <Text style={[styles.photoBtnText, { color: activeColors.primary }]}>
+                    Choose from Gallery
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.photoBtn,
+                    {
+                      backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
+                      borderColor: isDarkMode ? '#374151' : '#BFDBFE',
+                      borderWidth: 1,
+                    },
+                  ]}
+                  onPress={handleTakePhoto}
+                >
+                  <MaterialCommunityIcons name="camera" size={16} color={activeColors.primary} />
+                  <Text style={[styles.photoBtnText, { color: activeColors.primary }]}>
+                    Take Photo
+                  </Text>
+                </TouchableOpacity>
+                {formImageUrl ? (
+                  <TouchableOpacity
+                    style={styles.removePhotoBtn}
+                    onPress={() => setFormImageUrl('')}
+                  >
+                    <Text style={styles.removePhotoText}>Remove Photo</Text>
                   </TouchableOpacity>
-                </View>
+                ) : null}
+              </View>
+            </View>
 
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorScroll}>
-                  {categories.map((c) => (
-                    <Chip
-                      key={c.id}
-                      selected={formCategoryId === c.id}
-                      onPress={() => setFormCategoryId(c.id)}
-                      style={[styles.selectorChip, formCategoryId === c.id && styles.selectorChipSelected]}
-                      textStyle={[styles.selectorChipText, formCategoryId === c.id && styles.selectorChipTextSelected]}
-                      showSelectedOverlay={false}
+            {/* Sizes & Stock Section */}
+            <View style={styles.variantsHeaderRow}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={[styles.formSectionTitle, { color: activeColors.textPrimary }]}>
+                  {isPaintCategory
+                    ? 'Pack Sizes & Cans in Stock'
+                    : isPipeCategory
+                    ? 'Pipe Diameters & Stock'
+                    : 'Sizes & Stock'}
+                </Text>
+                <Text style={[styles.formSectionSub, { color: activeColors.textSecondary }]}>
+                  {isPaintCategory
+                    ? 'Choose can/bucket sizes below or enter custom size.'
+                    : isPipeCategory
+                    ? 'Choose pipe diameter below or enter custom size.'
+                    : 'Add sizes or keep Standard.'}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.addSizeBtn} onPress={addVariantRow}>
+                <MaterialCommunityIcons name="plus" size={16} color="#FFFFFF" />
+                <Text style={styles.addSizeBtnText}>
+                  {isPaintCategory
+                    ? '+ Add Pack Size'
+                    : isPipeCategory
+                    ? '+ Add Diameter'
+                    : '+ Add Size'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick 1-Tap Presets Bar */}
+            {quickPresets.length > 0 && (
+              <View
+                style={[
+                  styles.presetsContainer,
+                  {
+                    backgroundColor: isDarkMode ? '#111827' : '#F8FAFC',
+                    borderColor: activeColors.border,
+                  },
+                ]}
+              >
+                <View style={styles.presetsTitleRow}>
+                  <MaterialCommunityIcons name="lightning-bolt" size={14} color="#D97706" />
+                  <Text style={[styles.presetsTitleText, { color: activeColors.textPrimary }]}>
+                    {isPaintCategory ? 'Quick 1-Tap Pack Sizes:' : 'Quick 1-Tap Pipe Diameters:'}
+                  </Text>
+                </View>
+                <View style={styles.presetChipsRow}>
+                  {quickPresets.map((preset) => {
+                    const isAlreadySelected = formVariants.some(
+                      (v) => v.size.trim().toLowerCase() === preset.trim().toLowerCase()
+                    );
+                    return (
+                      <TouchableOpacity
+                        key={preset}
+                        style={[
+                          styles.presetChip,
+                          {
+                            backgroundColor: isAlreadySelected
+                              ? (isDarkMode ? '#064E3B' : '#DCFCE7')
+                              : (isDarkMode ? '#1E293B' : '#FFFFFF'),
+                            borderColor: isAlreadySelected
+                              ? (isDarkMode ? '#059669' : '#86EFAC')
+                              : (isDarkMode ? '#374151' : '#CBD5E1'),
+                          },
+                        ]}
+                        onPress={() => handleApplyPresetSize(preset)}
+                        activeOpacity={0.7}
+                      >
+                        <MaterialCommunityIcons
+                          name={isAlreadySelected ? 'check' : 'plus'}
+                          size={12}
+                          color={isAlreadySelected ? (isDarkMode ? '#34D399' : '#16A34A') : activeColors.primary}
+                        />
+                        <Text
+                          style={[
+                            styles.presetChipText,
+                            {
+                              color: isAlreadySelected
+                                ? (isDarkMode ? '#34D399' : '#16A34A')
+                                : activeColors.textPrimary,
+                              fontWeight: isAlreadySelected ? '700' : '600',
+                            },
+                          ]}
+                        >
+                          {preset}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {formVariants.map((v, idx) => (
+              <Surface
+                key={idx}
+                style={[
+                  styles.variantFormCard,
+                  {
+                    backgroundColor: isDarkMode ? '#111827' : '#F8FAFC',
+                    borderColor: activeColors.border,
+                  },
+                ]}
+              >
+                <View style={styles.variantCardHeader}>
+                  <Text style={[styles.variantCardIndex, { color: activeColors.textPrimary }]}>
+                    {isPaintCategory
+                      ? `Pack Size #${idx + 1}`
+                      : isPipeCategory
+                      ? `Pipe Size #${idx + 1}`
+                      : `Size / Variant #${idx + 1}`}
+                  </Text>
+                  {formVariants.length > 1 && (
+                    <TouchableOpacity
+                      onPress={() => removeVariantRow(idx)}
+                      style={styles.deleteVariantBtn}
                     >
-                      {c.name}
-                    </Chip>
-                  ))}
-                </ScrollView>
-              </View>
-
-              {/* Pricing Row: Selling Price & Purchase Cost */}
-              <View style={styles.formRowTwoCol}>
-                <View style={{ flex: 1, marginRight: spacing.xs }}>
-                  <Text style={styles.formFieldLabel}>Selling Price (₹) *</Text>
-                  <TextInput
-                    value={formSellingPrice}
-                    onChangeText={setFormSellingPrice}
-                    keyboardType="numeric"
-                    mode="outlined"
-                    style={styles.cleanInput}
-                    placeholder="e.g. 150"
-                  />
+                      <MaterialCommunityIcons name="trash-can-outline" size={18} color="#DC2626" />
+                    </TouchableOpacity>
+                  )}
                 </View>
 
-                <View style={{ flex: 1, marginLeft: spacing.xs }}>
-                  <Text style={styles.formFieldLabel}>Cost Price (₹)</Text>
-                  <TextInput
-                    value={formPurchasePrice}
-                    onChangeText={setFormPurchasePrice}
-                    keyboardType="numeric"
-                    mode="outlined"
-                    style={styles.cleanInput}
-                    placeholder="e.g. 110"
-                  />
-                </View>
-              </View>
-
-              {/* Stock & Min Alert Row */}
-              <View style={styles.formRowTwoCol}>
-                <View style={{ flex: 1, marginRight: spacing.xs }}>
-                  <Text style={styles.formFieldLabel}>Current Stock (स्टॉक)</Text>
-                  <TextInput
-                    value={formOpeningStock}
-                    onChangeText={setFormOpeningStock}
-                    keyboardType="numeric"
-                    mode="outlined"
-                    style={styles.cleanInput}
-                    placeholder="e.g. 20"
-                  />
-                </View>
-
-                <View style={{ flex: 1, marginLeft: spacing.xs }}>
-                  <Text style={styles.formFieldLabel}>Min Stock Alert</Text>
-                  <TextInput
-                    value={formMinStockLevel}
-                    onChangeText={setFormMinStockLevel}
-                    keyboardType="numeric"
-                    mode="outlined"
-                    style={styles.cleanInput}
-                    placeholder="e.g. 5"
-                  />
-                </View>
-              </View>
-
-              {/* Unit Selector */}
-              <View style={styles.formGroup}>
-                <Text style={styles.formFieldLabel}>Unit (इकाई)</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorScroll}>
-                  {[
-                    { unit: 'piece', label: 'Piece (पीस)', type: 'count' },
-                    { unit: 'm', label: 'Meter (मीटर)', type: 'length' },
-                    { unit: 'box', label: 'Box (बॉक्स)', type: 'pack' },
-                    { unit: 'kg', label: 'Kg (किलो)', type: 'weight' },
-                    { unit: 'l', label: 'Liter (लीटर)', type: 'volume' },
-                  ].map((u) => (
-                    <Chip
-                      key={u.unit}
-                      selected={formBaseUnit === u.unit}
-                      onPress={() => {
-                        setFormBaseUnit(u.unit as any);
-                        setFormMeasurementType(u.type as any);
-                      }}
-                      style={[styles.selectorChip, formBaseUnit === u.unit && styles.selectorChipSelected]}
-                      textStyle={[styles.selectorChipText, formBaseUnit === u.unit && styles.selectorChipTextSelected]}
-                      showSelectedOverlay={false}
-                    >
-                      {u.label}
-                    </Chip>
-                  ))}
-                </ScrollView>
-              </View>
-
-              {/* Shelf / Rack Location */}
-              <View style={styles.formGroup}>
-                <Text style={styles.formFieldLabel}>Shelf / Rack Location (रैक नंबर)</Text>
+                {/* Size / Name input */}
                 <TextInput
-                  value={formRackLocation}
-                  onChangeText={setFormRackLocation}
+                  label={
+                    isPaintCategory
+                      ? 'Pack / Can Size *'
+                      : isPipeCategory
+                      ? 'Pipe Diameter / Size *'
+                      : 'Size / Name *'
+                  }
+                  value={v.size}
+                  onChangeText={(val) => {
+                    updateVariantRow(idx, 'size', val);
+                    updateVariantRow(idx, 'name', val);
+                  }}
                   mode="outlined"
-                  style={styles.cleanInput}
-                  placeholder="e.g. Rack A-1, Shelf 3, Floor"
+                  style={[styles.smallInput, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+                  textColor={activeColors.textPrimary}
+                  placeholderTextColor={activeColors.textMuted}
+                  outlineColor={activeColors.border}
+                  activeOutlineColor={activeColors.primary}
+                  placeholder={
+                    isPaintCategory
+                      ? 'e.g. 1 Liter, 4 Liter, 20L Bucket, 500ml'
+                      : isPipeCategory
+                      ? 'e.g. 1/2 inch, 20mm, 25mm, 110mm'
+                      : 'e.g. 20mm, 1 Litre, Standard'
+                  }
                 />
-              </View>
 
-              {/* Product Description */}
-              <View style={styles.formGroup}>
-                <Text style={styles.formFieldLabel}>Description / Notes (विवरण)</Text>
+                {/* Stock & Min Level */}
+                <View style={styles.rowInputs}>
+                  <TextInput
+                    label={
+                      isPaintCategory
+                        ? formBaseUnit === 'kg'
+                          ? 'Bags / Tins in Stock *'
+                          : 'Cans / Buckets in Stock *'
+                        : isPipeCategory
+                        ? 'Pipes / Pcs in Stock *'
+                        : `Stock Units (${formBaseUnit}) *`
+                    }
+                    value={v.openingStock}
+                    onChangeText={(val) => updateVariantRow(idx, 'openingStock', val)}
+                    keyboardType="numeric"
+                    mode="outlined"
+                    style={[styles.smallInput, { flex: 1, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+                    textColor={activeColors.textPrimary}
+                    placeholderTextColor={activeColors.textMuted}
+                    outlineColor={activeColors.border}
+                    activeOutlineColor={activeColors.primary}
+                    placeholder={
+                      isPaintCategory
+                        ? 'e.g. 10 cans'
+                        : isPipeCategory
+                        ? 'e.g. 20 pipes'
+                        : '10'
+                    }
+                  />
+                  <TextInput
+                    label="Min Alert Level"
+                    value={v.minStockLevel}
+                    onChangeText={(val) => updateVariantRow(idx, 'minStockLevel', val)}
+                    keyboardType="numeric"
+                    mode="outlined"
+                    style={[styles.smallInput, { flex: 1, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+                    textColor={activeColors.textPrimary}
+                    placeholderTextColor={activeColors.textMuted}
+                    outlineColor={activeColors.border}
+                    activeOutlineColor={activeColors.primary}
+                    placeholder="5"
+                  />
+                </View>
+
+                {/* Shelf Location */}
                 <TextInput
-                  value={formDescription}
-                  onChangeText={setFormDescription}
+                  label="Rack / Shelf Location (Optional)"
+                  value={v.rackLocation}
+                  onChangeText={(val) => updateVariantRow(idx, 'rackLocation', val)}
                   mode="outlined"
-                  multiline
-                  numberOfLines={3}
-                  style={[styles.cleanInput, { minHeight: 70 }]}
-                  placeholder="Size, specifications, warranty, or item notes..."
+                  style={[styles.smallInput, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
+                  textColor={activeColors.textPrimary}
+                  placeholderTextColor={activeColors.textMuted}
+                  outlineColor={activeColors.border}
+                  activeOutlineColor={activeColors.primary}
+                  placeholder={
+                    isPaintCategory
+                      ? 'e.g. Paint Rack B-1, Shelf 2'
+                      : isPipeCategory
+                      ? 'e.g. Pipe Rack A-1'
+                      : 'e.g. Rack A-3, Shelf 2'
+                  }
                 />
-              </View>
-            </ScrollView>
-          </Dialog.ScrollArea>
+              </Surface>
+            ))}
 
-          <Dialog.Actions style={styles.dialogActions}>
-            <Button onPress={() => setFormVisible(false)} textColor={colors.textSecondary}>
-              Cancel
-            </Button>
-            <Button
-              mode="contained"
+            {/* Save Button */}
+            <TouchableOpacity
+              style={[
+                styles.saveProductBtn,
+                { backgroundColor: activeColors.primary },
+                savingProduct && { opacity: 0.7 },
+              ]}
               onPress={handleSaveProduct}
-              style={styles.primarySaveBtn}
+              disabled={savingProduct}
             >
-              {editingProductId ? 'Update Product' : 'Save Product (सेव करें)'}
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+              <Text style={styles.saveProductBtnText}>
+                {savingProduct ? 'Saving Product...' : 'Save Product'}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </Modal>
 
-      {/* Direct Quick Add Stock Dialog */}
+      {/* 4. Quick Restock Dialog */}
       <Portal>
         <Dialog
           visible={quickStockTarget !== null}
           onDismiss={() => setQuickStockTarget(null)}
-          style={styles.quickStockDialog}
+          style={[styles.dialog, { backgroundColor: activeColors.surface }]}
         >
-          <Dialog.Title style={styles.quickStockDialogTitle}>
-            Add Stock / स्टॉक जोड़ें
+          <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
+            {quickStockMode === 'sell' ? 'Sell Stock (Stock Out)' : 'Add Stock (Restock)'}
           </Dialog.Title>
           <Dialog.Content>
             {quickStockTarget && (
               <View>
-                <Text style={styles.quickStockProdName}>{quickStockTarget.productName}</Text>
-                {quickStockTarget.brand ? (
-                  <Text style={styles.quickStockBrandText}>Brand: {quickStockTarget.brand}</Text>
-                ) : null}
-
-                <View style={styles.currentStockPillRow}>
-                  <Text style={styles.currentStockLabel}>Current Stock:</Text>
-                  <View style={styles.currentStockBadge}>
-                    <Text style={styles.currentStockBadgeText}>
-                      {quickStockTarget.currentStock} {quickStockTarget.unit}
+                {/* Mode Selector Toggle */}
+                <View style={styles.modeToggleRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.modeBtn,
+                      quickStockMode === 'add' && styles.modeBtnActiveAdd,
+                    ]}
+                    onPress={() => setQuickStockMode('add')}
+                  >
+                    <Text
+                      style={[
+                        styles.modeBtnText,
+                        quickStockMode === 'add' && styles.modeBtnTextActive,
+                      ]}
+                    >
+                      + Add Stock
                     </Text>
-                  </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.modeBtn,
+                      quickStockMode === 'sell' && styles.modeBtnActiveSell,
+                    ]}
+                    onPress={() => setQuickStockMode('sell')}
+                  >
+                    <Text
+                      style={[
+                        styles.modeBtnText,
+                        quickStockMode === 'sell' && styles.modeBtnTextActive,
+                      ]}
+                    >
+                      - Sell Stock
+                    </Text>
+                  </TouchableOpacity>
                 </View>
 
-                <Text style={[styles.currentStockLabel, { marginTop: spacing.md, marginBottom: 6 }]}>
-                  Quick Quantity to Add:
+                <Text style={[styles.dialogProdName, { color: activeColors.textPrimary }]}>
+                  {quickStockTarget.productName}
                 </Text>
-                <View style={styles.quickQtyChipsRow}>
+                <Text style={[styles.dialogVariantName, { color: activeColors.textSecondary }]}>
+                  Size: {quickStockTarget.variant.name || quickStockTarget.variant.size || 'Standard'}
+                </Text>
+
+                <View style={styles.dialogStockRow}>
+                  <Text style={[styles.dialogStockLabel, { color: activeColors.textSecondary }]}>Current Available Stock:</Text>
+                  <Text style={[styles.dialogStockVal, { color: activeColors.textPrimary }]}>
+                    {quickStockTarget.variant.currentStock || 0} {quickStockTarget.unit}
+                  </Text>
+                </View>
+
+                {/* Presets */}
+                <Text style={[styles.fieldLabel, { color: activeColors.textSecondary, marginTop: spacing.md }]}>
+                  {quickStockMode === 'sell' ? 'Quantity Sold:' : 'Select Quantity to Add:'}
+                </Text>
+                <View style={styles.quickChipsRow}>
                   {['5', '10', '20', '50', '100'].map((preset) => (
                     <Chip
                       key={preset}
@@ -1123,98 +1871,282 @@ export default function ProductsScreen() {
                       onPress={() => setQuickStockQty(preset)}
                       style={[
                         styles.qtyChip,
-                        quickStockQty === preset && styles.qtyChipSelected,
+                        quickStockQty === preset &&
+                          (quickStockMode === 'sell' ? styles.qtyChipSellActive : styles.qtyChipActive),
                       ]}
                       textStyle={[
                         styles.qtyChipText,
-                        quickStockQty === preset && styles.qtyChipTextSelected,
+                        quickStockQty === preset &&
+                          (quickStockMode === 'sell' ? styles.qtyChipSellTextActive : styles.qtyChipTextActive),
                       ]}
                       showSelectedOverlay={false}
                     >
-                      +{preset}
+                      {quickStockMode === 'sell' ? `-${preset}` : `+${preset}`}
                     </Chip>
                   ))}
                 </View>
 
+                {/* Custom numeric input */}
                 <TextInput
-                  label={`Quantity to Add (${quickStockTarget.unit}) *`}
+                  label={`Quantity (${quickStockTarget.unit}) *`}
                   value={quickStockQty}
                   onChangeText={setQuickStockQty}
                   keyboardType="numeric"
                   mode="outlined"
-                  style={{ marginTop: spacing.sm, backgroundColor: '#FFFFFF' }}
+                  style={{ marginTop: spacing.sm, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }}
+                  textColor={activeColors.textPrimary}
+                  placeholderTextColor={activeColors.textMuted}
+                  outlineColor={activeColors.border}
+                  activeOutlineColor={activeColors.primary}
                   placeholder="e.g. 10"
                 />
 
+                {/* Optional Note / Customer */}
+                <TextInput
+                  label="Note / Customer Name (Optional)"
+                  value={quickStockNote}
+                  onChangeText={setQuickStockNote}
+                  mode="outlined"
+                  style={{ marginTop: spacing.sm, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }}
+                  textColor={activeColors.textPrimary}
+                  placeholderTextColor={activeColors.textMuted}
+                  outlineColor={activeColors.border}
+                  activeOutlineColor={activeColors.primary}
+                  placeholder="e.g. Sold to Rahul, Cash sale"
+                />
+
                 {/* Live Preview */}
-                <View style={styles.livePreviewCard}>
-                  <Text style={styles.livePreviewText}>
-                    New Stock will be:{' '}
-                    <Text style={{ fontWeight: '800', color: '#16A34A' }}>
-                      {Math.max(0, quickStockTarget.currentStock) + (parseFloat(quickStockQty) || 0)}{' '}
-                      {quickStockTarget.unit}
+                {quickStockMode === 'sell' ? (
+                  (parseFloat(quickStockQty) || 0) > (quickStockTarget.variant.currentStock || 0) ? (
+                    <View style={styles.previewBoxError}>
+                      <Text style={styles.previewTextError}>
+                        ⚠️ Insufficient stock! Available: {quickStockTarget.variant.currentStock || 0}{' '}
+                        {quickStockTarget.unit}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.previewBoxSell}>
+                      <Text style={styles.previewTextSell}>
+                        Stock after Sale:{' '}
+                        <Text style={styles.previewHighlightSell}>
+                          {(quickStockTarget.variant.currentStock || 0) -
+                            (parseFloat(quickStockQty) || 0)}{' '}
+                          {quickStockTarget.unit}
+                        </Text>
+                      </Text>
+                    </View>
+                  )
+                ) : (
+                  <View style={styles.previewBox}>
+                    <Text style={styles.previewText}>
+                      New Stock will be:{' '}
+                      <Text style={styles.previewHighlight}>
+                        {Math.max(0, quickStockTarget.variant.currentStock || 0) +
+                          (parseFloat(quickStockQty) || 0)}{' '}
+                        {quickStockTarget.unit}
+                      </Text>
                     </Text>
-                  </Text>
-                </View>
+                  </View>
+                )}
               </View>
             )}
           </Dialog.Content>
+
           <Dialog.Actions>
-            <Button onPress={() => setQuickStockTarget(null)} textColor={colors.textSecondary}>
-              Cancel
-            </Button>
-            <Button
-              mode="contained"
-              loading={stockUpdating}
-              disabled={stockUpdating}
-              onPress={handleConfirmQuickStock}
-              style={styles.confirmStockBtn}
+            <TouchableOpacity
+              onPress={() => setQuickStockTarget(null)}
+              style={styles.dialogCancelBtn}
             >
-              Add to Stock
-            </Button>
+              <Text style={styles.dialogCancelText}>Cancel</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleConfirmQuickStock}
+              disabled={
+                updatingStock ||
+                (quickStockMode === 'sell' &&
+                  (parseFloat(quickStockQty) || 0) >
+                    (quickStockTarget?.variant.currentStock || 0))
+              }
+              style={[
+                quickStockMode === 'sell'
+                  ? styles.dialogConfirmBtnSell
+                  : styles.dialogConfirmBtn,
+                (updatingStock ||
+                  (quickStockMode === 'sell' &&
+                    (parseFloat(quickStockQty) || 0) >
+                      (quickStockTarget?.variant.currentStock || 0))) && {
+                  opacity: 0.5,
+                },
+              ]}
+            >
+              <Text style={styles.dialogConfirmText}>
+                {updatingStock
+                  ? 'Processing...'
+                  : quickStockMode === 'sell'
+                  ? 'Confirm Sale'
+                  : 'Confirm Stock'}
+              </Text>
+            </TouchableOpacity>
           </Dialog.Actions>
         </Dialog>
       </Portal>
 
-      {/* 6. Quick Create Dialog (Categories / Subcategories / Brands / Suppliers) */}
+      {/* 5. New Category Dialog */}
       <Portal>
         <Dialog
-          visible={quickCreateType !== null}
-          onDismiss={() => setQuickCreateType(null)}
-          style={styles.quickDialog}
+          visible={newCatDialogVisible}
+          onDismiss={() => setNewCatDialogVisible(false)}
+          style={[styles.dialog, { backgroundColor: activeColors.surface }]}
         >
-          <Dialog.Title style={styles.quickDialogTitle}>
-            Create New {quickCreateType === 'category' ? 'Category' : quickCreateType === 'subcategory' ? 'Subcategory' : quickCreateType}
+          <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
+            Add New Category
           </Dialog.Title>
           <Dialog.Content>
             <TextInput
-              label="Name *"
-              value={quickCreateName}
-              onChangeText={setQuickCreateName}
+              label="Category Name *"
+              value={newCatName}
+              onChangeText={setNewCatName}
               mode="outlined"
-              style={styles.formInput}
+              style={{ backgroundColor: activeColors.surface }}
+              textColor={activeColors.textPrimary}
+              placeholder="e.g. Pipes, Paints, Tools, Sanitary"
             />
-            {quickCreateType === 'category' || quickCreateType === 'subcategory' ? (
-              <TextInput
-                label="Description"
-                value={quickCreateExtra}
-                onChangeText={setQuickCreateExtra}
-                mode="outlined"
-                style={styles.formInput}
-              />
-            ) : null}
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setQuickCreateType(null)} textColor={colors.textSecondary}>
-              Cancel
-            </Button>
-            <Button
-              mode="contained"
-              onPress={handleSaveQuickCreate}
-              style={{ backgroundColor: colors.primary }}
+            <TouchableOpacity
+              onPress={() => setNewCatDialogVisible(false)}
+              style={styles.dialogCancelBtn}
             >
-              Create & Select
-            </Button>
+              <Text style={styles.dialogCancelText}>Cancel</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleCreateCategory}
+              disabled={creatingCat}
+              style={[styles.dialogConfirmBtn, creatingCat && { opacity: 0.7 }]}
+            >
+              <Text style={styles.dialogConfirmText}>
+                {creatingCat ? 'Creating...' : 'Create'}
+              </Text>
+            </TouchableOpacity>
+          </Dialog.Actions>
+        </Dialog>
+
+        {/* 6. Delete Product Confirmation Dialog */}
+        <Dialog
+          visible={!!deleteConfirmProd}
+          onDismiss={() => {
+            if (!deletingProduct) setDeleteConfirmProd(null);
+          }}
+          style={[styles.dialog, { backgroundColor: activeColors.surface }]}
+        >
+          <Dialog.Title style={[styles.dialogTitle, { color: '#EF4444' }]}>
+            Delete Product
+          </Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: activeColors.textPrimary, fontSize: 15, marginBottom: 8, fontWeight: '600' }}>
+              Are you sure you want to delete "{deleteConfirmProd?.name}"?
+            </Text>
+            <Text style={{ color: activeColors.textSecondary, fontSize: 13, lineHeight: 18 }}>
+              This will remove the product and its sizes from your active catalogue. Historical transactions and sales will remain preserved.
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 10 }}>
+            <TouchableOpacity
+              style={styles.dialogCancelBtn}
+              onPress={() => setDeleteConfirmProd(null)}
+              disabled={deletingProduct}
+            >
+              <Text style={styles.dialogCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.dialogConfirmBtnSell,
+                { backgroundColor: '#DC2626' },
+                deletingProduct && { opacity: 0.7 },
+              ]}
+              onPress={handleConfirmDeleteProduct}
+              disabled={deletingProduct}
+            >
+              <Text style={styles.dialogConfirmText}>
+                {deletingProduct ? 'Deleting...' : 'Delete Product'}
+              </Text>
+            </TouchableOpacity>
+          </Dialog.Actions>
+        </Dialog>
+
+        {/* 7. New Subcategory Dialog */}
+        <Dialog
+          visible={newSubcatDialogVisible}
+          onDismiss={() => setNewSubcatDialogVisible(false)}
+          style={[styles.dialog, { backgroundColor: activeColors.surface }]}
+        >
+          <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
+            New Subcategory
+          </Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: activeColors.textSecondary, fontSize: 13, marginBottom: 12 }}>
+              Add a subcategory under{' '}
+              <Text style={{ fontWeight: '700', color: activeColors.primary }}>
+                {categoryMap.get(formVisible ? formCategoryId : (selectedCategory || categories[0]?.id || '')) || 'Pipes'}
+              </Text>
+            </Text>
+            <TextInput
+              label="Subcategory Name (e.g. Angles & Elbows, CPVC Pipes)"
+              value={newSubcatName}
+              onChangeText={setNewSubcatName}
+              mode="outlined"
+              style={{ backgroundColor: activeColors.surface }}
+              textColor={activeColors.textPrimary}
+              placeholderTextColor={activeColors.textMuted}
+              outlineColor={activeColors.border}
+              activeOutlineColor={activeColors.primary}
+              autoFocus
+            />
+          </Dialog.Content>
+          <Dialog.Actions>
+            <TouchableOpacity
+              onPress={() => setNewSubcatDialogVisible(false)}
+              style={styles.dialogCancelBtn}
+            >
+              <Text style={styles.dialogCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={async () => {
+                if (!newSubcatName.trim()) return;
+                try {
+                  setCreatingSubcat(true);
+                  const storeId = store?.id || 'store-1';
+                  const targetCatId = formVisible
+                    ? formCategoryId
+                    : (selectedCategory || categories[0]?.id || '');
+                  const created = await CategoryRepository.createSubcategory(
+                    { categoryId: targetCatId, name: newSubcatName.trim() },
+                    storeId,
+                    deviceId
+                  );
+                  setNewSubcatDialogVisible(false);
+                  setNewSubcatName('');
+                  await loadData();
+                  if (formVisible) {
+                    setFormSubcategoryId(created.id);
+                  } else {
+                    setSelectedSubcategory(created.id);
+                  }
+                } catch (e) {
+                  Alert.alert('Error', 'Failed to create subcategory');
+                } finally {
+                  setCreatingSubcat(false);
+                }
+              }}
+              style={[styles.dialogConfirmBtn, creatingSubcat && { opacity: 0.7 }]}
+              disabled={creatingSubcat}
+            >
+              <Text style={styles.dialogConfirmText}>
+                {creatingSubcat ? 'Creating...' : 'Create'}
+              </Text>
+            </TouchableOpacity>
           </Dialog.Actions>
         </Dialog>
       </Portal>
@@ -1225,673 +2157,884 @@ export default function ProductsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#F8FAFC',
   },
-  searchHeaderCard: {
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
+  topBar: {
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    ...shadows.card,
+    borderBottomColor: '#E2E8F0',
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
   },
-  headerTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  headerTitle: {
-    ...typography.titleMedium,
-    color: colors.textPrimary,
-    fontWeight: '800',
-  },
-  headerSubtitle: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    marginTop: 1,
-  },
-  headerAddBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
+  searchbar: {
+    marginHorizontal: spacing.md,
+    backgroundColor: '#F1F5F9',
     borderRadius: borderRadius.md,
-    gap: 6,
-    ...shadows.sm,
-  },
-  headerAddBtnText: {
-    ...typography.labelMedium,
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceSubtle,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.sm + 2,
-    borderWidth: 1,
-    borderColor: colors.border,
+    elevation: 0,
     height: 44,
   },
-  searchInputCustom: {
-    flex: 1,
+  searchbarInput: {
     fontSize: 14,
-    color: colors.textPrimary,
-    paddingVertical: 0,
-    backgroundColor: 'transparent',
+    minHeight: 44,
   },
-  stockFilterStrip: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
+  filterScroll: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
+    paddingTop: spacing.sm,
     gap: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
-  stockFilterTab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 4,
+  filterChip: {
+    backgroundColor: '#F1F5F9',
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.surfaceSubtle,
+    height: 32,
+  },
+  filterChipActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
     borderWidth: 1,
-    borderColor: colors.border,
-    gap: 5,
   },
-  stockFilterTabActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  stockFilterTabActiveIn: {
-    backgroundColor: '#ECFDF5',
-    borderColor: colors.success,
-  },
-  stockFilterTabActiveLow: {
-    backgroundColor: '#FFFBEB',
-    borderColor: colors.warning,
-  },
-  stockFilterTabActiveOut: {
-    backgroundColor: '#FEF2F2',
-    borderColor: colors.danger,
-  },
-  stockFilterText: {
-    fontSize: 11,
+  filterChipText: {
+    fontSize: 12,
+    color: '#64748B',
     fontWeight: '600',
-    color: colors.textSecondary,
   },
-  stockFilterTextActive: {
-    color: '#FFFFFF',
+  filterChipTextActive: {
+    color: colors.primary,
     fontWeight: '700',
   },
-  tabDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  categoryChipsContainer: {
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    paddingVertical: spacing.xs + 2,
-  },
-  categoryChipsScroll: {
+  categoryScroll: {
     paddingHorizontal: spacing.md,
-    gap: spacing.xs,
-  },
-  categoryChipCustom: {
-    flexDirection: 'row',
+    paddingTop: spacing.sm,
+    paddingBottom: 2,
+    gap: 8,
     alignItems: 'center',
-    backgroundColor: colors.surfaceSubtle,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: borderRadius.full,
-    paddingHorizontal: spacing.sm + 2,
+  },
+  catTab: {
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    gap: 6,
+    borderRadius: borderRadius.full,
+    backgroundColor: '#F1F5F9',
   },
-  categoryChipSelected: {
+  catTabActive: {
     backgroundColor: colors.primary,
-    borderColor: colors.primary,
   },
-  categoryChipTextCustom: {
+  catTabText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: '#64748B',
   },
-  categoryChipTextSelected: {
+  catTabTextActive: {
     color: '#FFFFFF',
     fontWeight: '700',
   },
+  addCatTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+  },
+  addCatTabText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  subcatBar: {
+    borderTopWidth: 1,
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  subcatScroll: {
+    paddingHorizontal: spacing.md,
+    gap: 6,
+    alignItems: 'center',
+  },
+  subcatTab: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  subcatTabText: {
+    fontSize: 11,
+  },
+  addSubcatTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  addSubcatTabText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  subcatTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: borderRadius.xs,
+    borderWidth: 1,
+  },
+  subcatTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Catalogue List
   listContent: {
     padding: spacing.md,
     paddingBottom: 90,
+    gap: spacing.md,
   },
   productCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#FFFFFF',
     borderRadius: borderRadius.lg,
     padding: spacing.md,
-    marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E2E8F0',
     ...shadows.card,
   },
-  productCardHeader: {
+  cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: spacing.xs,
+    alignItems: 'center',
   },
-  tagsRow: {
+  thumbWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.md,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    marginRight: spacing.sm,
+  },
+  productImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  cardHeaderInfo: {
+    flex: 1,
+  },
+  productName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  tagRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 4,
+    marginTop: 4,
     flexWrap: 'wrap',
   },
-  categoryBadge: {
-    backgroundColor: colors.primaryLight,
+  brandTag: {
+    backgroundColor: '#EFF6FF',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: borderRadius.xs,
   },
-  categoryBadgeText: {
-    fontSize: 10,
+  brandTagText: {
+    fontSize: 11,
     fontWeight: '700',
     color: colors.primary,
-    textTransform: 'uppercase',
   },
-  brandBadge: {
-    backgroundColor: colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: borderRadius.xs,
-  },
-  brandBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.textSecondary,
-  },
-  measurementBadge: {
+  categoryTag: {
     backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: borderRadius.xs,
   },
-  measurementBadgeText: {
+  categoryTagText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  unitTag: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: borderRadius.xs,
+  },
+  unitTagText: {
     fontSize: 10,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: '#64748B',
   },
-  productName: {
-    ...typography.titleMedium,
-    color: colors.textPrimary,
-    fontWeight: '700',
+  productDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: spacing.sm,
+    lineHeight: 16,
   },
-  productMeta: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  productStockBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: borderRadius.xs,
-    borderWidth: 1,
-  },
-  badgeHealthy: {
-    backgroundColor: colors.successBg,
-    borderColor: colors.successBorder,
-  },
-  badgeLow: {
-    backgroundColor: colors.warningBg,
-    borderColor: colors.warningBorder,
-  },
-  badgeOut: {
-    backgroundColor: colors.dangerBg,
-    borderColor: colors.dangerBorder,
-  },
-  productStockBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  textHealthy: {
-    color: colors.success,
-  },
-  textLow: {
-    color: colors.warning,
-  },
-  textOut: {
-    color: colors.danger,
-  },
-  variantsContainer: {
-    backgroundColor: colors.surfaceSubtle,
+
+  // Variants Box inside Card
+  variantsBox: {
+    marginTop: spacing.md,
+    backgroundColor: '#F8FAFC',
     borderRadius: borderRadius.md,
+    padding: spacing.sm,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.xs,
-    marginVertical: spacing.sm,
+    borderColor: '#F1F5F9',
+    gap: 6,
   },
-  variantCard: {
+  variantSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: spacing.xs + 2,
-    paddingHorizontal: spacing.xs,
+    marginBottom: 4,
   },
-  variantBorderBottom: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  variantTitle: {
-    ...typography.labelMedium,
-    color: colors.textPrimary,
+  variantHeaderTitle: {
+    fontSize: 11,
     fontWeight: '700',
+    color: '#475569',
+    textTransform: 'uppercase',
   },
-  variantDetailsRow: {
+  totalStockLabel: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  variantRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 8,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  variantLeft: {
+    flex: 1,
+  },
+  variantSizeName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  variantRack: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  variantPriceRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     marginTop: 2,
   },
-  variantSku: {
-    fontSize: 11,
-    color: colors.textMuted,
-    fontWeight: '500',
-  },
-  rackLocationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    backgroundColor: '#E2E8F0',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 3,
-  },
-  rackLocationText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.textSecondary,
+  sellingPriceText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.primary,
   },
   costPriceText: {
     fontSize: 11,
-    color: colors.textMuted,
-    marginTop: 2,
+    color: '#94A3B8',
   },
-  stockLevelPill: {
+  variantRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  stockStatusBadge: {
     paddingHorizontal: 7,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: borderRadius.xs,
-    marginBottom: 2,
   },
-  pillHealthy: {
+  badgeIn: {
     backgroundColor: '#DCFCE7',
   },
-  pillLow: {
+  badgeLow: {
     backgroundColor: '#FEF3C7',
   },
-  pillOut: {
+  badgeOut: {
     backgroundColor: '#FEE2E2',
   },
-  stockLevelPillText: {
+  stockStatusBadgeText: {
     fontSize: 11,
     fontWeight: '700',
   },
-  pillTextHealthy: {
+  badgeTextIn: {
     color: '#15803D',
   },
-  pillTextLow: {
+  badgeTextLow: {
     color: '#B45309',
   },
-  pillTextOut: {
-    color: '#B91C1C',
+  badgeTextOut: {
+    color: '#DC2626',
   },
-  sellingPriceText: {
-    ...typography.currencyMedium,
-    color: colors.textPrimary,
-    fontWeight: '800',
-  },
-  productCardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.xs + 2,
-    marginTop: 2,
-  },
-  cardAddStockBtn: {
+  quickAddChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 6,
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-  },
-  cardAddStockBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#16A34A',
-  },
-  cardFooterActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.primaryLight,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 5,
-    borderRadius: borderRadius.sm,
-  },
-  cardFooterActionText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  dialogHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingRight: spacing.md,
-    paddingTop: spacing.xs,
-  },
-  dialogSubtitle: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    paddingHorizontal: 24,
-    marginTop: -8,
-    marginBottom: spacing.xs,
-  },
-  dialogCloseBtn: {
-    padding: 6,
-    marginTop: 12,
-  },
-  formGroup: {
-    marginBottom: spacing.sm + 2,
-  },
-  formFieldLabel: {
-    ...typography.labelSmall,
-    color: colors.textPrimary,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  cleanInput: {
-    backgroundColor: colors.surface,
-    fontSize: 14,
-  },
-  formRowTwoCol: {
-    flexDirection: 'row',
-    marginBottom: spacing.sm + 2,
-  },
-  quickStockDialog: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-  },
-  quickStockDialogTitle: {
-    ...typography.titleMedium,
-    fontWeight: '800',
-    color: colors.textPrimary,
-  },
-  quickStockProdName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  quickStockBrandText: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  currentStockPillRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: spacing.sm,
-  },
-  currentStockLabel: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  currentStockBadge: {
-    backgroundColor: colors.surfaceSubtle,
+    gap: 2,
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: borderRadius.xs,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  currentStockBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  quickQtyChipsRow: {
-    flexDirection: 'row',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  qtyChip: {
-    backgroundColor: colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  qtyChipSelected: {
-    backgroundColor: '#DCFCE7',
-    borderColor: '#16A34A',
-  },
-  qtyChipText: {
-    fontSize: 12,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  qtyChipTextSelected: {
-    color: '#16A34A',
-    fontWeight: '700',
-  },
-  livePreviewCard: {
     backgroundColor: '#F0FDF4',
     borderWidth: 1,
     borderColor: '#BBF7D0',
-    borderRadius: borderRadius.sm,
-    padding: spacing.sm,
-    marginTop: spacing.md,
   },
-  livePreviewText: {
-    fontSize: 13,
-    color: '#166534',
-    fontWeight: '600',
+  quickAddChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#16A34A',
   },
-  confirmStockBtn: {
-    backgroundColor: '#16A34A',
-    borderRadius: borderRadius.md,
+  quickSellChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: borderRadius.xs,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECDD3',
   },
-  cardFooterEditBtn: {
+  quickSellChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+
+  // Card bottom actions
+  cardActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.sm,
+    paddingTop: spacing.xs,
+  },
+  editBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  cardFooterEditText: {
+  editBtnText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: colors.primary,
   },
-  cardFooterArchiveBtn: {
-    padding: 6,
-    borderRadius: borderRadius.sm,
+  archiveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  fabBtn: {
+  archiveBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#DC2626',
+  },
+
+  // Empty State
+  emptyContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginTop: spacing.sm,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: spacing.md,
+  },
+  emptyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: borderRadius.md,
+  },
+  emptyBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // FAB
+  fab: {
     position: 'absolute',
+    bottom: 20,
     right: 20,
-    bottom: 24,
     width: 56,
     height: 56,
     borderRadius: 28,
     backgroundColor: colors.primary,
-    alignItems: 'center',
     justifyContent: 'center',
-    ...shadows.floating,
-  },
-  emptyContainer: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.xl,
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: spacing.xl,
+    elevation: 6,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
   },
-  emptyTitle: {
-    ...typography.titleMedium,
-    color: colors.textPrimary,
-    marginTop: spacing.sm,
+
+  // Full Screen Modal (Add / Edit)
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
   },
-  emptySubtitle: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginTop: spacing.xs,
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
-  modalDialog: {
-    backgroundColor: colors.surface,
-    maxHeight: '90%',
-    borderRadius: borderRadius.lg,
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
   },
-  dialogTitle: {
-    ...typography.titleMedium,
-    color: colors.textPrimary,
-    paddingBottom: 4,
+  modalCloseBtn: {
+    padding: 4,
   },
-  dialogScrollArea: {
-    paddingHorizontal: spacing.md,
+  modalBody: {
+    padding: spacing.lg,
   },
-  modalScrollContent: {
-    paddingBottom: spacing.lg,
+  formSectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: spacing.sm,
   },
-  formSectionHeader: {
-    ...typography.labelLarge,
-    color: colors.primary,
-    marginTop: spacing.md,
-    marginBottom: spacing.xs,
+  formSectionSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 1,
   },
-  formInput: {
-    backgroundColor: colors.surface,
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+    marginBottom: 6,
+  },
+  input: {
+    backgroundColor: '#FFFFFF',
     marginBottom: spacing.sm,
     fontSize: 14,
   },
-  fieldRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  smallInput: {
+    backgroundColor: '#FFFFFF',
+    fontSize: 13,
+    marginBottom: 6,
   },
-  pickerHeaderRow: {
+  catChipsWrapper: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: spacing.sm,
+  },
+  formCatChip: {
+    backgroundColor: '#F1F5F9',
+  },
+  formCatChipActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderWidth: 1,
+  },
+  formCatChipText: {
+    fontSize: 12,
+    color: '#475569',
+  },
+  formCatChipTextActive: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  formNewCatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+  },
+  formNewCatText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  photoPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  photoPreviewBox: {
+    width: 80,
+    height: 80,
+    borderRadius: borderRadius.md,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  photoPreviewImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  photoButtonsCol: {
+    flex: 1,
+    gap: 6,
+  },
+  photoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: '#EFF6FF',
+    borderRadius: borderRadius.sm,
+  },
+  photoBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  removePhotoBtn: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  removePhotoText: {
+    fontSize: 12,
+    color: '#DC2626',
+    fontWeight: '600',
+  },
+  unitChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  unitChip: {
+    backgroundColor: '#F1F5F9',
+  },
+  unitChipActive: {
+    backgroundColor: colors.primary,
+  },
+  unitChipText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  unitChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  fieldHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: spacing.xs,
-    marginBottom: 4,
+    marginTop: spacing.sm,
+    marginBottom: 6,
   },
-  fieldSublabel: {
-    ...typography.labelSmall,
-    color: colors.textSecondary,
-  },
-  inlineActionText: {
-    ...typography.labelSmall,
-    color: colors.primary,
+  unitHintText: {
+    fontSize: 11,
+    color: '#0284C7',
     fontWeight: '600',
   },
-  selectorScroll: {
-    marginBottom: spacing.sm,
-  },
-  selectorChip: {
-    backgroundColor: colors.surfaceSubtle,
-    marginRight: 6,
-    borderColor: colors.border,
-    borderWidth: 1,
-    height: 32,
-  },
-  selectorChipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  selectorChipText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  selectorChipTextSelected: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  pipeConfigCard: {
-    backgroundColor: colors.surfaceSubtle,
-    padding: spacing.sm,
+  presetsContainer: {
+    marginBottom: spacing.md,
+    backgroundColor: '#F8FAFC',
+    padding: 10,
     borderRadius: borderRadius.md,
-    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  pipeConfigTitle: {
-    ...typography.labelSmall,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
+  presetsTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 8,
+  },
+  presetsTitleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  presetChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  presetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#CBD5E1',
+    borderWidth: 1,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  presetChipSelected: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+  },
+  presetChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  presetChipTextSelected: {
+    color: '#16A34A',
+    fontWeight: '700',
   },
   variantsHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.md,
-    marginBottom: spacing.xs,
-  },
-  variantDraftCard: {
-    backgroundColor: colors.surfaceSubtle,
-    borderRadius: borderRadius.md,
-    padding: spacing.sm,
+    alignItems: 'flex-start',
+    marginTop: spacing.xl,
     marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
-  variantDraftHeader: {
+  addSizeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: borderRadius.sm,
+  },
+  addSizeBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  variantFormCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: spacing.md,
+  },
+  variantCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.xs,
+    marginBottom: 6,
   },
-  variantDraftTitle: {
-    ...typography.labelSmall,
-    color: colors.primary,
+  variantCardIndex: {
+    fontSize: 13,
     fontWeight: '700',
+    color: '#0F172A',
   },
-  dialogActions: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+  deleteVariantBtn: {
+    padding: 4,
   },
-  primarySaveBtn: {
+  rowInputs: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  saveProductBtn: {
     backgroundColor: colors.primary,
     borderRadius: borderRadius.md,
-    minWidth: 120,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: spacing.lg,
+    ...shadows.card,
   },
-  quickDialog: {
-    backgroundColor: colors.surface,
+  saveProductBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
-  quickDialogTitle: {
-    ...typography.titleSmall,
-    color: colors.textPrimary,
+
+  // Dialogs
+  dialog: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: borderRadius.lg,
+  },
+  dialogTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  dialogProdName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  dialogVariantName: {
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  dialogStockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  dialogStockLabel: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  dialogStockVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  quickChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+  },
+  qtyChip: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: borderRadius.sm,
+  },
+  qtyChipActive: {
+    backgroundColor: '#DCFCE7',
+  },
+  qtyChipText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  qtyChipTextActive: {
+    color: '#16A34A',
+    fontWeight: '700',
+  },
+  qtyChipSellActive: {
+    backgroundColor: '#FEE2E2',
+  },
+  qtyChipSellTextActive: {
+    color: '#DC2626',
+    fontWeight: '700',
+  },
+  modeToggleRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: borderRadius.sm,
+    padding: 3,
+    marginBottom: spacing.md,
+  },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    alignItems: 'center',
+    borderRadius: borderRadius.sm - 2,
+  },
+  modeBtnActiveAdd: {
+    backgroundColor: '#16A34A',
+  },
+  modeBtnActiveSell: {
+    backgroundColor: '#DC2626',
+  },
+  modeBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  modeBtnTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  previewBox: {
+    marginTop: spacing.md,
+    backgroundColor: '#F0FDF4',
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  previewText: {
+    fontSize: 13,
+    color: '#166534',
+  },
+  previewHighlight: {
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  previewBoxSell: {
+    marginTop: spacing.md,
+    backgroundColor: '#EFF6FF',
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  previewTextSell: {
+    fontSize: 13,
+    color: '#1E40AF',
+  },
+  previewHighlightSell: {
+    fontWeight: '800',
+    color: '#1D4ED8',
+  },
+  previewBoxError: {
+    marginTop: spacing.md,
+    backgroundColor: '#FEF2F2',
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#FECDD3',
+  },
+  previewTextError: {
+    fontSize: 13,
+    color: '#DC2626',
+    fontWeight: '700',
+  },
+  dialogCancelBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+  },
+  dialogCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  dialogConfirmBtn: {
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: borderRadius.sm,
+  },
+  dialogConfirmBtnSell: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: borderRadius.sm,
+  },
+  dialogConfirmText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

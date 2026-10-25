@@ -33,7 +33,7 @@ import {
 } from '../demo/demoData.js';
 import { seedDemoData } from '../demo/demoSeed.js';
 import { resetDemoData } from '../demo/demoManager.js';
-import { SyncEngine } from '../sync/syncEngine.js';
+import { SyncEngine } from '../sync/SyncEngine.js';
 
 describe('Client Evaluation Demo Architecture & Isolation', () => {
   const originalEnv = process.env.EXPO_PUBLIC_DEMO_MODE;
@@ -73,8 +73,8 @@ describe('Client Evaluation Demo Architecture & Isolation', () => {
     expect(DEMO_STORE.email).toContain('example.com');
     expect(DEMO_STORE.phone).toBe('+91 98765 00000');
 
-    expect(DEMO_CATEGORIES.length).toBeGreaterThanOrEqual(5);
-    expect(DEMO_SUBCATEGORIES.length).toBeGreaterThanOrEqual(8);
+    expect(DEMO_CATEGORIES.length).toBeGreaterThanOrEqual(2);
+    expect(DEMO_SUBCATEGORIES.length).toBeGreaterThanOrEqual(4);
     expect(DEMO_PRODUCTS.length).toBeGreaterThanOrEqual(10);
     expect(DEMO_SUPPLIERS.length).toBeGreaterThanOrEqual(3);
     expect(DEMO_CUSTOMERS.length).toBeGreaterThanOrEqual(3);

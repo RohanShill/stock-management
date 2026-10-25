@@ -95,12 +95,19 @@ export class SalesRepository {
 
     for (const item of input.items) {
       const variantRow = await db.getFirstAsync<any>(
-        `SELECT v.*, p.measurementType, p.packMultiplier, p.pipeTrackingMethod FROM product_variants v JOIN products p ON v.productId = p.id WHERE v.id = ?;`,
+        `SELECT * FROM product_variants WHERE id = ?;`,
         [item.variantId]
       );
       if (!variantRow) {
         throw new Error(`Variant ${item.variantId} not found`);
       }
+      const productRow = await db.getFirstAsync<any>(
+        `SELECT * FROM products WHERE id = ?;`,
+        [variantRow.productId]
+      );
+      variantRow.measurementType = productRow?.measurementType || 'count';
+      variantRow.packMultiplier = productRow?.packMultiplier || 1;
+      variantRow.pipeTrackingMethod = productRow?.pipeTrackingMethod;
 
       const baseQuantity = toCanonicalBaseQuantity(
         item.quantity,
@@ -248,14 +255,16 @@ export class SalesRepository {
         const movementId = uuidv4();
         await db.runAsync(
           `INSERT INTO stock_movements (id, storeId, variantId, movementType, quantityChangeBase, balanceBeforeBase, balanceAfterBase, referenceType, referenceId, reason, deviceId, userId, createdAt)
-           VALUES (?, ?, ?, 'sale', ?, ?, ?, 'sale', ?, ?, ?, ?, ?);`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
           [
             movementId,
             storeId,
             sp.variantRow.id,
+            'sale',
             -sp.baseDeduction,
             balanceBefore,
             balanceAfter,
+            'sale',
             saleId,
             `Sale ${invoiceNumber}`,
             deviceId,

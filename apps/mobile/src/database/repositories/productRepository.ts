@@ -13,10 +13,15 @@ import { SyncQueueRepository } from './syncQueueRepository.js';
 export class ProductRepository {
   static async getCategories(storeId: string): Promise<Category[]> {
     const db = await getDatabase();
-    const rows = await db.getAllAsync<any>(
+    let rows = await db.getAllAsync<any>(
       `SELECT * FROM categories WHERE storeId = ? AND deletedAt IS NULL ORDER BY displayOrder ASC, name ASC;`,
       [storeId]
     );
+    if (!rows || rows.length === 0) {
+      rows = await db.getAllAsync<any>(
+        `SELECT * FROM categories WHERE deletedAt IS NULL ORDER BY displayOrder ASC, name ASC;`
+      );
+    }
     return rows.map((r) => ({
       ...r,
       active: Boolean(r.active),
@@ -252,8 +257,8 @@ export class ProductRepository {
           const movementId = uuidv4();
           await db.runAsync(
             `INSERT INTO stock_movements (id, storeId, variantId, movementType, quantityChangeBase, balanceBeforeBase, balanceAfterBase, referenceType, reason, deviceId, userId, createdAt)
-             VALUES (?, ?, ?, 'opening_stock', ?, 0, ?, 'manual', 'Initial opening stock setup', ?, ?, ?);`,
-            [movementId, storeId, variantId, openingStock, openingStock, deviceId, userId ?? null, now]
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+            [movementId, storeId, variantId, 'opening_stock', openingStock, 0, openingStock, 'manual', 'Initial opening stock setup', deviceId, userId ?? null, now]
           );
 
           if (
@@ -381,12 +386,12 @@ export class ProductRepository {
 
     await db.withTransactionAsync(async () => {
       await db.runAsync(
-        `UPDATE products SET deletedAt = ?, active = 0, updatedAt = ? WHERE id = ? AND storeId = ?;`,
-        [now, now, productId, storeId]
+        `UPDATE products SET deletedAt = ?, active = 0, updatedAt = ? WHERE id = ?;`,
+        [now, now, productId]
       );
       await db.runAsync(
-        `UPDATE product_variants SET deletedAt = ?, active = 0, updatedAt = ? WHERE productId = ? AND storeId = ?;`,
-        [now, now, productId, storeId]
+        `UPDATE product_variants SET deletedAt = ?, active = 0, updatedAt = ? WHERE productId = ?;`,
+        [now, now, productId]
       );
     });
 

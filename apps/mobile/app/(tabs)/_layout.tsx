@@ -3,57 +3,56 @@ import { Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppStore } from '../../src/store/useAppStore.js';
 import { t } from '../../src/i18n/strings.js';
-import { colors } from '../../src/theme/tokens.js';
+import { lightColors, darkColors, getThemeShadows } from '../../src/theme/tokens.js';
 
 export default function TabLayout() {
+  const isDarkMode = useAppStore((s) => s.isDarkMode);
   const language = useAppStore((s) => s.language);
+
+  const activeColors = isDarkMode ? darkColors : lightColors;
+  const themeShadows = getThemeShadows(isDarkMode);
 
   return (
     <Tabs
       screenOptions={{
         tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-          height: 64,
-          paddingBottom: 10,
+          backgroundColor: activeColors.surface,
+          borderTopColor: activeColors.border,
+          borderTopWidth: 0.5,
+          height: 68,
+          paddingBottom: 12,
           paddingTop: 8,
-          elevation: 8,
-          shadowColor: '#0F172A',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.04,
-          shadowRadius: 4,
+          ...themeShadows.floating,
         },
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSecondary,
+        tabBarActiveTintColor: activeColors.primary,
+        tabBarInactiveTintColor: activeColors.textMuted,
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: '600',
+          letterSpacing: 0.2,
+          marginTop: 2,
         },
         headerStyle: {
-          backgroundColor: colors.surface,
-          elevation: 1,
-          shadowColor: '#0F172A',
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.05,
-          shadowRadius: 2,
+          backgroundColor: activeColors.surface,
+          ...themeShadows.card,
         },
-        headerTintColor: colors.textPrimary,
+        headerTintColor: activeColors.textPrimary,
         headerTitleStyle: {
           fontWeight: '700',
           fontSize: 18,
+          letterSpacing: -0.2,
         },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: language === 'hi' ? 'होम' : 'Home',
-          headerShown: false, // Handled inside DashboardScreen header
+          title: 'Home',
+          headerShown: false,
           tabBarIcon: ({ color, focused }) => (
             <MaterialCommunityIcons
               name={focused ? 'home' : 'home-outline'}
-              size={24}
+              size={focused ? 26 : 24}
               color={color}
             />
           ),
@@ -62,12 +61,12 @@ export default function TabLayout() {
       <Tabs.Screen
         name="products"
         options={{
-          title: language === 'hi' ? 'स्टॉक' : 'Stock',
+          title: 'Products',
           headerShown: false,
           tabBarIcon: ({ color, focused }) => (
             <MaterialCommunityIcons
               name={focused ? 'package-variant' : 'package-variant-closed'}
-              size={24}
+              size={focused ? 26 : 24}
               color={color}
             />
           ),
@@ -76,28 +75,42 @@ export default function TabLayout() {
       <Tabs.Screen
         name="sales"
         options={{
-          href: null, // Hidden per user requirement: sales will be implemented in future
-          title: t('sales', language),
+          href: null,
+          title: 'Sales',
           headerShown: false,
         }}
       />
       <Tabs.Screen
         name="purchases"
         options={{
-          href: null, // Hidden per user requirement: replaced by simple direct Add Stock
-          title: language === 'hi' ? 'स्टॉक इनवर्ड' : 'Stock Inward',
+          href: null,
+          title: 'Purchases',
           headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="history"
+        options={{
+          title: 'History',
+          headerShown: false,
+          tabBarIcon: ({ color, focused }) => (
+            <MaterialCommunityIcons
+              name={focused ? 'history' : 'history'}
+              size={focused ? 26 : 24}
+              color={color}
+            />
+          ),
         }}
       />
       <Tabs.Screen
         name="more"
         options={{
-          title: t('more', language),
+          title: 'Settings',
           headerShown: false,
           tabBarIcon: ({ color, focused }) => (
             <MaterialCommunityIcons
-              name={focused ? 'dots-horizontal-circle' : 'dots-horizontal-circle-outline'}
-              size={24}
+              name={focused ? 'cog' : 'cog-outline'}
+              size={focused ? 26 : 24}
               color={color}
             />
           ),

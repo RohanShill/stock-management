@@ -87,6 +87,21 @@ const { mockTables, mockDb } = vi.hoisted(() => {
             sub.active = 0;
           }
         }
+      } else if (trimmed.startsWith('UPDATE PRODUCTS')) {
+        const id = params[params.length - 1];
+        const prod = tables.products.find((p) => p.id === id);
+        if (prod && sql.includes('deletedAt = ?')) {
+          prod.deletedAt = params[0];
+          prod.active = 0;
+        }
+      } else if (trimmed.startsWith('UPDATE PRODUCT_VARIANTS')) {
+        const prodId = params[params.length - 1];
+        tables.product_variants.forEach((v) => {
+          if (v.productId === prodId && sql.includes('deletedAt = ?')) {
+            v.deletedAt = params[0];
+            v.active = 0;
+          }
+        });
       }
       return { lastInsertRowId: 1, changes: 1 };
     }),
@@ -135,6 +150,7 @@ vi.mock('../database/db.js', () => ({
 
 import { CategoryRepository } from '../database/repositories/categoryRepository.js';
 import { CustomFieldRepository } from '../database/repositories/customFieldRepository.js';
+import { ProductRepository } from '../database/repositories/productRepository.js';
 
 describe('CategoryRepository Offline Operations', () => {
   beforeEach(() => {
@@ -291,5 +307,38 @@ describe('CustomFieldRepository Dynamic Specifications', () => {
     );
     expect(fields.length).toBe(1);
     expect(fields[0].name).toBe('voltage_rating');
+  });
+
+  it('archives product and creates sync delete entry', async () => {
+    mockTables.products.push({
+      id: 'prod-test-del',
+      storeId: 'store-1',
+      name: 'To Delete Pipe',
+      active: 1,
+    });
+    mockTables.product_variants.push({
+      id: 'var-test-del',
+      productId: 'prod-test-del',
+      storeId: 'store-1',
+      sku: 'SKU-DEL',
+      name: '1 inch',
+      active: 1,
+    });
+
+    await ProductRepository.archiveProduct('prod-test-del', 'store-1', 'dev-1');
+
+    const prod = mockTables.products.find((p) => p.id === 'prod-test-del');
+    expect(prod?.active).toBe(0);
+    expect(prod?.deletedAt).toBeDefined();
+
+    const variant = mockTables.product_variants.find((v) => v.id === 'var-test-del');
+    expect(variant?.active).toBe(0);
+    expect(variant?.deletedAt).toBeDefined();
+
+    const syncItem = mockTables.sync_queue.find(
+      (s) => s.entityType === 'product' && s.entityId === 'prod-test-del'
+    );
+    expect(syncItem).toBeDefined();
+    expect(syncItem?.operationType).toBe('delete');
   });
 });

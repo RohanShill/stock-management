@@ -12,6 +12,7 @@ export interface AppState {
   pendingSyncCount: number;
   lastSyncTime: string | null;
   language: 'en' | 'hi';
+  isDarkMode: boolean;
 
   setUser: (user: User | null) => void;
   setStore: (store: Store | null) => void;
@@ -23,6 +24,8 @@ export interface AppState {
   setPendingSyncCount: (count: number) => void;
   setLastSyncTime: (time: string | null) => void;
   setLanguage: (lang: 'en' | 'hi') => void;
+  setIsDarkMode: (val: boolean) => void;
+  toggleTheme: () => void;
   logout: () => void;
 }
 
@@ -37,6 +40,10 @@ export const useAppStore = create<AppState>((set) => ({
   pendingSyncCount: 0,
   lastSyncTime: null,
   language: 'en',
+  isDarkMode:
+    typeof window !== 'undefined' && window.localStorage
+      ? window.localStorage.getItem('hw_store_dark_mode') === 'true'
+      : false,
 
   setUser: (user) => set({ user }),
   setStore: (store) => set({ store }),
@@ -48,5 +55,19 @@ export const useAppStore = create<AppState>((set) => ({
   setPendingSyncCount: (pendingSyncCount) => set({ pendingSyncCount }),
   setLastSyncTime: (lastSyncTime) => set({ lastSyncTime }),
   setLanguage: (language) => set({ language }),
+  setIsDarkMode: (isDarkMode) => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem('hw_store_dark_mode', String(isDarkMode));
+    }
+    set({ isDarkMode });
+  },
+  toggleTheme: () =>
+    set((state) => {
+      const next = !state.isDarkMode;
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('hw_store_dark_mode', String(next));
+      }
+      return { isDarkMode: next };
+    }),
   logout: () => set({ user: null, token: null, isLocked: false }),
 }));
