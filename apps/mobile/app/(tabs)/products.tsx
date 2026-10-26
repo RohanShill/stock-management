@@ -44,6 +44,7 @@ import { CategoryRepository } from '../../src/database/repositories/categoryRepo
 import { useAppStore } from '../../src/store/useAppStore.js';
 import { lightColors, darkColors, colors, spacing, borderRadius, shadows, getThemeShadows } from '../../src/theme/tokens.js';
 import { StockSuccessModal, StockSuccessInfo } from '../../src/components/StockSuccessModal.js';
+import { ProductSuccessModal, ProductSuccessInfo } from '../../src/components/ProductSuccessModal.js';
 import { formatUnitBadge } from '../../src/utils/formatters.js';
 
 interface VariantFormItem {
@@ -335,10 +336,13 @@ export default function ProductsScreen() {
 
   const { store, deviceId, isDarkMode } = useAppStore();
   const insets = useSafeAreaInsets();
-  const topInset = Math.max(
-    insets.top,
-    (Platform.OS === 'android' ? RNStatusBar.currentHeight : 0) || 0
-  );
+  const topInset = Platform.OS === 'web'
+    ? 0
+    : Math.max(
+        insets.top || 0,
+        (Platform.OS === 'android' ? RNStatusBar.currentHeight : 0) || 0,
+        40
+      );
   const activeColors = isDarkMode ? darkColors : lightColors;
   const themeShadows = getThemeShadows(isDarkMode);
 
@@ -384,6 +388,7 @@ export default function ProductsScreen() {
   const [quickStockMode, setQuickStockMode] = useState<'add' | 'sell'>('add');
   const [updatingStock, setUpdatingStock] = useState(false);
   const [stockSuccess, setStockSuccess] = useState<StockSuccessInfo | null>(null);
+  const [productSuccess, setProductSuccess] = useState<ProductSuccessInfo | null>(null);
 
   // New Category Dialog
   const [newCatDialogVisible, setNewCatDialogVisible] = useState(false);
@@ -897,7 +902,16 @@ export default function ProductsScreen() {
           deviceId
         );
 
-        Alert.alert('Product Updated', `"${formName}" has been successfully updated.`);
+        setFormVisible(false);
+        setProductSuccess({
+          mode: 'update',
+          productName: formName.trim(),
+          brand: formBrand.trim() || undefined,
+          categoryName: categoryMap.get(formCategoryId) || undefined,
+          unit: formBaseUnit,
+          variantCount: variantsData.length,
+        });
+        await loadData();
       } else {
         // CREATE NEW PRODUCT
         const productData: Partial<Product> = {
@@ -929,11 +943,17 @@ export default function ProductsScreen() {
 
         await ProductRepository.createProduct(productData, variantsData, storeId, deviceId);
 
-        Alert.alert('Product Added', `"${formName}" added with ${variantsData.length} size variant(s).`);
+        setFormVisible(false);
+        setProductSuccess({
+          mode: 'create',
+          productName: formName.trim(),
+          brand: formBrand.trim() || undefined,
+          categoryName: categoryMap.get(formCategoryId) || undefined,
+          unit: formBaseUnit,
+          variantCount: variantsData.length,
+        });
+        await loadData();
       }
-
-      setFormVisible(false);
-      await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to save product';
       Alert.alert('Error', msg);
@@ -2220,6 +2240,15 @@ export default function ProductsScreen() {
           setStockSuccess(null);
           router.push('/(tabs)/history');
         }}
+        isDarkMode={isDarkMode}
+        activeColors={activeColors}
+      />
+
+      {/* 4.6. Modern Product Added / Updated Confirmation Modal */}
+      <ProductSuccessModal
+        visible={!!productSuccess}
+        info={productSuccess}
+        onDismiss={() => setProductSuccess(null)}
         isDarkMode={isDarkMode}
         activeColors={activeColors}
       />

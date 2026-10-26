@@ -29,10 +29,13 @@ type HistoryItem = StockMovement & {
 export default function HistoryScreen() {
   const { store, isDarkMode } = useAppStore();
   const insets = useSafeAreaInsets();
-  const topInset = Math.max(
-    insets.top,
-    (Platform.OS === 'android' ? RNStatusBar.currentHeight : 0) || 0
-  );
+  const topInset = Platform.OS === 'web'
+    ? 0
+    : Math.max(
+        insets.top || 0,
+        (Platform.OS === 'android' ? RNStatusBar.currentHeight : 0) || 0,
+        40
+      );
   const activeColors = isDarkMode ? darkColors : lightColors;
 
   const [history, setHistory] = useState<HistoryItem[]>([]);

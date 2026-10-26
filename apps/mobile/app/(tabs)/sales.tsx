@@ -60,10 +60,13 @@ interface CartLine {
 export default function SalesScreen() {
   const { store, deviceId, user, language, isDarkMode } = useAppStore();
   const insets = useSafeAreaInsets();
-  const topInset = Math.max(
-    insets.top,
-    (Platform.OS === 'android' ? RNStatusBar.currentHeight : 0) || 0
-  );
+  const topInset = Platform.OS === 'web'
+    ? 0
+    : Math.max(
+        insets.top || 0,
+        (Platform.OS === 'android' ? RNStatusBar.currentHeight : 0) || 0,
+        40
+      );
   const activeColors = isDarkMode ? darkColors : lightColors;
   const themeShadows = getThemeShadows(isDarkMode);
 
