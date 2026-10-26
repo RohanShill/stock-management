@@ -1,6 +1,7 @@
 {
   "name": "@hardware-store/api",
   "version": "1.0.0",
+  "author": "Rohan Shill",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",

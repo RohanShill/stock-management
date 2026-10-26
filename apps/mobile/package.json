@@ -1,6 +1,7 @@
 {
   "name": "@hardware-store/mobile",
   "version": "1.0.0",
+  "author": "Rohan Shill",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",

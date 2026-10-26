@@ -1,6 +1,7 @@
 {
   "name": "hardware-store-manager",
   "version": "1.0.0",
+  "author": "Rohan Shill",
   "private": true,
   "workspaces": [
     "packages/*",
