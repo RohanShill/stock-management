@@ -29,7 +29,11 @@ export declare function toCanonicalBaseQuantity(quantity: number, unit: Standard
  */
 export declare function fromCanonicalBaseQuantity(baseQuantity: number, toUnit: StandardUnit, measurementType: MeasurementType, packMultiplier?: number): number;
 /**
+ * Normalizes common unit alias strings (e.g. 'liter', 'litres', 'pcs', 'kgs') to their canonical StandardUnit.
+ */
+export declare function normalizeUnit(rawUnit?: string): StandardUnit;
+/**
  * Convert quantity from a transaction unit (e.g. 'l', 'ml', 'box') into the product's native stock unit (e.g. 'l', 'piece').
  */
-export declare function convertQuantityToProductUnit(quantity: number, fromUnit: StandardUnit, productBaseUnit?: StandardUnit, measurementType?: MeasurementType, packMultiplier?: number): number;
+export declare function convertQuantityToProductUnit(quantity: number, fromUnit?: string, productBaseUnit?: string, measurementType?: MeasurementType, packMultiplier?: number): number;
 //# sourceMappingURL=units.d.ts.map

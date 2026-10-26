@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { purchaseSchema, toCanonicalBaseQuantity } from '@hardware-store/shared';
+import { purchaseSchema, convertQuantityToProductUnit } from '@hardware-store/shared';
 import { PurchaseModel } from '../models/Transactions.js';
 import {
   ProductVariantModel,
@@ -63,9 +63,10 @@ purchasesRouter.post('/', async (req: AuthenticatedRequest, res: Response) => {
         });
       }
 
-      const baseQuantity = toCanonicalBaseQuantity(
+      const baseQuantity = convertQuantityToProductUnit(
         item.quantity,
         item.unit,
+        product.baseUnit,
         product.measurementType,
         product.packMultiplier
       );

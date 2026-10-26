@@ -6,6 +6,7 @@ exports.convertWeight = convertWeight;
 exports.convertVolume = convertVolume;
 exports.toCanonicalBaseQuantity = toCanonicalBaseQuantity;
 exports.fromCanonicalBaseQuantity = fromCanonicalBaseQuantity;
+exports.normalizeUnit = normalizeUnit;
 exports.convertQuantityToProductUnit = convertQuantityToProductUnit;
 // Canonical base units:
 // count -> piece
@@ -104,33 +105,69 @@ function fromCanonicalBaseQuantity(baseQuantity, toUnit, measurementType, packMu
     }
 }
 /**
+ * Normalizes common unit alias strings (e.g. 'liter', 'litres', 'pcs', 'kgs') to their canonical StandardUnit.
+ */
+function normalizeUnit(rawUnit) {
+    if (!rawUnit)
+        return 'piece';
+    const u = rawUnit.trim().toLowerCase();
+    if (u === 'l' || u === 'liter' || u === 'litre' || u === 'liters' || u === 'litres')
+        return 'l';
+    if (u === 'ml' || u === 'milliliter' || u === 'millilitre' || u === 'milliliters')
+        return 'ml';
+    if (u === 'kg' || u === 'kilogram' || u === 'kilograms' || u === 'kgs')
+        return 'kg';
+    if (u === 'g' || u === 'gram' || u === 'grams' || u === 'gm')
+        return 'g';
+    if (u === 'm' || u === 'meter' || u === 'metre' || u === 'meters' || u === 'metres' || u === 'mtr')
+        return 'm';
+    if (u === 'mm' || u === 'millimeter' || u === 'millimetre')
+        return 'mm';
+    if (u === 'cm' || u === 'centimeter' || u === 'centimetre')
+        return 'cm';
+    if (u === 'ft' || u === 'feet' || u === 'foot')
+        return 'ft';
+    if (u === 'inch' || u === 'inches' || u === 'in')
+        return 'inch';
+    if (u === 'piece' || u === 'pcs' || u === 'pc' || u === 'pieces' || u === 'unit' || u === 'units')
+        return 'piece';
+    if (u === 'box' || u === 'boxes')
+        return 'box';
+    if (u === 'pack' || u === 'packs' || u === 'pkt')
+        return 'pack';
+    if (u === 'set' || u === 'sets')
+        return 'set';
+    return u || 'piece';
+}
+/**
  * Convert quantity from a transaction unit (e.g. 'l', 'ml', 'box') into the product's native stock unit (e.g. 'l', 'piece').
  */
 function convertQuantityToProductUnit(quantity, fromUnit, productBaseUnit, measurementType, packMultiplier = 1) {
-    const baseUnit = productBaseUnit || 'piece';
-    if (!fromUnit || fromUnit === baseUnit) {
+    const normFrom = normalizeUnit(fromUnit);
+    const normBase = normalizeUnit(productBaseUnit);
+    if (!fromUnit || normFrom === normBase) {
         return quantity;
     }
     // Volume conversions (ml <-> l)
-    if ((fromUnit === 'ml' || fromUnit === 'l') && (baseUnit === 'ml' || baseUnit === 'l')) {
-        const ml = fromUnit === 'l' ? quantity * 1000 : quantity;
-        return baseUnit === 'l' ? Math.round((ml / 1000) * 10000) / 10000 : ml;
+    if ((normFrom === 'ml' || normFrom === 'l') && (normBase === 'ml' || normBase === 'l')) {
+        const ml = normFrom === 'l' ? quantity * 1000 : quantity;
+        return normBase === 'l' ? Math.round((ml / 1000) * 10000) / 10000 : ml;
     }
     // Weight conversions (g <-> kg)
-    if ((fromUnit === 'g' || fromUnit === 'kg') && (baseUnit === 'g' || baseUnit === 'kg')) {
-        const g = fromUnit === 'kg' ? quantity * 1000 : quantity;
-        return baseUnit === 'kg' ? Math.round((g / 1000) * 10000) / 10000 : g;
+    if ((normFrom === 'g' || normFrom === 'kg') && (normBase === 'g' || normBase === 'kg')) {
+        const g = normFrom === 'kg' ? quantity * 1000 : quantity;
+        return normBase === 'kg' ? Math.round((g / 1000) * 10000) / 10000 : g;
     }
     // Length conversions (mm, cm, m, ft, inch)
     const lengthUnits = ['mm', 'cm', 'm', 'ft', 'inch'];
-    if (lengthUnits.includes(fromUnit) && lengthUnits.includes(baseUnit)) {
-        return convertLength(quantity, fromUnit, baseUnit);
+    if (lengthUnits.includes(normFrom) && lengthUnits.includes(normBase)) {
+        return convertLength(quantity, normFrom, normBase);
     }
     // Pack / Count conversions (box/pack <-> piece)
-    if ((fromUnit === 'box' || fromUnit === 'pack') && baseUnit === 'piece') {
+    if ((normFrom === 'box' || normFrom === 'pack') && normBase === 'piece') {
         return quantity * (packMultiplier || 1);
     }
-    if (fromUnit === 'piece' && (baseUnit === 'box' || baseUnit === 'pack')) {
+    if (normFrom === 'piece' && (normBase === 'box' || normBase === 'pack')) {
         return packMultiplier > 0 ? quantity / packMultiplier : quantity;
     }
     return quantity;

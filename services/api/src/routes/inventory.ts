@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import {
   stockAdjustmentSchema,
-  toCanonicalBaseQuantity,
+  convertQuantityToProductUnit,
   StockMovementType,
 } from '@hardware-store/shared';
 import {
@@ -42,10 +42,11 @@ inventoryRouter.post('/adjustments', async (req: AuthenticatedRequest, res: Resp
       return res.status(404).json({ success: false, error: 'Parent product not found' });
     }
 
-    // Convert requested adjustment to canonical base quantity
-    const baseQuantity = toCanonicalBaseQuantity(
+    // Convert requested adjustment to product base unit
+    const baseQuantity = convertQuantityToProductUnit(
       quantityChange,
       unit,
+      product.baseUnit,
       product.measurementType,
       product.packMultiplier
     );

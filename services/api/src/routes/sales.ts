@@ -4,7 +4,7 @@ import {
   saleSchema,
   calculateLineItemTotals,
   calculateInvoiceTotals,
-  toCanonicalBaseQuantity,
+  convertQuantityToProductUnit,
   calculateSegmentCuttingPlan,
 } from '@hardware-store/shared';
 import { SaleModel } from '../models/Transactions.js';
@@ -98,9 +98,10 @@ salesRouter.post('/', async (req: AuthenticatedRequest, res: Response) => {
         });
       }
 
-      const baseQuantity = toCanonicalBaseQuantity(
+      const baseQuantity = convertQuantityToProductUnit(
         item.quantity,
         item.unit,
+        product.baseUnit,
         product.measurementType,
         product.packMultiplier
       );
@@ -261,9 +262,10 @@ salesRouter.post('/:id/returns', async (req: AuthenticatedRequest, res: Response
       const product = await ProductModel.findById(variant.productId);
       if (!product) continue;
 
-      const baseQuantity = toCanonicalBaseQuantity(
+      const baseQuantity = convertQuantityToProductUnit(
         quantity,
         unit,
+        product.baseUnit,
         product.measurementType,
         product.packMultiplier
       );
