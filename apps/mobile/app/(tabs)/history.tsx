@@ -49,7 +49,7 @@ export default function HistoryScreen() {
   // Load on mount and on window focus (for web tab switching)
   useEffect(() => {
     loadHistory();
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       const handleFocus = () => loadHistory();
       window.addEventListener('focus', handleFocus);
       return () => window.removeEventListener('focus', handleFocus);

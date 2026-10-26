@@ -1,3 +1,20 @@
+// Polyfill crypto.getRandomValues for React Native Hermes runtime
+if (typeof globalThis !== 'undefined') {
+  if (typeof (globalThis as any).crypto !== 'object') {
+    (globalThis as any).crypto = {};
+  }
+  if (typeof (globalThis as any).crypto.getRandomValues !== 'function') {
+    (globalThis as any).crypto.getRandomValues = function getRandomValues<T extends ArrayBufferView | null>(array: T): T {
+      if (!array) return array;
+      const uint8 = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+      for (let i = 0; i < uint8.length; i++) {
+        uint8[i] = Math.floor(Math.random() * 256);
+      }
+      return array;
+    };
+  }
+}
+
 import React, { useEffect, useMemo } from 'react';
 import { Stack } from 'expo-router';
 import { MD3LightTheme, MD3DarkTheme, PaperProvider } from 'react-native-paper';

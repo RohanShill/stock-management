@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from '../../utils/uuid.js';
 import { Category, Subcategory } from '@hardware-store/shared';
 import { getDatabase } from '../db.js';
 import { SyncQueueRepository } from './syncQueueRepository.js';

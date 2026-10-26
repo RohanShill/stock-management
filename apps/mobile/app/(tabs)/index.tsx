@@ -318,8 +318,8 @@ export default function HomeScreen() {
             <MaterialCommunityIcons name="plus" size={22} color="#FFFFFF" />
           </View>
           <View style={styles.actionTextContainer}>
-            <Text style={styles.actionTitlePrimary}>Add Product</Text>
-            <Text style={styles.actionSubtitlePrimary}>New item</Text>
+            <Text style={styles.actionTitlePrimary} numberOfLines={1}>Add Product</Text>
+            <Text style={styles.actionSubtitlePrimary} numberOfLines={1}>New item</Text>
           </View>
         </TouchableOpacity>
 
@@ -344,10 +344,10 @@ export default function HomeScreen() {
             <MaterialCommunityIcons name="arrow-up-bold-box" size={22} color="#16A34A" />
           </View>
           <View style={styles.actionTextContainer}>
-            <Text style={[styles.actionTitleSecondary, { color: activeColors.textPrimary }]}>
+            <Text style={[styles.actionTitleSecondary, { color: activeColors.textPrimary }]} numberOfLines={1}>
               Add Stock
             </Text>
-            <Text style={[styles.actionSubtitleSecondary, { color: activeColors.textSecondary }]}>
+            <Text style={[styles.actionSubtitleSecondary, { color: activeColors.textSecondary }]} numberOfLines={1}>
               Restock
             </Text>
           </View>
@@ -374,8 +374,8 @@ export default function HomeScreen() {
             <MaterialCommunityIcons name="arrow-down-bold-box" size={22} color="#DC2626" />
           </View>
           <View style={styles.actionTextContainer}>
-            <Text style={styles.actionTitleSell}>Sell Stock</Text>
-            <Text style={styles.actionSubtitleSell}>Stock out</Text>
+            <Text style={styles.actionTitleSell} numberOfLines={1}>Sell Stock</Text>
+            <Text style={styles.actionSubtitleSell} numberOfLines={1}>Stock out</Text>
           </View>
         </TouchableOpacity>
       </View>
@@ -887,7 +887,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.lg,
-    paddingBottom: 48,
+    paddingBottom: 110,
   },
 
   // 1. Header Card
@@ -927,7 +927,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // 2. Quick Action Buttons
+  // 2. Quick Action Buttons (Optimized for Mobile Screens)
   quickActionsRow: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -935,11 +935,14 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
-    padding: spacing.md,
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
     borderRadius: borderRadius.xl,
     borderWidth: 1,
+    minHeight: 104,
     ...shadows.card,
   },
   actionButtonPrimary: {
@@ -953,44 +956,51 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   actionIconWrapper: {
-    width: 42,
-    height: 42,
-    borderRadius: borderRadius.lg,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: spacing.sm,
+    marginBottom: 8,
   },
   actionTextContainer: {
-    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionTitlePrimary: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
+    textAlign: 'center',
   },
   actionSubtitlePrimary: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.7)',
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.8)',
     marginTop: 2,
+    textAlign: 'center',
   },
   actionTitleSecondary: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
+    textAlign: 'center',
   },
   actionSubtitleSecondary: {
-    fontSize: 11,
+    fontSize: 10,
     marginTop: 2,
+    textAlign: 'center',
   },
   actionTitleSell: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
     color: '#DC2626',
+    textAlign: 'center',
   },
   actionSubtitleSell: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#E11D48',
     marginTop: 2,
+    textAlign: 'center',
   },
 
   // Section Headers
