@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
-import { Surface, Searchbar, Chip } from 'react-native-paper';
+import { Surface, Searchbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { InventoryRepository } from '../../src/database/repositories/inventoryRepository.js';
 import { useAppStore } from '../../src/store/useAppStore.js';
@@ -135,14 +135,40 @@ export default function HistoryScreen() {
   const formatTimestamp = (isoDate: string) => {
     try {
       const d = new Date(isoDate);
-      return new Intl.DateTimeFormat('en-IN', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
+      const now = new Date();
+      const isToday =
+        d.getDate() === now.getDate() &&
+        d.getMonth() === now.getMonth() &&
+        d.getFullYear() === now.getFullYear();
+
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const isYesterday =
+        d.getDate() === yesterday.getDate() &&
+        d.getMonth() === yesterday.getMonth() &&
+        d.getFullYear() === yesterday.getFullYear();
+
+      const timeStr = d.toLocaleTimeString('en-IN', {
+        hour: 'numeric',
         minute: '2-digit',
         hour12: true,
-      }).format(d);
+      });
+
+      if (isToday) {
+        return `Today, ${timeStr}`;
+      }
+      if (isYesterday) {
+        return `Yesterday, ${timeStr}`;
+      }
+
+      const isCurrentYear = d.getFullYear() === now.getFullYear();
+      const dateStr = d.toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        ...(isCurrentYear ? {} : { year: 'numeric' }),
+      });
+
+      return `${dateStr}, ${timeStr}`;
     } catch {
       return isoDate;
     }
@@ -161,34 +187,44 @@ export default function HistoryScreen() {
           },
         ]}
       >
-        <View style={styles.headerLeft}>
-          <Text style={[styles.headerTitle, { color: activeColors.textPrimary }]}>
-            Stock Movement History
-          </Text>
-          <Text style={[styles.headerSubtitle, { color: activeColors.textSecondary }]}>
-            Track all sales, deductions, and incoming stock
-          </Text>
+        <View style={styles.headerTopRow}>
+          <View style={styles.headerTitleCol}>
+            <Text style={[styles.headerTitle, { color: activeColors.textPrimary }]}>
+              Stock Movement
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: activeColors.textSecondary }]}>
+              Audit trail of sales, restocks & adjustments
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.syncPill,
+              {
+                backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
+                borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
+              },
+            ]}
+            onPress={onRefresh}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons
+              name={refreshing ? 'loading' : 'sync'}
+              size={15}
+              color={activeColors.primary}
+            />
+            <Text style={[styles.syncPillText, { color: activeColors.primary }]}>
+              {refreshing ? 'Syncing...' : 'Sync'}
+            </Text>
+            <View
+              style={[
+                styles.syncCountBadge,
+                { backgroundColor: activeColors.primary },
+              ]}
+            >
+              <Text style={styles.syncCountBadgeText}>{history.length}</Text>
+            </View>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          style={[
-            styles.headerCountPill,
-            {
-              backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
-              borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
-            },
-          ]}
-          onPress={onRefresh}
-          activeOpacity={0.7}
-        >
-          <MaterialCommunityIcons
-            name={refreshing ? 'loading' : 'sync'}
-            size={16}
-            color={activeColors.primary}
-          />
-          <Text style={[styles.headerCountText, { color: activeColors.primary }]}>
-            {refreshing ? 'Refreshing...' : `${history.length} Logs (Tap to Sync)`}
-          </Text>
-        </TouchableOpacity>
       </Surface>
 
       {/* 2. Summary Mini-Cards */}
@@ -199,25 +235,30 @@ export default function HistoryScreen() {
             styles.statCardSales,
             {
               backgroundColor: activeColors.surface,
-              borderColor: isDarkMode ? '#7F1D1D' : '#FECDD3',
+              borderColor: isDarkMode ? 'rgba(220, 38, 38, 0.25)' : '#FECDD3',
             },
           ]}
         >
-          <View
-            style={[
-              styles.statIconBoxSales,
-              { backgroundColor: isDarkMode ? '#450A0A' : '#FEE2E2' },
-            ]}
-          >
-            <MaterialCommunityIcons name="arrow-down" size={18} color="#DC2626" />
+          <View style={styles.statCardHeader}>
+            <View
+              style={[
+                styles.statIconBox,
+                { backgroundColor: isDarkMode ? '#450A0A' : '#FEE2E2' },
+              ]}
+            >
+              <MaterialCommunityIcons name="arrow-down-bold" size={15} color="#DC2626" />
+            </View>
+            <Text style={[styles.statLabel, { color: activeColors.textSecondary }]}>TOTAL SOLD</Text>
           </View>
-          <View>
-            <Text style={[styles.statLabel, { color: activeColors.textSecondary }]}>Total Sold</Text>
+          <View style={styles.statValueContainer}>
             <Text style={styles.statValueSales}>
-              {stats.totalSalesUnits} <Text style={[styles.statUnit, { color: activeColors.textSecondary }]}>units</Text>
+              {stats.totalSalesUnits}{' '}
+              <Text style={[styles.statUnit, { color: activeColors.textSecondary }]}>units</Text>
             </Text>
-            <Text style={[styles.statSub, { color: activeColors.textMuted }]}>{stats.salesCount} sale events</Text>
           </View>
+          <Text style={[styles.statSub, { color: activeColors.textMuted }]}>
+            {stats.salesCount} {stats.salesCount === 1 ? 'sale event' : 'sale events'}
+          </Text>
         </Surface>
 
         <Surface
@@ -226,25 +267,30 @@ export default function HistoryScreen() {
             styles.statCardRestock,
             {
               backgroundColor: activeColors.surface,
-              borderColor: isDarkMode ? '#064E3B' : '#BBF7D0',
+              borderColor: isDarkMode ? 'rgba(22, 163, 74, 0.25)' : '#BBF7D0',
             },
           ]}
         >
-          <View
-            style={[
-              styles.statIconBoxRestock,
-              { backgroundColor: isDarkMode ? '#052E16' : '#DCFCE7' },
-            ]}
-          >
-            <MaterialCommunityIcons name="arrow-up" size={18} color="#16A34A" />
+          <View style={styles.statCardHeader}>
+            <View
+              style={[
+                styles.statIconBox,
+                { backgroundColor: isDarkMode ? '#052E16' : '#DCFCE7' },
+              ]}
+            >
+              <MaterialCommunityIcons name="arrow-up-bold" size={15} color="#16A34A" />
+            </View>
+            <Text style={[styles.statLabel, { color: activeColors.textSecondary }]}>RESTOCKED</Text>
           </View>
-          <View>
-            <Text style={[styles.statLabel, { color: activeColors.textSecondary }]}>Total Restocked</Text>
+          <View style={styles.statValueContainer}>
             <Text style={styles.statValueRestock}>
-              {stats.totalRestockUnits} <Text style={[styles.statUnit, { color: activeColors.textSecondary }]}>units</Text>
+              {stats.totalRestockUnits}{' '}
+              <Text style={[styles.statUnit, { color: activeColors.textSecondary }]}>units</Text>
             </Text>
-            <Text style={[styles.statSub, { color: activeColors.textMuted }]}>{stats.restockCount} restock events</Text>
           </View>
+          <Text style={[styles.statSub, { color: activeColors.textMuted }]}>
+            {stats.restockCount} {stats.restockCount === 1 ? 'restock event' : 'restock events'}
+          </Text>
         </Surface>
       </View>
 
@@ -269,72 +315,90 @@ export default function HistoryScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={styles.filterScroll}
           contentContainerStyle={styles.filterChipsRow}
         >
-          <Chip
-            selected={filterType === 'all'}
+          <TouchableOpacity
+            style={[
+              styles.filterPill,
+              filterType === 'all'
+                ? { backgroundColor: activeColors.primary, borderColor: activeColors.primary }
+                : { backgroundColor: activeColors.surface, borderColor: activeColors.border },
+            ]}
             onPress={() => setFilterType('all')}
-            style={[
-              styles.filterChip,
-              {
-                backgroundColor: filterType === 'all' ? activeColors.primary : activeColors.surface,
-                borderColor: filterType === 'all' ? activeColors.primary : activeColors.border,
-              },
-            ]}
-            textStyle={[
-              styles.filterChipText,
-              { color: filterType === 'all' ? '#FFFFFF' : activeColors.textSecondary },
-              filterType === 'all' && styles.filterChipTextActive,
-            ]}
-            showSelectedOverlay={false}
+            activeOpacity={0.75}
           >
-            All Activity ({history.length})
-          </Chip>
-          <Chip
-            selected={filterType === 'sale'}
+            {filterType === 'all' && (
+              <MaterialCommunityIcons name="check" size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+            )}
+            <Text
+              style={[
+                styles.filterPillText,
+                { color: filterType === 'all' ? '#FFFFFF' : activeColors.textSecondary },
+                filterType === 'all' && styles.filterPillTextActive,
+              ]}
+            >
+              All Activity ({history.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.filterPill,
+              filterType === 'sale'
+                ? { backgroundColor: '#DC2626', borderColor: '#DC2626' }
+                : { backgroundColor: activeColors.surface, borderColor: activeColors.border },
+            ]}
             onPress={() => setFilterType('sale')}
-            style={[
-              styles.filterChip,
-              {
-                backgroundColor: filterType === 'sale' ? '#DC2626' : activeColors.surface,
-                borderColor: filterType === 'sale' ? '#DC2626' : activeColors.border,
-              },
-            ]}
-            textStyle={[
-              styles.filterChipText,
-              { color: filterType === 'sale' ? '#FFFFFF' : activeColors.textSecondary },
-              filterType === 'sale' && styles.filterChipSaleTextActive,
-            ]}
-            showSelectedOverlay={false}
+            activeOpacity={0.75}
           >
-            Sales (Out) ({stats.salesCount})
-          </Chip>
-          <Chip
-            selected={filterType === 'restock'}
+            {filterType === 'sale' && (
+              <MaterialCommunityIcons name="check" size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+            )}
+            <Text
+              style={[
+                styles.filterPillText,
+                { color: filterType === 'sale' ? '#FFFFFF' : activeColors.textSecondary },
+                filterType === 'sale' && styles.filterPillTextActive,
+              ]}
+            >
+              Sales (Out) ({stats.salesCount})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.filterPill,
+              filterType === 'restock'
+                ? { backgroundColor: '#16A34A', borderColor: '#16A34A' }
+                : { backgroundColor: activeColors.surface, borderColor: activeColors.border },
+            ]}
             onPress={() => setFilterType('restock')}
-            style={[
-              styles.filterChip,
-              {
-                backgroundColor: filterType === 'restock' ? '#16A34A' : activeColors.surface,
-                borderColor: filterType === 'restock' ? '#16A34A' : activeColors.border,
-              },
-            ]}
-            textStyle={[
-              styles.filterChipText,
-              { color: filterType === 'restock' ? '#FFFFFF' : activeColors.textSecondary },
-              filterType === 'restock' && styles.filterChipRestockTextActive,
-            ]}
-            showSelectedOverlay={false}
+            activeOpacity={0.75}
           >
-            Restocks (In) ({stats.restockCount})
-          </Chip>
+            {filterType === 'restock' && (
+              <MaterialCommunityIcons name="check" size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+            )}
+            <Text
+              style={[
+                styles.filterPillText,
+                { color: filterType === 'restock' ? '#FFFFFF' : activeColors.textSecondary },
+                filterType === 'restock' && styles.filterPillTextActive,
+              ]}
+            >
+              Restocks (In) ({stats.restockCount})
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
       </View>
 
       {/* 4. History List */}
       <ScrollView
         style={[styles.listContainer, { backgroundColor: activeColors.background }]}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: Math.max(insets.bottom || 0, 16) + 85 },
+        ]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={activeColors.primary} />
         }
@@ -394,7 +458,10 @@ export default function HistoryScreen() {
                     </View>
 
                     <View style={styles.productDetails}>
-                      <Text style={[styles.prodName, { color: activeColors.textPrimary }]}>
+                      <Text
+                        style={[styles.prodName, { color: activeColors.textPrimary }]}
+                        numberOfLines={1}
+                      >
                         {item.productName}
                       </Text>
                       <View style={styles.badgeRow}>
@@ -472,10 +539,13 @@ export default function HistoryScreen() {
                   ]}
                 >
                   <View style={styles.balanceRow}>
-                    <Text style={[styles.balanceLabel, { color: activeColors.textSecondary }]}>
-                      Stock Balance:
+                    <Text style={[styles.balanceLabel, { color: activeColors.textMuted }]}>
+                      Balance:
                     </Text>
-                    <Text style={[styles.balanceValues, { color: activeColors.textSecondary }]}>
+                    <Text
+                      style={[styles.balanceValues, { color: activeColors.textSecondary }]}
+                      numberOfLines={1}
+                    >
                       {item.balanceBeforeBase} {item.unit} ➔{' '}
                       <Text style={{ fontWeight: '700', color: activeColors.textPrimary }}>
                         {item.balanceAfterBase} {item.unit}
@@ -484,7 +554,7 @@ export default function HistoryScreen() {
                   </View>
 
                   <View style={styles.timeRow}>
-                    <MaterialCommunityIcons name="clock-outline" size={13} color={activeColors.textMuted} />
+                    <MaterialCommunityIcons name="clock-outline" size={12} color={activeColors.textMuted} />
                     <Text style={[styles.timeText, { color: activeColors.textMuted }]}>
                       {formatTimestamp(item.createdAt)}
                     </Text>
@@ -498,7 +568,16 @@ export default function HistoryScreen() {
                       { backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC' },
                     ]}
                   >
-                    <Text style={[styles.notesText, { color: activeColors.textSecondary }]}>
+                    <MaterialCommunityIcons
+                      name="note-text-outline"
+                      size={12}
+                      color={activeColors.textMuted}
+                      style={{ marginRight: 4 }}
+                    />
+                    <Text
+                      style={[styles.notesText, { color: activeColors.textSecondary }]}
+                      numberOfLines={2}
+                    >
                       Note: {item.reason || item.notes}
                     </Text>
                   </View>
@@ -522,107 +601,105 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
-  headerLeft: {
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerTitleCol: {
     flex: 1,
+    paddingRight: 12,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
-    color: '#0F172A',
+    letterSpacing: -0.3,
   },
   headerSubtitle: {
-    fontSize: 13,
-    color: '#64748B',
+    fontSize: 12,
     marginTop: 2,
+    fontWeight: '500',
   },
-  headerCountPill: {
+  syncPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#EFF6FF',
+    gap: 5,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: borderRadius.full,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
   },
-  headerCountText: {
+  syncPillText: {
     fontSize: 12,
     fontWeight: '700',
-    color: colors.primary,
+  },
+  syncCountBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 10,
+    marginLeft: 2,
+  },
+  syncCountBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   statsRow: {
     flexDirection: 'row',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    gap: spacing.md,
+    gap: 12,
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
+    borderRadius: 16,
+    padding: 12,
     borderWidth: 1,
     ...shadows.card,
   },
-  statCardSales: {
-    borderColor: '#FECDD3',
-  },
-  statCardRestock: {
-    borderColor: '#BBF7D0',
-  },
-  statIconBoxSales: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: '#FEE2E2',
-    justifyContent: 'center',
+  statCardSales: {},
+  statCardRestock: {},
+  statCardHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
   },
-  statIconBoxRestock: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: '#DCFCE7',
+  statIconBox: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   statLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-    textTransform: 'uppercase',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  statValueContainer: {
+    marginBottom: 2,
   },
   statValueSales: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
     color: '#DC2626',
-    marginTop: 1,
   },
   statValueRestock: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
     color: '#16A34A',
-    marginTop: 1,
   },
   statUnit: {
     fontSize: 12,
-    fontWeight: '500',
-    color: '#64748B',
+    fontWeight: '600',
   },
   statSub: {
     fontSize: 11,
-    color: '#94A3B8',
-    marginTop: 1,
+    fontWeight: '500',
   },
   filterSection: {
     paddingHorizontal: spacing.lg,
@@ -641,43 +718,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     minHeight: 44,
   },
+  filterScroll: {
+    marginHorizontal: -spacing.lg,
+  },
   filterChipsRow: {
     flexDirection: 'row',
+    paddingHorizontal: spacing.lg,
     gap: 8,
     paddingVertical: spacing.sm,
   },
-  filterChip: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E2E8F0',
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
     borderWidth: 1,
   },
-  filterChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  filterChipText: {
+  filterPillText: {
     fontSize: 12,
-    color: '#475569',
     fontWeight: '600',
   },
-  filterChipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  filterChipSaleActive: {
-    backgroundColor: '#DC2626',
-    borderColor: '#DC2626',
-  },
-  filterChipSaleTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  filterChipRestockActive: {
-    backgroundColor: '#16A34A',
-    borderColor: '#16A34A',
-  },
-  filterChipRestockTextActive: {
-    color: '#FFFFFF',
+  filterPillTextActive: {
     fontWeight: '700',
   },
   listContainer: {
@@ -685,15 +747,12 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: 40,
     gap: spacing.sm,
   },
   historyCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     ...shadows.card,
   },
   cardHeaderRow: {
@@ -704,21 +763,16 @@ const styles = StyleSheet.create({
   cardInfoLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: 10,
     flex: 1,
+    paddingRight: 8,
   },
   iconBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  iconBadgeSale: {
-    backgroundColor: '#FEE2E2',
-  },
-  iconBadgeRestock: {
-    backgroundColor: '#DCFCE7',
   },
   productDetails: {
     flex: 1,
@@ -726,41 +780,38 @@ const styles = StyleSheet.create({
   prodName: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#0F172A',
   },
   badgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 3,
+    flexWrap: 'wrap',
+    gap: 5,
+    marginTop: 4,
   },
   variantBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
+    paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: borderRadius.sm,
+    borderRadius: 6,
   },
   variantBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#475569',
   },
   brandBadge: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 6,
+    paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: borderRadius.sm,
+    borderRadius: 6,
   },
   brandBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    color: colors.primary,
   },
   cardInfoRight: {
     alignItems: 'flex-end',
+    minWidth: 70,
   },
   quantityText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
   },
   quantityTextSale: {
@@ -772,14 +823,8 @@ const styles = StyleSheet.create({
   typeBadge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: borderRadius.sm,
-    marginTop: 3,
-  },
-  typeBadgeSale: {
-    backgroundColor: '#FEE2E2',
-  },
-  typeBadgeRestock: {
-    backgroundColor: '#DCFCE7',
+    borderRadius: 6,
+    marginTop: 4,
   },
   typeBadgeText: {
     fontSize: 10,
@@ -796,63 +841,62 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: spacing.sm,
-    paddingTop: spacing.xs,
+    marginTop: 10,
+    paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    gap: 8,
   },
   balanceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    flex: 1,
   },
   balanceLabel: {
-    fontSize: 12,
-    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '500',
   },
   balanceValues: {
-    fontSize: 12,
-    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '600',
+    flexShrink: 1,
   },
   timeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
+    flexShrink: 0,
   },
   timeText: {
     fontSize: 11,
-    color: '#94A3B8',
+    fontWeight: '500',
   },
   notesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 6,
-    backgroundColor: '#F8FAFC',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: borderRadius.sm,
+    borderRadius: 6,
   },
   notesText: {
     fontSize: 11,
-    color: '#64748B',
-    fontStyle: 'italic',
+    flex: 1,
   },
   emptyState: {
-    backgroundColor: '#FFFFFF',
     borderRadius: borderRadius.lg,
     padding: spacing.xl,
     alignItems: 'center',
     marginTop: spacing.xl,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
   emptyTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0F172A',
     marginTop: spacing.md,
   },
   emptyDesc: {
     fontSize: 13,
-    color: '#64748B',
     textAlign: 'center',
     marginTop: spacing.xs,
     lineHeight: 18,
