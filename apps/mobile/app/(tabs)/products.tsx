@@ -776,6 +776,39 @@ export default function ProductsScreen() {
     }
   };
 
+  // Create Subcategory Handler
+  const handleCreateSubcategory = async () => {
+    if (!newSubcatName.trim()) {
+      Alert.alert('Required', 'Please enter a subcategory name');
+      return;
+    }
+    try {
+      setCreatingSubcat(true);
+      const storeId = store?.id || 'store-1';
+      const targetCatId = formVisible
+        ? formCategoryId
+        : (selectedCategory || categories[0]?.id || '');
+      const created = await CategoryRepository.createSubcategory(
+        { categoryId: targetCatId, name: newSubcatName.trim() },
+        storeId,
+        deviceId
+      );
+      setNewSubcatDialogVisible(false);
+      setNewSubcatName('');
+      await loadData();
+      if (formVisible) {
+        setFormSubcategoryId(created.id);
+      } else {
+        setSelectedSubcategory(created.id);
+      }
+      Alert.alert('Success', `Subcategory "${created.name}" created!`);
+    } catch (e) {
+      Alert.alert('Error', 'Failed to create subcategory');
+    } finally {
+      setCreatingSubcat(false);
+    }
+  };
+
   // Save Product (Create or Update)
   const handleSaveProduct = async () => {
     if (!formName.trim()) {
@@ -2041,6 +2074,118 @@ export default function ProductsScreen() {
               </Text>
             </TouchableOpacity>
           </ScrollView>
+
+          {/* Inline Dialog: Add New Category (Overlay over Add Product Modal) */}
+          {newCatDialogVisible && (
+            <View style={styles.dialogBackdrop}>
+              <View style={[styles.inlineDialogCard, { backgroundColor: activeColors.surface }]}>
+                <Text style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
+                  Add New Category
+                </Text>
+                <View style={{ marginTop: spacing.sm, marginBottom: spacing.md }}>
+                  <Text style={[styles.inputLabel, { color: activeColors.textSecondary }]}>
+                    CATEGORY NAME *
+                  </Text>
+                  <RNTextInput
+                    value={newCatName}
+                    onChangeText={setNewCatName}
+                    placeholder="e.g. Pipes, Paints, Tools, Sanitary"
+                    placeholderTextColor={activeColors.textMuted}
+                    style={[
+                      styles.smoothNumericInput,
+                      {
+                        backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC',
+                        borderColor: activeColors.primary,
+                        color: activeColors.textPrimary,
+                        fontWeight: '600',
+                      },
+                    ]}
+                    autoFocus
+                  />
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => setNewCatDialogVisible(false)}
+                    style={styles.dialogCancelBtn}
+                    disabled={creatingCat}
+                  >
+                    <Text style={styles.dialogCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleCreateCategory}
+                    disabled={creatingCat || !newCatName.trim()}
+                    style={[
+                      styles.dialogConfirmBtn,
+                      (creatingCat || !newCatName.trim()) && { opacity: 0.5 },
+                    ]}
+                  >
+                    <Text style={styles.dialogConfirmText}>
+                      {creatingCat ? 'Creating...' : 'Create'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Inline Dialog: Add New Subcategory (Overlay over Add Product Modal) */}
+          {newSubcatDialogVisible && (
+            <View style={styles.dialogBackdrop}>
+              <View style={[styles.inlineDialogCard, { backgroundColor: activeColors.surface }]}>
+                <Text style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
+                  New Subcategory
+                </Text>
+                <Text style={{ color: activeColors.textSecondary, fontSize: 13, marginBottom: 12 }}>
+                  Add a subcategory under{' '}
+                  <Text style={{ fontWeight: '700', color: activeColors.primary }}>
+                    {categoryMap.get(formCategoryId) || 'Category'}
+                  </Text>
+                </Text>
+                <View style={{ marginTop: spacing.xs, marginBottom: spacing.md }}>
+                  <Text style={[styles.inputLabel, { color: activeColors.textSecondary }]}>
+                    SUBCATEGORY NAME *
+                  </Text>
+                  <RNTextInput
+                    value={newSubcatName}
+                    onChangeText={setNewSubcatName}
+                    placeholder="e.g. Angles & Elbows, CPVC Pipes"
+                    placeholderTextColor={activeColors.textMuted}
+                    style={[
+                      styles.smoothNumericInput,
+                      {
+                        backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC',
+                        borderColor: activeColors.primary,
+                        color: activeColors.textPrimary,
+                        fontWeight: '600',
+                      },
+                    ]}
+                    autoFocus
+                  />
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => setNewSubcatDialogVisible(false)}
+                    style={styles.dialogCancelBtn}
+                    disabled={creatingSubcat}
+                  >
+                    <Text style={styles.dialogCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleCreateSubcategory}
+                    disabled={creatingSubcat || !newSubcatName.trim()}
+                    style={[
+                      styles.dialogConfirmBtn,
+                      (creatingSubcat || !newSubcatName.trim()) && { opacity: 0.5 },
+                    ]}
+                  >
+                    <Text style={styles.dialogConfirmText}>
+                      {creatingSubcat ? 'Creating...' : 'Create'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
         </View>
       </Modal>
 
@@ -2055,164 +2200,140 @@ export default function ProductsScreen() {
         activeColors={activeColors}
       />
 
-      {/* 5. New Category Dialog */}
-      <Portal>
-        <Dialog
-          visible={newCatDialogVisible}
-          onDismiss={() => setNewCatDialogVisible(false)}
-          style={[styles.dialog, { backgroundColor: activeColors.surface }]}
-        >
-          <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
-            Add New Category
-          </Dialog.Title>
-          <Dialog.Content>
-            <TextInput
-              label="Category Name *"
-              value={newCatName}
-              onChangeText={setNewCatName}
-              mode="outlined"
-              style={{ backgroundColor: activeColors.surface }}
-              textColor={activeColors.textPrimary}
-              placeholder="e.g. Pipes, Paints, Tools, Sanitary"
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <TouchableOpacity
-              onPress={() => setNewCatDialogVisible(false)}
-              style={styles.dialogCancelBtn}
-            >
-              <Text style={styles.dialogCancelText}>Cancel</Text>
-            </TouchableOpacity>
+      {/* 5. New Category Dialog (Only rendered on main screen when modal is closed) */}
+      {!formVisible && (
+        <Portal>
+          <Dialog
+            visible={newCatDialogVisible}
+            onDismiss={() => setNewCatDialogVisible(false)}
+            style={[styles.dialog, { backgroundColor: activeColors.surface }]}
+          >
+            <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
+              Add New Category
+            </Dialog.Title>
+            <Dialog.Content>
+              <TextInput
+                label="Category Name *"
+                value={newCatName}
+                onChangeText={setNewCatName}
+                mode="outlined"
+                style={{ backgroundColor: activeColors.surface }}
+                textColor={activeColors.textPrimary}
+                placeholder="e.g. Pipes, Paints, Tools, Sanitary"
+              />
+            </Dialog.Content>
+            <Dialog.Actions>
+              <TouchableOpacity
+                onPress={() => setNewCatDialogVisible(false)}
+                style={styles.dialogCancelBtn}
+              >
+                <Text style={styles.dialogCancelText}>Cancel</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={handleCreateCategory}
-              disabled={creatingCat}
-              style={[styles.dialogConfirmBtn, creatingCat && { opacity: 0.7 }]}
-            >
-              <Text style={styles.dialogConfirmText}>
-                {creatingCat ? 'Creating...' : 'Create'}
-              </Text>
-            </TouchableOpacity>
-          </Dialog.Actions>
-        </Dialog>
+              <TouchableOpacity
+                onPress={handleCreateCategory}
+                disabled={creatingCat}
+                style={[styles.dialogConfirmBtn, creatingCat && { opacity: 0.7 }]}
+              >
+                <Text style={styles.dialogConfirmText}>
+                  {creatingCat ? 'Creating...' : 'Create'}
+                </Text>
+              </TouchableOpacity>
+            </Dialog.Actions>
+          </Dialog>
 
-        {/* 6. Delete Product Confirmation Dialog */}
-        <Dialog
-          visible={!!deleteConfirmProd}
-          onDismiss={() => {
-            if (!deletingProduct) setDeleteConfirmProd(null);
-          }}
-          style={[styles.dialog, { backgroundColor: activeColors.surface }]}
-        >
-          <Dialog.Title style={[styles.dialogTitle, { color: '#EF4444' }]}>
-            Delete Product
-          </Dialog.Title>
-          <Dialog.Content>
-            <Text style={{ color: activeColors.textPrimary, fontSize: 15, marginBottom: 8, fontWeight: '600' }}>
-              Are you sure you want to delete "{deleteConfirmProd?.name}"?
-            </Text>
-            <Text style={{ color: activeColors.textSecondary, fontSize: 13, lineHeight: 18 }}>
-              This will remove the product and its sizes from your active catalogue. Historical transactions and sales will remain preserved.
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 10 }}>
-            <TouchableOpacity
-              style={styles.dialogCancelBtn}
-              onPress={() => setDeleteConfirmProd(null)}
-              disabled={deletingProduct}
-            >
-              <Text style={styles.dialogCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.dialogConfirmBtnSell,
-                { backgroundColor: '#DC2626' },
-                deletingProduct && { opacity: 0.7 },
-              ]}
-              onPress={handleConfirmDeleteProduct}
-              disabled={deletingProduct}
-            >
-              <Text style={styles.dialogConfirmText}>
-                {deletingProduct ? 'Deleting...' : 'Delete Product'}
+          {/* 6. Delete Product Confirmation Dialog */}
+          <Dialog
+            visible={!!deleteConfirmProd}
+            onDismiss={() => {
+              if (!deletingProduct) setDeleteConfirmProd(null);
+            }}
+            style={[styles.dialog, { backgroundColor: activeColors.surface }]}
+          >
+            <Dialog.Title style={[styles.dialogTitle, { color: '#EF4444' }]}>
+              Delete Product
+            </Dialog.Title>
+            <Dialog.Content>
+              <Text style={{ color: activeColors.textPrimary, fontSize: 15, marginBottom: 8, fontWeight: '600' }}>
+                Are you sure you want to delete "{deleteConfirmProd?.name}"?
               </Text>
-            </TouchableOpacity>
-          </Dialog.Actions>
-        </Dialog>
+              <Text style={{ color: activeColors.textSecondary, fontSize: 13, lineHeight: 18 }}>
+                This will remove the product and its sizes from your active catalogue. Historical transactions and sales will remain preserved.
+              </Text>
+            </Dialog.Content>
+            <Dialog.Actions style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 10 }}>
+              <TouchableOpacity
+                style={styles.dialogCancelBtn}
+                onPress={() => setDeleteConfirmProd(null)}
+                disabled={deletingProduct}
+              >
+                <Text style={styles.dialogCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.dialogConfirmBtnSell,
+                  { backgroundColor: '#DC2626' },
+                  deletingProduct && { opacity: 0.7 },
+                ]}
+                onPress={handleConfirmDeleteProduct}
+                disabled={deletingProduct}
+              >
+                <Text style={styles.dialogConfirmText}>
+                  {deletingProduct ? 'Deleting...' : 'Delete Product'}
+                </Text>
+              </TouchableOpacity>
+            </Dialog.Actions>
+          </Dialog>
 
-        {/* 7. New Subcategory Dialog */}
-        <Dialog
-          visible={newSubcatDialogVisible}
-          onDismiss={() => setNewSubcatDialogVisible(false)}
-          style={[styles.dialog, { backgroundColor: activeColors.surface }]}
-        >
-          <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
-            New Subcategory
-          </Dialog.Title>
-          <Dialog.Content>
-            <Text style={{ color: activeColors.textSecondary, fontSize: 13, marginBottom: 12 }}>
-              Add a subcategory under{' '}
-              <Text style={{ fontWeight: '700', color: activeColors.primary }}>
-                {categoryMap.get(formVisible ? formCategoryId : (selectedCategory || categories[0]?.id || '')) || 'Pipes'}
+          {/* 7. New Subcategory Dialog */}
+          <Dialog
+            visible={newSubcatDialogVisible}
+            onDismiss={() => setNewSubcatDialogVisible(false)}
+            style={[styles.dialog, { backgroundColor: activeColors.surface }]}
+          >
+            <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
+              New Subcategory
+            </Dialog.Title>
+            <Dialog.Content>
+              <Text style={{ color: activeColors.textSecondary, fontSize: 13, marginBottom: 12 }}>
+                Add a subcategory under{' '}
+                <Text style={{ fontWeight: '700', color: activeColors.primary }}>
+                  {categoryMap.get(selectedCategory || categories[0]?.id || '') || 'Pipes'}
+                </Text>
               </Text>
-            </Text>
-            <TextInput
-              label="Subcategory Name (e.g. Angles & Elbows, CPVC Pipes)"
-              value={newSubcatName}
-              onChangeText={setNewSubcatName}
-              mode="outlined"
-              style={{ backgroundColor: activeColors.surface }}
-              textColor={activeColors.textPrimary}
-              placeholderTextColor={activeColors.textMuted}
-              outlineColor={activeColors.border}
-              activeOutlineColor={activeColors.primary}
-              autoFocus
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <TouchableOpacity
-              onPress={() => setNewSubcatDialogVisible(false)}
-              style={styles.dialogCancelBtn}
-            >
-              <Text style={styles.dialogCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={async () => {
-                if (!newSubcatName.trim()) return;
-                try {
-                  setCreatingSubcat(true);
-                  const storeId = store?.id || 'store-1';
-                  const targetCatId = formVisible
-                    ? formCategoryId
-                    : (selectedCategory || categories[0]?.id || '');
-                  const created = await CategoryRepository.createSubcategory(
-                    { categoryId: targetCatId, name: newSubcatName.trim() },
-                    storeId,
-                    deviceId
-                  );
-                  setNewSubcatDialogVisible(false);
-                  setNewSubcatName('');
-                  await loadData();
-                  if (formVisible) {
-                    setFormSubcategoryId(created.id);
-                  } else {
-                    setSelectedSubcategory(created.id);
-                  }
-                } catch (e) {
-                  Alert.alert('Error', 'Failed to create subcategory');
-                } finally {
-                  setCreatingSubcat(false);
-                }
-              }}
-              style={[styles.dialogConfirmBtn, creatingSubcat && { opacity: 0.7 }]}
-              disabled={creatingSubcat}
-            >
-              <Text style={styles.dialogConfirmText}>
-                {creatingSubcat ? 'Creating...' : 'Create'}
-              </Text>
-            </TouchableOpacity>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+              <TextInput
+                label="Subcategory Name (e.g. Angles & Elbows, CPVC Pipes)"
+                value={newSubcatName}
+                onChangeText={setNewSubcatName}
+                mode="outlined"
+                style={{ backgroundColor: activeColors.surface }}
+                textColor={activeColors.textPrimary}
+                placeholderTextColor={activeColors.textMuted}
+                outlineColor={activeColors.border}
+                activeOutlineColor={activeColors.primary}
+                autoFocus
+              />
+            </Dialog.Content>
+            <Dialog.Actions>
+              <TouchableOpacity
+                onPress={() => setNewSubcatDialogVisible(false)}
+                style={styles.dialogCancelBtn}
+              >
+                <Text style={styles.dialogCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleCreateSubcategory}
+                style={[styles.dialogConfirmBtn, creatingSubcat && { opacity: 0.7 }]}
+                disabled={creatingSubcat}
+              >
+                <Text style={styles.dialogConfirmText}>
+                  {creatingSubcat ? 'Creating...' : 'Create'}
+                </Text>
+              </TouchableOpacity>
+            </Dialog.Actions>
+          </Dialog>
+        </Portal>
+      )}
     </View>
   );
 }
@@ -3128,5 +3249,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  dialogBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 99999,
+    elevation: 20,
+    padding: spacing.lg,
+  },
+  inlineDialogCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: borderRadius.md,
+    padding: spacing.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 24,
   },
 });
