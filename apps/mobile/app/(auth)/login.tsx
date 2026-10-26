@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView, Image } from 'react-native';
 import { Text, TextInput, Button, Card, Divider } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store/useAppStore.js';
@@ -53,8 +53,17 @@ export default function LoginScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Card style={styles.card}>
+        <View style={styles.logoHeaderWrapper}>
+          <View style={styles.logoBadge}>
+            <Image
+              source={require('../../assets/logo.png')}
+              style={styles.loginLogo}
+              resizeMode="contain"
+            />
+          </View>
+        </View>
         <Card.Title
-          title="Hardware Store Terminal"
+          title="Manju Hardware Store"
           subtitle="Stock Management & Billing"
           titleStyle={styles.title}
           subtitleStyle={styles.subtitle}
@@ -131,15 +140,41 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: '#1E293B',
     padding: 10,
-    borderRadius: 12,
+    borderRadius: 16,
+  },
+  logoHeaderWrapper: {
+    alignItems: 'center',
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  logoBadge: {
+    width: 80,
+    height: 80,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  loginLogo: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
   },
   title: {
     fontSize: 22,
     fontWeight: 'bold',
     color: '#38BDF8',
+    textAlign: 'center',
   },
   subtitle: {
     color: '#94A3B8',
+    textAlign: 'center',
   },
   input: {
     marginBottom: 14,

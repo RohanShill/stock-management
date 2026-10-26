@@ -485,7 +485,7 @@ export default function HomeScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={activeColors.primary} />
       }
     >
-      {/* 1. Clean Welcome Header (Hardcoded Store Identity) */}
+      {/* 1. Clean Welcome Header with Official Store Logo */}
       <Surface
         style={[
           styles.headerCard,
@@ -495,14 +495,38 @@ export default function HomeScreen() {
           },
         ]}
       >
-        <View style={styles.headerLeft}>
-          <Text style={[styles.storeName, { color: activeColors.textPrimary }]}>
-            Manju Hardware Store
-          </Text>
-          <Text style={[styles.headerDate, { color: activeColors.textSecondary }]}>
-            {formattedDate}
-          </Text>
+        <View style={styles.headerLeftContainer}>
+          <View
+            style={[
+              styles.logoWrapper,
+              {
+                backgroundColor: '#FFFFFF',
+                borderColor: isDarkMode ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
+              },
+            ]}
+          >
+            <Image
+              source={require('../../assets/logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </View>
+          <View style={styles.headerTextCol}>
+            <Text
+              style={[styles.storeName, { color: activeColors.textPrimary }]}
+              numberOfLines={1}
+            >
+              Manju Hardware Store
+            </Text>
+            <View style={styles.headerDateRow}>
+              <View style={styles.onlineDot} />
+              <Text style={[styles.headerDate, { color: activeColors.textSecondary }]}>
+                {formattedDate}
+              </Text>
+            </View>
+          </View>
         </View>
+
         <View
           style={[
             styles.productCountPill,
@@ -512,9 +536,9 @@ export default function HomeScreen() {
             },
           ]}
         >
-          <MaterialCommunityIcons name="tag-outline" size={14} color={activeColors.primary} />
+          <MaterialCommunityIcons name="tag-outline" size={13} color={activeColors.primary} />
           <Text style={[styles.productCountText, { color: activeColors.primary }]}>
-            {stats.totalProductsCount} Products
+            {stats.totalProductsCount} Items
           </Text>
         </View>
       </Surface>
@@ -984,34 +1008,74 @@ const styles = StyleSheet.create({
   // 1. Header Card
   headerCard: {
     borderRadius: borderRadius.xl,
-    padding: spacing.xl,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 1,
     ...shadows.card,
   },
-  headerLeft: {
+  headerLeftContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    paddingRight: 8,
+  },
+  logoWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 10,
+  },
+  headerTextCol: {
     flex: 1,
   },
   storeName: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '800',
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
+  },
+  headerDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  onlineDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
   },
   headerDate: {
-    fontSize: 13,
-    marginTop: 4,
+    fontSize: 12,
     fontWeight: '500',
   },
   productCountPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
+    gap: 4,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: borderRadius.full,
     borderWidth: 1,
+    flexShrink: 0,
   },
   productCountText: {
     fontSize: 12,

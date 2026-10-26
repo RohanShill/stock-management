@@ -4,6 +4,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Image,
   Platform,
   StatusBar as RNStatusBar,
 } from 'react-native';
@@ -452,6 +453,7 @@ export default function SettingsScreen() {
       ]}
     >
       {/* 1. Header */}
+      {/* 1. Header with Store Logo */}
       <Surface
         style={[
           styles.headerCard,
@@ -463,16 +465,25 @@ export default function SettingsScreen() {
       >
         <View
           style={[
-            styles.headerIconBox,
-            { backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF' },
+            styles.headerLogoWrapper,
+            {
+              backgroundColor: '#FFFFFF',
+              borderColor: isDarkMode ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
+            },
           ]}
         >
-          <MaterialCommunityIcons name="cog" size={26} color={activeColors.primary} />
+          <Image
+            source={require('../../assets/logo.png')}
+            style={styles.headerLogoImage}
+            resizeMode="contain"
+          />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.headerTitle, { color: activeColors.textPrimary }]}>Settings</Text>
+          <Text style={[styles.headerTitle, { color: activeColors.textPrimary }]}>
+            Manju Hardware Store
+          </Text>
           <Text style={[styles.headerSub, { color: activeColors.textSecondary }]}>
-            Appearance, categories, and data export
+            Store Settings & Operations
           </Text>
         </View>
       </Surface>
@@ -771,12 +782,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     ...shadows.card,
   },
-  headerIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: borderRadius.md,
+  headerLogoWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  headerLogoImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 10,
   },
   headerTitle: {
     fontSize: 18,
