@@ -686,15 +686,11 @@ export default function SettingsScreen() {
           },
         ]}
       >
-        <MaterialCommunityIcons name="shield-check" size={28} color={activeColors.primary} />
         <Text style={[styles.aboutTitle, { color: activeColors.textPrimary }]}>
           Manju Hardware Store Management
         </Text>
         <Text style={[styles.aboutVersion, { color: activeColors.textSecondary }]}>
-          Version 1.0.0 • Production Ready • Offline First
-        </Text>
-        <Text style={[styles.aboutFootnote, { color: activeColors.textMuted }]}>
-          Data stored safely on your device in secure local SQLite database.
+          Version 1.0.0
         </Text>
       </Surface>
 
@@ -897,7 +893,8 @@ const styles = StyleSheet.create({
   // About Card
   aboutCard: {
     borderRadius: borderRadius.lg,
-    padding: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
     alignItems: 'center',
     marginTop: spacing.xl,
     borderWidth: 1,
@@ -906,17 +903,11 @@ const styles = StyleSheet.create({
   aboutTitle: {
     fontSize: 15,
     fontWeight: '700',
-    marginTop: spacing.xs,
   },
   aboutVersion: {
     fontSize: 12,
-    marginTop: 2,
-    fontWeight: '600',
-  },
-  aboutFootnote: {
-    fontSize: 11,
-    marginTop: 6,
-    textAlign: 'center',
+    marginTop: 4,
+    fontWeight: '500',
   },
 
   // Dialogs
