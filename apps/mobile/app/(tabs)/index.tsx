@@ -526,21 +526,6 @@ export default function HomeScreen() {
             </View>
           </View>
         </View>
-
-        <View
-          style={[
-            styles.productCountPill,
-            {
-              backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
-              borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
-            },
-          ]}
-        >
-          <MaterialCommunityIcons name="tag-outline" size={13} color={activeColors.primary} />
-          <Text style={[styles.productCountText, { color: activeColors.primary }]}>
-            {stats.totalProductsCount} Items
-          </Text>
-        </View>
       </Surface>
 
       {/* 2. Quick Actions (3 Action Buttons) */}
@@ -1019,13 +1004,12 @@ const styles = StyleSheet.create({
   headerLeftContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
     flex: 1,
-    paddingRight: 8,
   },
   logoWrapper: {
-    width: 48,
-    height: 48,
+    width: 52,
+    height: 52,
     borderRadius: 14,
     borderWidth: 1,
     overflow: 'hidden',
@@ -1047,7 +1031,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   storeName: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
     letterSpacing: -0.3,
   },
@@ -1058,28 +1042,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   onlineDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
     backgroundColor: '#10B981',
   },
   headerDate: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '500',
-  },
-  productCountPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    flexShrink: 0,
-  },
-  productCountText: {
-    fontSize: 12,
-    fontWeight: '700',
   },
 
   // 2. Quick Action Buttons (Optimized for Mobile Screens)
