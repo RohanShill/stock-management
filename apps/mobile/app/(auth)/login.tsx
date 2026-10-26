@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, TextInput, Button, Card, Divider } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store/useAppStore.js';
@@ -11,11 +11,11 @@ export default function LoginScreen() {
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { apiUrl, setUser, setToken, setStore, setDeviceId } = useAppStore();
+  const { apiUrl, setUser, setToken, setStore, setDeviceId, showToast } = useAppStore();
 
   const handleOnlineLogin = async () => {
     if (!username.trim() || !password.trim()) {
-      Alert.alert('Required', 'Please enter username and password');
+      showToast('Please enter username and password', 'warning');
       return;
     }
     setLoading(true);
@@ -35,11 +35,11 @@ export default function LoginScreen() {
       setToken(data.data.tokens.accessToken);
       setDeviceId(data.data.deviceId);
 
-      Alert.alert('Success', `Welcome back to ${data.data.store.name}!`);
+      showToast(`Welcome back to ${data.data.store.name}!`, 'success');
       router.replace('/(tabs)');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Login failed';
-      Alert.alert('Login Notice', `${msg}. You can continue offline if this device has existing store data.`);
+      showToast(`${msg}. You can continue offline.`, 'info');
     } finally {
       setLoading(false);
     }

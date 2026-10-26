@@ -1,6 +1,24 @@
 import { create } from 'zustand';
 import { User, Store } from '@hardware-store/shared';
 
+export type ToastType = 'success' | 'error' | 'warning' | 'info';
+
+export interface ToastConfig {
+  id: string;
+  type: ToastType;
+  message: string;
+}
+
+export interface ConfirmConfig {
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  isDestructive?: boolean;
+  onConfirm: () => void | Promise<void>;
+  onCancel?: () => void;
+}
+
 export interface AppState {
   user: User | null;
   store: Store | null;
@@ -13,6 +31,8 @@ export interface AppState {
   lastSyncTime: string | null;
   language: 'en' | 'hi';
   isDarkMode: boolean;
+  toast: ToastConfig | null;
+  confirmConfig: ConfirmConfig | null;
 
   setUser: (user: User | null) => void;
   setStore: (store: Store | null) => void;
@@ -26,6 +46,10 @@ export interface AppState {
   setLanguage: (lang: 'en' | 'hi') => void;
   setIsDarkMode: (val: boolean) => void;
   toggleTheme: () => void;
+  showToast: (message: string, type?: ToastType) => void;
+  hideToast: () => void;
+  showConfirm: (config: ConfirmConfig) => void;
+  hideConfirm: () => void;
   logout: () => void;
 }
 
@@ -69,5 +93,14 @@ export const useAppStore = create<AppState>((set) => ({
       }
       return { isDarkMode: next };
     }),
+  toast: null,
+  showToast: (message: string, type: ToastType = 'success') => {
+    const id = Date.now().toString();
+    set({ toast: { id, type, message } });
+  },
+  hideToast: () => set({ toast: null }),
+  confirmConfig: null,
+  showConfirm: (config: ConfirmConfig) => set({ confirmConfig: config }),
+  hideConfirm: () => set({ confirmConfig: null }),
   logout: () => set({ user: null, token: null, isLocked: false }),
 }));

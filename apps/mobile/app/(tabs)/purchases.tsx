@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Platform,
   StatusBar as RNStatusBar,
 } from 'react-native';
@@ -54,7 +53,7 @@ interface PurchaseLineItem {
 }
 
 export default function PurchasesScreen() {
-  const { store, deviceId, user, language, isDarkMode } = useAppStore();
+  const { store, deviceId, user, language, isDarkMode, showToast } = useAppStore();
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web'
     ? 0
@@ -150,13 +149,13 @@ export default function PurchasesScreen() {
   // Add Item to Purchase Lines
   const handleAddLineItem = () => {
     if (!selectedProduct || !selectedVariant) {
-      Alert.alert('Required', 'Please select a product and variant');
+      showToast('Please select a product and variant', 'warning');
       return;
     }
 
     const costPerUnit = parseFloat(unitCostInput || '0');
     if (costPerUnit <= 0) {
-      Alert.alert('Required', 'Please enter a valid purchase cost');
+      showToast('Please enter a valid purchase cost', 'warning');
       return;
     }
 
@@ -173,7 +172,7 @@ export default function PurchasesScreen() {
     }
 
     if (qty <= 0) {
-      Alert.alert('Required', 'Quantity must be greater than 0');
+      showToast('Quantity must be greater than 0', 'warning');
       return;
     }
 
@@ -212,11 +211,11 @@ export default function PurchasesScreen() {
 
   const handleConfirmPurchase = async () => {
     if (!supplierBillNo.trim()) {
-      Alert.alert('Required', 'Please enter supplier invoice / bill reference number');
+      showToast('Please enter supplier invoice / bill reference number', 'warning');
       return;
     }
     if (lineItems.length === 0) {
-      Alert.alert('Required', 'Please add at least one product line item to this purchase');
+      showToast('Please add at least one product line item to this purchase', 'warning');
       return;
     }
 
@@ -247,10 +246,7 @@ export default function PurchasesScreen() {
       );
 
       setConfirmDialogVisible(false);
-      Alert.alert(
-        'Goods Received & Stock Updated!',
-        `Purchase bill ${supplierBillNo} confirmed. Inventory balances and stock movement ledger updated.`
-      );
+      showToast(`Purchase bill ${supplierBillNo} confirmed! Stock updated.`, 'success');
 
       // Reset form
       setSupplierBillNo('');
@@ -259,13 +255,13 @@ export default function PurchasesScreen() {
       loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Purchase error';
-      Alert.alert('Purchase Error', msg);
+      showToast(msg, 'error');
     }
   };
 
   const handleCreateSupplier = async () => {
     if (!newSupName.trim() || !newSupPhone.trim()) {
-      Alert.alert('Required', 'Supplier name and phone are required');
+      showToast('Supplier name and phone are required', 'warning');
       return;
     }
     try {
@@ -280,9 +276,9 @@ export default function PurchasesScreen() {
       setAddSupplierVisible(false);
       setNewSupName('');
       setNewSupPhone('');
-      Alert.alert('Supplier Added', `Selected "${sup.name}"`);
+      showToast(`Supplier "${sup.name}" added`, 'success');
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to add supplier');
+      showToast(e.message || 'Failed to add supplier', 'error');
     }
   };
 

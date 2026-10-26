@@ -5,7 +5,6 @@ import {
   FlatList,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Image,
   Modal,
   Platform,
@@ -334,7 +333,7 @@ export default function ProductsScreen() {
     action?: string;
   }>();
 
-  const { store, deviceId, isDarkMode } = useAppStore();
+  const { store, deviceId, isDarkMode, showToast } = useAppStore();
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web'
     ? 0
@@ -643,7 +642,7 @@ export default function ProductsScreen() {
         setFormImageUrl(result.assets[0].uri);
       }
     } catch (e) {
-      Alert.alert('Error', 'Could not pick image from gallery');
+      showToast('Could not pick image from gallery', 'error');
     }
   };
 
@@ -651,7 +650,7 @@ export default function ProductsScreen() {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Camera permission is required to capture photos.');
+        showToast('Camera permission is required to capture photos', 'warning');
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
@@ -664,7 +663,7 @@ export default function ProductsScreen() {
         setFormImageUrl(result.assets[0].uri);
       }
     } catch (e) {
-      Alert.alert('Error', 'Could not open camera');
+      showToast('Could not open camera', 'error');
     }
   };
 
@@ -688,7 +687,7 @@ export default function ProductsScreen() {
 
   const removeVariantRow = (index: number) => {
     if (formVariants.length <= 1) {
-      Alert.alert('Cannot Remove', 'Each product must have at least one size/variant.');
+      showToast('Each product must have at least one size/variant', 'warning');
       return;
     }
     setFormVariants((prev) => prev.filter((_, idx) => idx !== index));
@@ -747,7 +746,7 @@ export default function ProductsScreen() {
       (v) => v.size.trim().toLowerCase() === presetLabel.trim().toLowerCase()
     );
     if (exists) {
-      Alert.alert('Already Added', `"${presetLabel}" is already in your size list.`);
+      showToast(`"${presetLabel}" is already in your size list`, 'info');
       return;
     }
 
@@ -767,7 +766,7 @@ export default function ProductsScreen() {
   // Create Category Handler
   const handleCreateCategory = async () => {
     if (!newCatName.trim()) {
-      Alert.alert('Required', 'Please enter a category name');
+      showToast('Please enter a category name', 'warning');
       return;
     }
     try {
@@ -782,10 +781,10 @@ export default function ProductsScreen() {
       setFormCategoryId(created.id);
       setNewCatName('');
       setNewCatDialogVisible(false);
-      Alert.alert('Success', `Category "${created.name}" created!`);
+      showToast(`Category "${created.name}" created!`, 'success');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Could not create category';
-      Alert.alert('Error', msg);
+      showToast(msg, 'error');
     } finally {
       setCreatingCat(false);
     }
@@ -794,7 +793,7 @@ export default function ProductsScreen() {
   // Create Subcategory Handler
   const handleCreateSubcategory = async () => {
     if (!newSubcatName.trim()) {
-      Alert.alert('Required', 'Please enter a subcategory name');
+      showToast('Please enter a subcategory name', 'warning');
       return;
     }
     try {
@@ -816,9 +815,9 @@ export default function ProductsScreen() {
       } else {
         setSelectedSubcategory(created.id);
       }
-      Alert.alert('Success', `Subcategory "${created.name}" created!`);
+      showToast(`Subcategory "${created.name}" created!`, 'success');
     } catch (e) {
-      Alert.alert('Error', 'Failed to create subcategory');
+      showToast('Failed to create subcategory', 'error');
     } finally {
       setCreatingSubcat(false);
     }
@@ -827,11 +826,11 @@ export default function ProductsScreen() {
   // Save Product (Create or Update)
   const handleSaveProduct = async () => {
     if (!formName.trim()) {
-      Alert.alert('Required', 'Product Name is mandatory.');
+      showToast('Product Name is mandatory', 'warning');
       return;
     }
     if (!formCategoryId) {
-      Alert.alert('Required', 'Please select a Category.');
+      showToast('Please select a Category', 'warning');
       return;
     }
 
@@ -839,7 +838,7 @@ export default function ProductsScreen() {
     for (let i = 0; i < formVariants.length; i++) {
       const v = formVariants[i];
       if (!v.size.trim() && !v.name.trim()) {
-        Alert.alert('Required', `Please enter a Size/Name for variant #${i + 1}`);
+        showToast(`Please enter a Size/Name for variant #${i + 1}`, 'warning');
         return;
       }
     }
@@ -956,7 +955,7 @@ export default function ProductsScreen() {
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to save product';
-      Alert.alert('Error', msg);
+      showToast(msg, 'error');
     } finally {
       setSavingProduct(false);
     }
@@ -974,14 +973,11 @@ export default function ProductsScreen() {
       const storeId = store?.id || deleteConfirmProd.storeId || 'store-1';
       await ProductRepository.archiveProduct(deleteConfirmProd.id, storeId, deviceId);
       setDeleteConfirmProd(null);
+      showToast(`"${deleteConfirmProd.name}" deleted`, 'info');
       await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Could not delete product';
-      if (Platform.OS === 'web') {
-        window.alert(`Error: ${msg}`);
-      } else {
-        Alert.alert('Error', msg);
-      }
+      showToast(msg, 'error');
     } finally {
       setDeletingProduct(false);
     }
@@ -991,15 +987,15 @@ export default function ProductsScreen() {
   const handleConfirmQuickStock = async (mode: 'add' | 'sell', qty: number, note: string) => {
     if (!quickStockTarget) return;
     if (isNaN(qty) || qty <= 0) {
-      Alert.alert('Invalid Quantity', 'Please enter a valid stock quantity (e.g. 10)');
+      showToast('Please enter a valid stock quantity', 'warning');
       return;
     }
 
     const currentStock = quickStockTarget.variant.currentStock || 0;
     if (mode === 'sell' && qty > currentStock) {
-      Alert.alert(
-        'Insufficient Stock',
-        `Cannot sell ${qty} ${quickStockTarget.unit}. Current available stock is ${currentStock} ${quickStockTarget.unit}.`
+      showToast(
+        `Cannot sell ${qty} ${quickStockTarget.unit}. Available: ${currentStock} ${quickStockTarget.unit}`,
+        'warning'
       );
       return;
     }
@@ -1037,7 +1033,7 @@ export default function ProductsScreen() {
       await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Could not update stock';
-      Alert.alert('Error', msg);
+      showToast(msg, 'error');
     } finally {
       setUpdatingStock(false);
     }

@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Platform,
   StatusBar as RNStatusBar,
 } from 'react-native';
@@ -27,7 +26,7 @@ import { CategoryRepository } from '../../src/database/repositories/categoryRepo
 import { lightColors, darkColors, spacing, borderRadius, shadows } from '../../src/theme/tokens.js';
 
 export default function SettingsScreen() {
-  const { store, deviceId, isDarkMode, toggleTheme } = useAppStore();
+  const { store, deviceId, isDarkMode, toggleTheme, showToast, showConfirm } = useAppStore();
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web'
     ? 0
@@ -79,7 +78,7 @@ export default function SettingsScreen() {
 
   const handleSaveCategory = async () => {
     if (!catNameInput.trim()) {
-      Alert.alert('Required', 'Please enter a category name.');
+      showToast('Please enter a category name.', 'warning');
       return;
     }
 
@@ -92,14 +91,14 @@ export default function SettingsScreen() {
           storeId,
           deviceId
         );
-        Alert.alert('Updated', `Category "${catNameInput.trim()}" updated.`);
+        showToast(`Category "${catNameInput.trim()}" updated.`, 'success');
       } else {
         await ProductRepository.createCategory(
           { name: catNameInput.trim(), displayOrder: categories.length },
           storeId,
           deviceId
         );
-        Alert.alert('Created', `Category "${catNameInput.trim()}" created.`);
+        showToast(`Category "${catNameInput.trim()}" created.`, 'success');
       }
 
       setCatDialogVisible(false);
@@ -108,32 +107,27 @@ export default function SettingsScreen() {
       await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Could not save category';
-      Alert.alert('Error', msg);
+      showToast(msg, 'error');
     }
   };
 
   const handleDeleteCategory = (cat: Category) => {
-    Alert.alert(
-      'Delete Category',
-      `Are you sure you want to delete category "${cat.name}"? Products in this category will remain intact.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const storeId = store?.id || 'store-1';
-              await CategoryRepository.archiveCategory(cat.id, storeId, deviceId);
-              Alert.alert('Deleted', `Category "${cat.name}" deleted.`);
-              await loadData();
-            } catch (err) {
-              Alert.alert('Error', 'Could not delete category.');
-            }
-          },
-        },
-      ]
-    );
+    showConfirm({
+      title: 'Delete Category',
+      message: `Are you sure you want to delete category "${cat.name}"? Products in this category will remain intact.`,
+      confirmText: 'Delete',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          const storeId = store?.id || 'store-1';
+          await CategoryRepository.archiveCategory(cat.id, storeId, deviceId);
+          showToast(`Category "${cat.name}" deleted.`, 'success');
+          await loadData();
+        } catch (err) {
+          showToast('Could not delete category.', 'error');
+        }
+      },
+    });
   };
 
   // Export Stock as PDF
@@ -375,12 +369,12 @@ export default function SettingsScreen() {
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
         } else {
-          Alert.alert('PDF Saved', `Exported to ${uri}`);
+          showToast(`Exported to ${uri}`, 'success');
         }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Could not generate PDF.';
-      Alert.alert('Export Error', msg);
+      showToast(msg, 'error');
     } finally {
       setExportingPdf(false);
     }
@@ -426,7 +420,7 @@ export default function SettingsScreen() {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        Alert.alert('Export Complete', 'Stock catalogue downloaded as CSV spreadsheet.');
+        showToast('Stock catalogue downloaded as CSV spreadsheet.', 'success');
       } else {
         // Native Mobile
         try {
@@ -438,14 +432,14 @@ export default function SettingsScreen() {
           if (await Sharing.isAvailableAsync()) {
             await Sharing.shareAsync(fileUri);
           } else {
-            Alert.alert('CSV Created', `Saved to ${fileUri}`);
+            showToast(`CSV saved to ${fileUri}`, 'success');
           }
         } catch {
-          Alert.alert('Export Generated', `CSV file generated with ${prods.length} products.`);
+          showToast(`CSV file generated with ${prods.length} products.`, 'success');
         }
       }
     } catch (e) {
-      Alert.alert('Export Error', 'Could not export catalogue.');
+      showToast('Could not export catalogue.', 'error');
     }
   };
 

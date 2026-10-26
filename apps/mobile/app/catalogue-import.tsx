@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import {
   Text,
   Card,
@@ -19,7 +19,7 @@ import { useAppStore } from '../src/store/useAppStore.js';
 import { colors, spacing, borderRadius, typography } from '../src/theme/tokens';
 
 export default function CatalogueImportScreen() {
-  const { store, deviceId, user } = useAppStore();
+  const { store, deviceId, user, showToast } = useAppStore();
   const [csvText, setCsvText] = useState(SAMPLE_CSV_TEMPLATE);
   const [validRows, setValidRows] = useState<BulkImportProductRow[]>([]);
   const [rowErrors, setRowErrors] = useState<CsvValidationRowError[]>([]);
@@ -29,7 +29,7 @@ export default function CatalogueImportScreen() {
 
   const handleValidateCsv = () => {
     if (!csvText.trim()) {
-      Alert.alert('Empty Input', 'Please paste CSV content');
+      showToast('Please paste CSV content', 'warning');
       return;
     }
 
@@ -40,21 +40,15 @@ export default function CatalogueImportScreen() {
     setValidated(true);
 
     if (result.errors.length > 0) {
-      Alert.alert(
-        'Validation Issues Detected',
-        `Found ${result.validRows.length} valid rows and ${result.errors.length} validation errors (including ${result.duplicateSkus.length} duplicate SKUs). Review row details below before importing.`
-      );
+      showToast(`Found ${result.errors.length} validation errors. Review details below.`, 'warning');
     } else {
-      Alert.alert(
-        'Validation Passed!',
-        `All ${result.validRows.length} rows are valid and ready to be imported into local inventory.`
-      );
+      showToast(`All ${result.validRows.length} rows are valid and ready to import!`, 'success');
     }
   };
 
   const handleExecuteImport = async () => {
     if (validRows.length === 0) {
-      Alert.alert('No Valid Rows', 'Please validate CSV rows before importing');
+      showToast('Please validate CSV rows before importing', 'warning');
       return;
     }
 
@@ -68,17 +62,14 @@ export default function CatalogueImportScreen() {
         user?.id
       );
 
-      Alert.alert(
-        'Import Completed!',
-        `Successfully imported ${result.importedProducts} new products and ${result.importedVariants} variants.\nSkipped: ${result.skippedCount}.\n\nAll changes saved in local SQLite database and queued for cloud sync.`
-      );
+      showToast(`Successfully imported ${result.importedProducts} products & ${result.importedVariants} variants!`, 'success');
 
       setValidated(false);
       setValidRows([]);
       setRowErrors([]);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Import failed';
-      Alert.alert('Import Failed', msg);
+      showToast(msg, 'error');
     } finally {
       setImporting(false);
     }

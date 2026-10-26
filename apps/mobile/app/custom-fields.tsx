@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Alert, FlatList, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView, FlatList, Platform } from 'react-native';
 import {
   Text,
   Button,
@@ -24,7 +24,7 @@ import { useAppStore } from '../src/store/useAppStore.js';
 import { colors, spacing, borderRadius, typography } from '../src/theme/tokens';
 
 export default function CustomFieldsScreen() {
-  const { store, deviceId } = useAppStore();
+  const { store, deviceId, showToast, showConfirm } = useAppStore();
   const [fields, setFields] = useState<CustomFieldDefinition[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
@@ -79,7 +79,7 @@ export default function CustomFieldsScreen() {
 
   const handleSaveField = async () => {
     if (!fieldName.trim() || !fieldLabel.trim()) {
-      Alert.alert('Required', 'Field Name (key) and Field Label are mandatory');
+      showToast('Field Name (key) and Field Label are mandatory', 'warning');
       return;
     }
     const storeId = store?.id || 'default-store';
@@ -102,7 +102,7 @@ export default function CustomFieldsScreen() {
           storeId,
           deviceId
         );
-        Alert.alert('Updated', `Field '${fieldLabel}' updated.`);
+        showToast(`Field '${fieldLabel}' updated.`, 'success');
       } else {
         await CustomFieldRepository.createCustomField(
           {
@@ -120,12 +120,12 @@ export default function CustomFieldsScreen() {
           storeId,
           deviceId
         );
-        Alert.alert('Created', `Field '${fieldLabel}' added.`);
+        showToast(`Field '${fieldLabel}' added.`, 'success');
       }
       setDialogVisible(false);
       loadData();
     } catch (err: unknown) {
-      Alert.alert('Error', (err as Error).message);
+      showToast((err as Error).message, 'error');
     }
   };
 
@@ -134,31 +134,17 @@ export default function CustomFieldsScreen() {
 
     const doArchiveField = async () => {
       await CustomFieldRepository.archiveCustomField(f.id, storeId, deviceId);
-      if (Platform.OS !== 'web') {
-        Alert.alert('Archived', `'${f.label}' specification archived.`);
-      }
+      showToast(`'${f.label}' specification archived.`, 'success');
       loadData();
     };
 
-    if (Platform.OS === 'web') {
-      if (window.confirm(`Archive '${f.label}'? Existing product specifications will remain preserved in historical records.`)) {
-        await doArchiveField();
-      }
-      return;
-    }
-
-    Alert.alert(
-      'Archive Specification',
-      `Archive '${f.label}'? Existing product specifications will remain preserved in historical records.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Archive',
-          style: 'destructive',
-          onPress: doArchiveField,
-        },
-      ]
-    );
+    showConfirm({
+      title: 'Archive Specification',
+      message: `Archive '${f.label}'? Existing product specifications will remain preserved in historical records.`,
+      confirmText: 'Archive',
+      isDestructive: true,
+      onConfirm: doArchiveField,
+    });
   };
 
   return (

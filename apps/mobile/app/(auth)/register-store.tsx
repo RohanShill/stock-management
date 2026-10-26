@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, TextInput, Button, Card } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store/useAppStore.js';
@@ -16,11 +16,11 @@ export default function RegisterStoreScreen() {
   const [gstin, setGstin] = useState('08AABCS1429B1Z');
   const [loading, setLoading] = useState(false);
 
-  const { apiUrl, setUser, setToken, setStore, setDeviceId } = useAppStore();
+  const { apiUrl, setUser, setToken, setStore, setDeviceId, showToast } = useAppStore();
 
   const handleRegister = async () => {
     if (!storeName || !ownerName || !username || !password || !phone || !address) {
-      Alert.alert('Required Fields', 'Please fill all mandatory store details.');
+      showToast('Please fill all mandatory store details.', 'warning');
       return;
     }
 
@@ -68,11 +68,11 @@ export default function RegisterStoreScreen() {
         ]
       );
 
-      Alert.alert('Store Created!', `Store '${storeName}' is now set up and ready.`);
+      showToast(`Store '${storeName}' is now set up and ready!`, 'success');
       router.replace('/(tabs)');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Registration failed';
-      Alert.alert('Registration Notice', `${msg}.`);
+      showToast(msg, 'error');
     } finally {
       setLoading(false);
     }

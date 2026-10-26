@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Alert, FlatList, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView, FlatList, Platform } from 'react-native';
 import {
   Text,
   Card,
@@ -18,7 +18,7 @@ import { useAppStore } from '../src/store/useAppStore.js';
 import { lightColors, darkColors, colors, spacing, borderRadius, shadows, getThemeShadows, typography } from '../src/theme/tokens';
 
 export default function CategoriesManagementScreen() {
-  const { store, deviceId, isDarkMode } = useAppStore();
+  const { store, deviceId, isDarkMode, showToast, showConfirm } = useAppStore();
   const activeColors = isDarkMode ? darkColors : lightColors;
   const themeShadows = getThemeShadows(isDarkMode);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -64,7 +64,7 @@ export default function CategoriesManagementScreen() {
   // Save / Update Category
   const handleSaveCategory = async () => {
     if (!catName.trim()) {
-      Alert.alert('Required', 'Category name is mandatory');
+      showToast('Category name is mandatory', 'warning');
       return;
     }
     const storeId = store?.id || 'default-store';
@@ -81,7 +81,7 @@ export default function CategoriesManagementScreen() {
           storeId,
           deviceId
         );
-        Alert.alert('Updated', `Category '${catName}' updated.`);
+        showToast(`Category '${catName}' updated.`, 'success');
       } else {
         await CategoryRepository.createCategory(
           {
@@ -93,7 +93,7 @@ export default function CategoriesManagementScreen() {
           storeId,
           deviceId
         );
-        Alert.alert('Created', `Category '${catName}' added.`);
+        showToast(`Category '${catName}' added.`, 'success');
       }
       setCatDialogVisible(false);
       setEditingCat(null);
@@ -101,7 +101,7 @@ export default function CategoriesManagementScreen() {
       setCatDesc('');
       loadData();
     } catch (err: unknown) {
-      Alert.alert('Error', (err as Error).message);
+      showToast((err as Error).message, 'error');
     }
   };
 
@@ -112,37 +112,23 @@ export default function CategoriesManagementScreen() {
 
     const doArchive = async () => {
       await CategoryRepository.archiveCategory(cat.id, storeId, deviceId);
-      if (Platform.OS !== 'web') {
-        Alert.alert('Archived', `'${cat.name}' has been archived.`);
-      }
+      showToast(`'${cat.name}' has been archived.`, 'success');
       loadData();
     };
 
-    if (Platform.OS === 'web') {
-      if (window.confirm(`Are you sure you want to archive '${cat.name}'?\n\nAffected records: ${counts.subcategoriesCount} subcategories, ${counts.productsCount} products.\n\nHistorical transactions will be preserved.`)) {
-        await doArchive();
-      }
-      return;
-    }
-
-    Alert.alert(
-      'Archive Category',
-      `Are you sure you want to archive '${cat.name}'?\n\nAffected records: ${counts.subcategoriesCount} subcategories, ${counts.productsCount} products.\n\nHistorical transactions will be preserved.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Archive',
-          style: 'destructive',
-          onPress: doArchive,
-        },
-      ]
-    );
+    showConfirm({
+      title: 'Archive Category',
+      message: `Are you sure you want to archive '${cat.name}'?\n\nAffected records: ${counts.subcategoriesCount} subcategories, ${counts.productsCount} products.\n\nHistorical transactions will be preserved.`,
+      confirmText: 'Archive',
+      isDestructive: true,
+      onConfirm: doArchive,
+    });
   };
 
   // Save / Update / Move Subcategory
   const handleSaveSubcategory = async () => {
     if (!subcatName.trim() || !targetParentCatId) {
-      Alert.alert('Required', 'Subcategory name and parent category are mandatory');
+      showToast('Subcategory name and parent category are mandatory', 'warning');
       return;
     }
     const storeId = store?.id || 'default-store';
@@ -159,7 +145,7 @@ export default function CategoriesManagementScreen() {
           storeId,
           deviceId
         );
-        Alert.alert('Updated', `Subcategory updated.`);
+        showToast('Subcategory updated.', 'success');
       } else {
         await CategoryRepository.createSubcategory(
           {
@@ -171,7 +157,7 @@ export default function CategoriesManagementScreen() {
           storeId,
           deviceId
         );
-        Alert.alert('Created', `Subcategory '${subcatName}' added.`);
+        showToast(`Subcategory '${subcatName}' added.`, 'success');
       }
       setSubcatDialogVisible(false);
       setEditingSubcat(null);
@@ -179,7 +165,7 @@ export default function CategoriesManagementScreen() {
       setSubcatDesc('');
       loadData();
     } catch (err: unknown) {
-      Alert.alert('Error', (err as Error).message);
+      showToast((err as Error).message, 'error');
     }
   };
 
@@ -189,31 +175,17 @@ export default function CategoriesManagementScreen() {
 
     const doArchiveSub = async () => {
       const affected = await CategoryRepository.archiveSubcategory(subcat.id, storeId, deviceId);
-      if (Platform.OS !== 'web') {
-        Alert.alert('Archived', `'${subcat.name}' archived (${affected} affected products preserved).`);
-      }
+      showToast(`'${subcat.name}' archived (${affected} affected products preserved).`, 'success');
       loadData();
     };
 
-    if (Platform.OS === 'web') {
-      if (window.confirm(`Are you sure you want to archive '${subcat.name}'? Existing products will preserve historical references.`)) {
-        await doArchiveSub();
-      }
-      return;
-    }
-
-    Alert.alert(
-      'Archive Subcategory',
-      `Are you sure you want to archive '${subcat.name}'? Existing products will preserve historical references.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Archive',
-          style: 'destructive',
-          onPress: doArchiveSub,
-        },
-      ]
-    );
+    showConfirm({
+      title: 'Archive Subcategory',
+      message: `Are you sure you want to archive '${subcat.name}'? Existing products will preserve historical references.`,
+      confirmText: 'Archive',
+      isDestructive: true,
+      onConfirm: doArchiveSub,
+    });
   };
 
   const filteredSubcategories = subcategories.filter(
@@ -340,7 +312,7 @@ export default function CategoriesManagementScreen() {
           icon="plus"
           onPress={() => {
             if (!selectedCatId) {
-              Alert.alert('Select Category', 'Please select a parent category first');
+              showToast('Please select a parent category first', 'warning');
               return;
             }
             setEditingSubcat(null);

@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Platform,
   StatusBar as RNStatusBar,
 } from 'react-native';
@@ -58,7 +57,7 @@ interface CartLine {
 }
 
 export default function SalesScreen() {
-  const { store, deviceId, user, language, isDarkMode } = useAppStore();
+  const { store, deviceId, user, language, isDarkMode, showToast } = useAppStore();
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web'
     ? 0
@@ -135,7 +134,7 @@ export default function SalesScreen() {
   // Add Item to Bill Cart
   const handleAddToCart = () => {
     if (!selectedProduct || !selectedVariant) {
-      Alert.alert('Required', 'Please select a product and variant to bill');
+      showToast('Please select a product and variant to bill', 'warning');
       return;
     }
 
@@ -145,7 +144,7 @@ export default function SalesScreen() {
     if (selectedProduct.measurementType === 'length') {
       const cutLen = parseFloat(pipeCutLengthInput || '1');
       if (cutLen <= 0) {
-        Alert.alert('Required', 'Please enter a valid cut length');
+        showToast('Please enter a valid cut length', 'warning');
         return;
       }
       qty = cutLen;
@@ -153,13 +152,13 @@ export default function SalesScreen() {
     }
 
     if (qty <= 0) {
-      Alert.alert('Required', 'Quantity must be greater than 0');
+      showToast('Quantity must be greater than 0', 'warning');
       return;
     }
 
     const priceRs = parseFloat(unitPriceInput);
     if (isNaN(priceRs) || priceRs < 0) {
-      Alert.alert('Required', 'Please enter a valid selling price');
+      showToast('Please enter a valid selling price', 'warning');
       return;
     }
 
@@ -225,7 +224,7 @@ export default function SalesScreen() {
 
   const handleOpenCheckout = () => {
     if (cart.length === 0) {
-      Alert.alert('Empty Cart', 'Please add products before checking out');
+      showToast('Please add products before checking out', 'warning');
       return;
     }
     setPaidAmountRs(paiseToRupee(grandTotalPaise).toString());
@@ -273,7 +272,7 @@ export default function SalesScreen() {
       loadProducts();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Sale failed';
-      Alert.alert('Checkout Error', msg);
+      showToast(msg, 'error');
     }
   };
 

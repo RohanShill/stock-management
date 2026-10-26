@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert, Modal } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Modal } from 'react-native';
 import { Text, Surface, Button, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { isDemoMode, DEMO_NOTICE_TEXT } from './demoConfig.js';
 import { resetDemoData } from './demoManager.js';
 import { colors, spacing, borderRadius } from '../theme/tokens.js';
+import { useAppStore } from '../store/useAppStore.js';
 
 interface DemoBannerProps {
   onResetComplete?: () => void;
@@ -15,6 +16,7 @@ export function DemoBanner({ onResetComplete }: DemoBannerProps) {
     return null;
   }
 
+  const { showToast } = useAppStore();
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [resetting, setResetting] = useState(false);
 
@@ -26,29 +28,19 @@ export function DemoBanner({ onResetComplete }: DemoBannerProps) {
       setConfirmVisible(false);
 
       if (res.success) {
-        Alert.alert(
-          'Demo Reset Complete',
-          'All sample products, categories, stock levels, purchases and sales have been restored to factory evaluation state.',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                if (typeof window !== 'undefined' && window.location) {
-                  window.location.reload();
-                }
-                onResetComplete?.();
-              },
-            },
-          ]
-        );
+        showToast('Demo data restored to factory state!', 'success');
+        if (typeof window !== 'undefined' && window.location) {
+          window.location.reload();
+        }
+        onResetComplete?.();
       } else {
-        Alert.alert('Reset Failed', res.message);
+        showToast(res.message, 'error');
       }
     } catch (e: unknown) {
       setResetting(false);
       setConfirmVisible(false);
       const msg = e instanceof Error ? e.message : 'Reset failed';
-      Alert.alert('Reset Error', msg);
+      showToast(msg, 'error');
     }
   };
 

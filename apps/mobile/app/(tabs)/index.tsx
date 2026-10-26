@@ -5,7 +5,6 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
-  Alert,
   Image,
   Platform,
   StatusBar as RNStatusBar,
@@ -263,7 +262,7 @@ const RestockItemForm: React.FC<RestockItemFormProps> = React.memo(({
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { store, deviceId, isDarkMode } = useAppStore();
+  const { store, deviceId, isDarkMode, showToast } = useAppStore();
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web'
     ? 0
@@ -410,15 +409,12 @@ export default function HomeScreen() {
     note: string
   ) => {
     if (isNaN(qty) || qty <= 0) {
-      Alert.alert('Invalid Quantity', 'Please enter a valid stock quantity (e.g. 10)');
+      showToast('Please enter a valid stock quantity (e.g. 10)', 'warning');
       return;
     }
 
     if (mode === 'sell' && qty > item.currentStock) {
-      Alert.alert(
-        'Insufficient Stock',
-        `Cannot sell ${qty} ${item.unit}. Available stock is ${item.currentStock} ${item.unit}.`
-      );
+      showToast(`Cannot sell ${qty} ${item.unit}. Available: ${item.currentStock} ${item.unit}.`, 'warning');
       return;
     }
 
@@ -456,7 +452,7 @@ export default function HomeScreen() {
       await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Operation failed';
-      Alert.alert('Error', msg);
+      showToast(msg, 'error');
     } finally {
       setUpdatingStock(false);
     }

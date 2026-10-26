@@ -21,6 +21,8 @@ import { MD3LightTheme, MD3DarkTheme, PaperProvider } from 'react-native-paper';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AppToast } from '../src/components/AppToast.js';
+import { AppConfirmModal } from '../src/components/AppConfirmModal.js';
 import { getDatabase } from '../src/database/db.js';
 import { SyncEngine } from '../src/sync/SyncEngine.js';
 import { useAppStore } from '../src/store/useAppStore.js';
@@ -93,6 +95,8 @@ export default function RootLayout() {
             <Stack.Screen name="custom-fields" options={{ title: 'Custom Specifications' }} />
             <Stack.Screen name="catalogue-import" options={{ title: 'Bulk CSV Import' }} />
           </Stack>
+          <AppToast />
+          <AppConfirmModal />
         </PaperProvider>
       </QueryClientProvider>
     </SafeAreaProvider>
