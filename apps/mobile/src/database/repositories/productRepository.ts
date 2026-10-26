@@ -317,8 +317,16 @@ export class ProductRepository {
 
       for (const vData of variantsData) {
         if (vData.id) {
+          const prevVariant = await db.getFirstAsync<any>(
+            `SELECT currentStock, openingStock FROM product_variants WHERE id = ?;`,
+            [vData.id]
+          );
+          const oldStock = prevVariant?.currentStock ?? 0;
+          const newStock = vData.currentStock !== undefined ? vData.currentStock : oldStock;
+          const newOpeningStock = vData.openingStock !== undefined ? vData.openingStock : (prevVariant?.openingStock ?? oldStock);
+
           await db.runAsync(
-            `UPDATE product_variants SET name = ?, sku = ?, barcode = ?, size = ?, color = ?, purchasePricePaise = ?, sellingPricePaise = ?, taxRatePercent = ?, minStockLevel = ?, rackLocation = ?, preferredSupplierId = ?, customValues = ?, updatedAt = ?
+            `UPDATE product_variants SET name = ?, sku = ?, barcode = ?, size = ?, color = ?, purchasePricePaise = ?, sellingPricePaise = ?, currentStock = ?, openingStock = ?, taxRatePercent = ?, minStockLevel = ?, rackLocation = ?, preferredSupplierId = ?, customValues = ?, updatedAt = ?
              WHERE id = ? AND storeId = ?;`,
             [
               vData.name || '',
@@ -328,6 +336,8 @@ export class ProductRepository {
               vData.color ?? null,
               vData.purchasePricePaise ?? 0,
               vData.sellingPricePaise ?? 0,
+              newStock,
+              newOpeningStock,
               vData.taxRatePercent ?? 18,
               vData.minStockLevel ?? 5,
               vData.rackLocation ?? null,
@@ -338,6 +348,30 @@ export class ProductRepository {
               storeId,
             ]
           );
+
+          if (newStock !== oldStock) {
+            const movementId = uuidv4();
+            const diff = newStock - oldStock;
+            await db.runAsync(
+              `INSERT INTO stock_movements (id, storeId, variantId, movementType, quantityChangeBase, balanceBeforeBase, balanceAfterBase, referenceType, reason, notes, deviceId, userId, createdAt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+              [
+                movementId,
+                storeId,
+                vData.id,
+                diff > 0 ? 'adjustment_increase' : 'adjustment_decrease',
+                diff,
+                oldStock,
+                newStock,
+                'manual',
+                'Manual stock edit from product details',
+                `Changed stock from ${oldStock} to ${newStock}`,
+                deviceId,
+                null,
+                now,
+              ]
+            );
+          }
         } else {
           const newVarId = uuidv4();
           await db.runAsync(

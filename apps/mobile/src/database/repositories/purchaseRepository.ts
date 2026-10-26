@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from '../../utils/uuid.js';
 import {
   Purchase,
   PurchaseItem,
+  convertQuantityToProductUnit,
   toCanonicalBaseQuantity,
   StandardUnit,
 } from '@hardware-store/shared';
@@ -69,16 +70,17 @@ export class PurchaseRepository {
 
     for (const item of input.items) {
       const variantRow = await db.getFirstAsync<any>(
-        `SELECT v.*, p.measurementType, p.packMultiplier, p.pipeTrackingMethod FROM product_variants v JOIN products p ON v.productId = p.id WHERE v.id = ?;`,
+        `SELECT v.*, p.measurementType, p.packMultiplier, p.baseUnit, p.pipeTrackingMethod FROM product_variants v JOIN products p ON v.productId = p.id WHERE v.id = ?;`,
         [item.variantId]
       );
       if (!variantRow) {
         throw new Error(`Variant ${item.variantId} not found`);
       }
 
-      const baseQuantity = toCanonicalBaseQuantity(
+      const baseQuantity = convertQuantityToProductUnit(
         item.quantity,
         item.unit,
+        variantRow.baseUnit || 'piece',
         variantRow.measurementType,
         variantRow.packMultiplier
       );

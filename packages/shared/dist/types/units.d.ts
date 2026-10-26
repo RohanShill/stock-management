@@ -28,4 +28,8 @@ export declare function toCanonicalBaseQuantity(quantity: number, unit: Standard
  * Convert canonical base quantity to a requested display unit.
  */
 export declare function fromCanonicalBaseQuantity(baseQuantity: number, toUnit: StandardUnit, measurementType: MeasurementType, packMultiplier?: number): number;
+/**
+ * Convert quantity from a transaction unit (e.g. 'l', 'ml', 'box') into the product's native stock unit (e.g. 'l', 'piece').
+ */
+export declare function convertQuantityToProductUnit(quantity: number, fromUnit: StandardUnit, productBaseUnit?: StandardUnit, measurementType?: MeasurementType, packMultiplier?: number): number;
 //# sourceMappingURL=units.d.ts.map

@@ -6,6 +6,7 @@ exports.convertWeight = convertWeight;
 exports.convertVolume = convertVolume;
 exports.toCanonicalBaseQuantity = toCanonicalBaseQuantity;
 exports.fromCanonicalBaseQuantity = fromCanonicalBaseQuantity;
+exports.convertQuantityToProductUnit = convertQuantityToProductUnit;
 // Canonical base units:
 // count -> piece
 // length -> mm
@@ -101,5 +102,37 @@ function fromCanonicalBaseQuantity(baseQuantity, toUnit, measurementType, packMu
         default:
             return baseQuantity;
     }
+}
+/**
+ * Convert quantity from a transaction unit (e.g. 'l', 'ml', 'box') into the product's native stock unit (e.g. 'l', 'piece').
+ */
+function convertQuantityToProductUnit(quantity, fromUnit, productBaseUnit, measurementType, packMultiplier = 1) {
+    const baseUnit = productBaseUnit || 'piece';
+    if (!fromUnit || fromUnit === baseUnit) {
+        return quantity;
+    }
+    // Volume conversions (ml <-> l)
+    if ((fromUnit === 'ml' || fromUnit === 'l') && (baseUnit === 'ml' || baseUnit === 'l')) {
+        const ml = fromUnit === 'l' ? quantity * 1000 : quantity;
+        return baseUnit === 'l' ? Math.round((ml / 1000) * 10000) / 10000 : ml;
+    }
+    // Weight conversions (g <-> kg)
+    if ((fromUnit === 'g' || fromUnit === 'kg') && (baseUnit === 'g' || baseUnit === 'kg')) {
+        const g = fromUnit === 'kg' ? quantity * 1000 : quantity;
+        return baseUnit === 'kg' ? Math.round((g / 1000) * 10000) / 10000 : g;
+    }
+    // Length conversions (mm, cm, m, ft, inch)
+    const lengthUnits = ['mm', 'cm', 'm', 'ft', 'inch'];
+    if (lengthUnits.includes(fromUnit) && lengthUnits.includes(baseUnit)) {
+        return convertLength(quantity, fromUnit, baseUnit);
+    }
+    // Pack / Count conversions (box/pack <-> piece)
+    if ((fromUnit === 'box' || fromUnit === 'pack') && baseUnit === 'piece') {
+        return quantity * (packMultiplier || 1);
+    }
+    if (fromUnit === 'piece' && (baseUnit === 'box' || baseUnit === 'pack')) {
+        return packMultiplier > 0 ? quantity / packMultiplier : quantity;
+    }
+    return quantity;
 }
 //# sourceMappingURL=units.js.map

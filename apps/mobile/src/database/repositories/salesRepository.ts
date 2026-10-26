@@ -4,6 +4,7 @@ import {
   SaleItem,
   calculateLineItemTotals,
   calculateInvoiceTotals,
+  convertQuantityToProductUnit,
   toCanonicalBaseQuantity,
   calculateSegmentCuttingPlan,
   PipeSegment,
@@ -107,17 +108,19 @@ export class SalesRepository {
       );
       variantRow.measurementType = productRow?.measurementType || 'count';
       variantRow.packMultiplier = productRow?.packMultiplier || 1;
+      variantRow.baseUnit = productRow?.baseUnit || 'piece';
       variantRow.pipeTrackingMethod = productRow?.pipeTrackingMethod;
 
-      const baseQuantity = toCanonicalBaseQuantity(
+      const baseQuantity = convertQuantityToProductUnit(
         item.quantity,
         item.unit,
+        variantRow.baseUnit,
         variantRow.measurementType,
         variantRow.packMultiplier
       );
 
       if (variantRow.currentStock < baseQuantity && !store?.negativeStockAllowed) {
-        throw new Error(`Insufficient stock for '${variantRow.name}'. Available: ${variantRow.currentStock}, Requested: ${baseQuantity}`);
+        throw new Error(`Insufficient stock for '${variantRow.name}'. Available: ${variantRow.currentStock} ${variantRow.baseUnit}, Requested: ${baseQuantity} ${variantRow.baseUnit}`);
       }
 
       const lineTotal = calculateLineItemTotals({

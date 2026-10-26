@@ -3,7 +3,7 @@ import {
   StockMovement,
   StockMovementType,
   PipeSegment,
-  toCanonicalBaseQuantity,
+  convertQuantityToProductUnit,
   StandardUnit,
 } from '@hardware-store/shared';
 import { getDatabase } from '../db.js';
@@ -40,38 +40,40 @@ export class InventoryRepository {
 
     const measurementType = productRow?.measurementType || 'count';
     const packMultiplier = productRow?.packMultiplier || 1;
+    const baseUnit = productRow?.baseUnit || 'piece';
 
-    const baseQuantity = toCanonicalBaseQuantity(
+    const deltaQuantity = convertQuantityToProductUnit(
       quantityChange,
       unit,
+      baseUnit,
       measurementType,
       packMultiplier
     );
 
     let movementType: StockMovementType = 'adjustment_increase';
-    let delta = baseQuantity;
+    let delta = deltaQuantity;
     let referenceType: 'sale' | 'purchase' | 'adjustment' | 'return' | 'manual' = 'adjustment';
 
     if (type === 'sale') {
       movementType = 'sale';
-      delta = -baseQuantity;
+      delta = -deltaQuantity;
       referenceType = 'sale';
     } else if (type === 'decrease') {
       movementType = 'adjustment_decrease';
-      delta = -baseQuantity;
+      delta = -deltaQuantity;
     } else if (type === 'damaged') {
       movementType = 'damaged_goods';
-      delta = -baseQuantity;
+      delta = -deltaQuantity;
     } else if (type === 'loss') {
       movementType = 'stock_loss';
-      delta = -baseQuantity;
+      delta = -deltaQuantity;
     }
 
     const balanceBefore = variantRow.currentStock;
     const balanceAfter = balanceBefore + delta;
 
     if (balanceAfter < 0) {
-      throw new Error(`Insufficient stock for ${type === 'sale' ? 'sale' : 'adjustment'} (Current: ${balanceBefore}, Requested reduction: ${Math.abs(delta)})`);
+      throw new Error(`Insufficient stock for ${type === 'sale' ? 'sale' : 'adjustment'} (Current: ${balanceBefore} ${baseUnit}, Requested reduction: ${Math.abs(delta)} ${baseUnit})`);
     }
 
     const movementId = uuidv4();

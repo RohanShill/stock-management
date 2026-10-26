@@ -343,7 +343,7 @@ export default function ProductsScreen() {
           size: v.size || v.name || 'Standard',
           sellingPriceRs: v.sellingPricePaise ? (v.sellingPricePaise / 100).toString() : '',
           costPriceRs: v.purchasePricePaise ? (v.purchasePricePaise / 100).toString() : '',
-          openingStock: (v.openingStock || 0).toString(),
+          openingStock: (v.currentStock !== undefined ? v.currentStock : (v.openingStock || 0)).toString(),
           currentStock: v.currentStock,
           minStockLevel: (v.minStockLevel || 5).toString(),
           rackLocation: v.rackLocation || '',
@@ -580,16 +580,21 @@ export default function ProductsScreen() {
           measurementType: measurementType,
         };
 
-        const variantsData: Array<Partial<ProductVariant>> = formVariants.map((v) => ({
-          id: v.id,
-          name: v.name.trim() || v.size.trim() || 'Standard',
-          size: v.size.trim() || v.name.trim() || 'Standard',
-          sku: generateSku(formName, formBrand, v.size || v.name),
-          sellingPricePaise: v.sellingPriceRs ? Math.round((parseFloat(v.sellingPriceRs) || 0) * 100) : 0,
-          purchasePricePaise: v.costPriceRs ? Math.round((parseFloat(v.costPriceRs) || 0) * 100) : 0,
-          minStockLevel: parseFloat(v.minStockLevel) || 5,
-          rackLocation: v.rackLocation.trim() || undefined,
-        }));
+        const variantsData: Array<Partial<ProductVariant>> = formVariants.map((v) => {
+          const parsedStock = parseFloat(v.openingStock) || 0;
+          return {
+            id: v.id,
+            name: v.name.trim() || v.size.trim() || 'Standard',
+            size: v.size.trim() || v.name.trim() || 'Standard',
+            sku: generateSku(formName, formBrand, v.size || v.name),
+            sellingPricePaise: v.sellingPriceRs ? Math.round((parseFloat(v.sellingPriceRs) || 0) * 100) : 0,
+            purchasePricePaise: v.costPriceRs ? Math.round((parseFloat(v.costPriceRs) || 0) * 100) : 0,
+            currentStock: parsedStock,
+            openingStock: parsedStock,
+            minStockLevel: parseFloat(v.minStockLevel) || 5,
+            rackLocation: v.rackLocation.trim() || undefined,
+          };
+        });
 
         await ProductRepository.updateProduct(
           editingProduct.id,
