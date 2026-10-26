@@ -16,6 +16,7 @@ import { useAppStore } from '../../src/store/useAppStore.js';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
 import { InventoryRepository } from '../../src/database/repositories/inventoryRepository.js';
 import { lightColors, darkColors, colors, spacing, borderRadius, shadows, getThemeShadows } from '../../src/theme/tokens.js';
+import { StockSuccessModal, StockSuccessInfo } from '../../src/components/StockSuccessModal.js';
 
 interface RestockItem {
   variantId: string;
@@ -281,6 +282,7 @@ export default function HomeScreen() {
   const [selectedRestockItem, setSelectedRestockItem] = useState<RestockItem | null>(null);
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [updatingStock, setUpdatingStock] = useState(false);
+  const [stockSuccess, setStockSuccess] = useState<StockSuccessInfo | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -425,21 +427,21 @@ export default function HomeScreen() {
         deviceId
       );
 
-      Alert.alert(
-        mode === 'sell' ? 'Sale Recorded' : 'Stock Updated',
-        mode === 'sell'
-          ? `Sold -${qty} ${item.unit} of "${item.productName}"`
-          : `Added +${qty} ${item.unit} to "${item.productName}"`,
-        [
-          { text: 'Done' },
-          {
-            text: 'View History',
-            onPress: () => router.push('/(tabs)/history'),
-          },
-        ]
-      );
+      const previousStock = item.currentStock;
+      const newStock = mode === 'sell' ? Math.max(0, item.currentStock - qty) : item.currentStock + qty;
+      const successData: StockSuccessInfo = {
+        mode,
+        qty,
+        unit: item.unit,
+        productName: item.productName,
+        variantName: item.variantName,
+        previousStock,
+        newStock,
+      };
+
       setRestockModalVisible(false);
       setSelectedRestockItem(null);
+      setStockSuccess(successData);
       await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Operation failed';
@@ -943,6 +945,19 @@ export default function HomeScreen() {
           )}
         </Dialog>
       </Portal>
+
+      {/* Stock Success Feedback Modal */}
+      <StockSuccessModal
+        visible={!!stockSuccess}
+        info={stockSuccess}
+        onDismiss={() => setStockSuccess(null)}
+        onViewHistory={() => {
+          setStockSuccess(null);
+          router.push('/(tabs)/history');
+        }}
+        isDarkMode={isDarkMode}
+        activeColors={activeColors}
+      />
     </ScrollView>
   );
 }

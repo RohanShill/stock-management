@@ -41,6 +41,8 @@ import { InventoryRepository } from '../../src/database/repositories/inventoryRe
 import { CategoryRepository } from '../../src/database/repositories/categoryRepository.js';
 import { useAppStore } from '../../src/store/useAppStore.js';
 import { lightColors, darkColors, colors, spacing, borderRadius, shadows, getThemeShadows } from '../../src/theme/tokens.js';
+import { StockSuccessModal, StockSuccessInfo } from '../../src/components/StockSuccessModal.js';
+import { formatUnitBadge } from '../../src/utils/formatters.js';
 
 interface VariantFormItem {
   id?: string;
@@ -374,6 +376,7 @@ export default function ProductsScreen() {
   } | null>(null);
   const [quickStockMode, setQuickStockMode] = useState<'add' | 'sell'>('add');
   const [updatingStock, setUpdatingStock] = useState(false);
+  const [stockSuccess, setStockSuccess] = useState<StockSuccessInfo | null>(null);
 
   // New Category Dialog
   const [newCatDialogVisible, setNewCatDialogVisible] = useState(false);
@@ -990,20 +993,20 @@ export default function ProductsScreen() {
         deviceId
       );
 
-      Alert.alert(
-        mode === 'sell' ? 'Sale Recorded' : 'Stock Updated',
-        mode === 'sell'
-          ? `Sold -${qty} ${quickStockTarget.unit} of "${quickStockTarget.productName} (${quickStockTarget.variant.name})"`
-          : `Added +${qty} ${quickStockTarget.unit} to "${quickStockTarget.productName} (${quickStockTarget.variant.name})"`,
-        [
-          { text: 'Done' },
-          {
-            text: 'View History',
-            onPress: () => router.push('/(tabs)/history'),
-          },
-        ]
-      );
+      const previousStock = currentStock;
+      const newStock = mode === 'sell' ? Math.max(0, currentStock - qty) : currentStock + qty;
+      const successData: StockSuccessInfo = {
+        mode,
+        qty,
+        unit: quickStockTarget.unit,
+        productName: quickStockTarget.productName,
+        variantName: quickStockTarget.variant.name || quickStockTarget.variant.size || '',
+        previousStock,
+        newStock,
+      };
+
       setQuickStockTarget(null);
+      setStockSuccess(successData);
       await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Could not update stock';
@@ -1383,7 +1386,7 @@ export default function ProductsScreen() {
                         },
                       ]}
                     >
-                      <Text style={[styles.unitTagText, { color: activeColors.textMuted }]}>{item.baseUnit || 'pcs'}</Text>
+                      <Text style={[styles.unitTagText, { color: activeColors.textMuted }]}>{formatUnitBadge(item.baseUnit)}</Text>
                     </View>
                   </View>
                 </View>
@@ -2196,6 +2199,19 @@ export default function ProductsScreen() {
         onDismiss={() => setQuickStockTarget(null)}
         onConfirm={handleConfirmQuickStock}
         updatingStock={updatingStock}
+        isDarkMode={isDarkMode}
+        activeColors={activeColors}
+      />
+
+      {/* 4.5. Modern Stock Success Confirmation Dialog */}
+      <StockSuccessModal
+        visible={!!stockSuccess}
+        info={stockSuccess}
+        onDismiss={() => setStockSuccess(null)}
+        onViewHistory={() => {
+          setStockSuccess(null);
+          router.push('/(tabs)/history');
+        }}
         isDarkMode={isDarkMode}
         activeColors={activeColors}
       />
