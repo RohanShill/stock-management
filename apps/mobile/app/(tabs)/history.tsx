@@ -6,7 +6,10 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  Platform,
+  StatusBar as RNStatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Surface, Searchbar, Chip } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -25,6 +28,11 @@ type HistoryItem = StockMovement & {
 
 export default function HistoryScreen() {
   const { store, isDarkMode } = useAppStore();
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(
+    insets.top,
+    (Platform.OS === 'android' ? RNStatusBar.currentHeight : 0) || 0
+  );
   const activeColors = isDarkMode ? darkColors : lightColors;
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -146,6 +154,7 @@ export default function HistoryScreen() {
           {
             backgroundColor: activeColors.surface,
             borderBottomColor: activeColors.border,
+            paddingTop: Math.max(topInset + 8, 16),
           },
         ]}
       >

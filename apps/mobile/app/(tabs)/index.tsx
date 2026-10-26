@@ -7,8 +7,11 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  Platform,
+  StatusBar as RNStatusBar,
   TextInput as RNTextInput,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, Surface, Portal, Dialog, TextInput, Chip } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -261,6 +264,11 @@ const RestockItemForm: React.FC<RestockItemFormProps> = React.memo(({
 export default function HomeScreen() {
   const router = useRouter();
   const { store, deviceId, isDarkMode } = useAppStore();
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(
+    insets.top,
+    (Platform.OS === 'android' ? RNStatusBar.currentHeight : 0) || 0
+  );
   const activeColors = isDarkMode ? darkColors : lightColors;
   const themeShadows = getThemeShadows(isDarkMode);
 
@@ -470,7 +478,10 @@ export default function HomeScreen() {
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: activeColors.background }]}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[
+        styles.content,
+        { paddingTop: Math.max(topInset + 8, spacing.lg) },
+      ]}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={activeColors.primary} />
       }

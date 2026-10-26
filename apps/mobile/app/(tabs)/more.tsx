@@ -6,7 +6,9 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  StatusBar as RNStatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Text,
   Surface,
@@ -26,6 +28,11 @@ import { lightColors, darkColors, spacing, borderRadius, shadows } from '../../s
 
 export default function SettingsScreen() {
   const { store, deviceId, isDarkMode, toggleTheme } = useAppStore();
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(
+    insets.top,
+    (Platform.OS === 'android' ? RNStatusBar.currentHeight : 0) || 0
+  );
   const activeColors = isDarkMode ? darkColors : lightColors;
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -442,7 +449,10 @@ export default function SettingsScreen() {
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: activeColors.background }]}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[
+        styles.content,
+        { paddingTop: Math.max(topInset + 8, spacing.lg) },
+      ]}
     >
       {/* 1. Header */}
       <Surface

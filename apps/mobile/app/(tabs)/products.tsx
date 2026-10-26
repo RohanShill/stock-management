@@ -9,8 +9,10 @@ import {
   Image,
   Modal,
   Platform,
+  StatusBar as RNStatusBar,
   TextInput as RNTextInput,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Text,
   Searchbar,
@@ -332,6 +334,11 @@ export default function ProductsScreen() {
   }>();
 
   const { store, deviceId, isDarkMode } = useAppStore();
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(
+    insets.top,
+    (Platform.OS === 'android' ? RNStatusBar.currentHeight : 0) || 0
+  );
   const activeColors = isDarkMode ? darkColors : lightColors;
   const themeShadows = getThemeShadows(isDarkMode);
 
@@ -1025,6 +1032,7 @@ export default function ProductsScreen() {
           {
             backgroundColor: activeColors.surface,
             borderBottomColor: activeColors.border,
+            paddingTop: Math.max(topInset + 8, 16),
           },
         ]}
       >

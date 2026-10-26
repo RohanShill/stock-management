@@ -20,6 +20,7 @@ import { Stack } from 'expo-router';
 import { MD3LightTheme, MD3DarkTheme, PaperProvider } from 'react-native-paper';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { getDatabase } from '../src/database/db.js';
 import { SyncEngine } from '../src/sync/SyncEngine.js';
 import { useAppStore } from '../src/store/useAppStore.js';
@@ -67,32 +68,34 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <PaperProvider theme={paperTheme}>
-        <StatusBar style={isDarkMode ? 'light' : 'dark'} />
-        <Stack
-          screenOptions={{
-            headerStyle: {
-              backgroundColor: activeColors.surface,
-            },
-            headerTintColor: activeColors.textPrimary,
-            headerTitleStyle: {
-              fontWeight: '700',
-              fontSize: 18,
-            },
-            headerShadowVisible: false,
-            contentStyle: { backgroundColor: activeColors.background },
-          }}
-        >
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="(auth)/login" options={{ title: 'Store Login' }} />
-          <Stack.Screen name="(auth)/register-store" options={{ title: 'Setup Hardware Store' }} />
-          <Stack.Screen name="categories-management" options={{ title: 'Categories & Subcategories' }} />
-          <Stack.Screen name="custom-fields" options={{ title: 'Custom Specifications' }} />
-          <Stack.Screen name="catalogue-import" options={{ title: 'Bulk CSV Import' }} />
-        </Stack>
-      </PaperProvider>
-    </QueryClientProvider>
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
+        <PaperProvider theme={paperTheme}>
+          <StatusBar style={isDarkMode ? 'light' : 'dark'} />
+          <Stack
+            screenOptions={{
+              headerStyle: {
+                backgroundColor: activeColors.surface,
+              },
+              headerTintColor: activeColors.textPrimary,
+              headerTitleStyle: {
+                fontWeight: '700',
+                fontSize: 18,
+              },
+              headerShadowVisible: false,
+              contentStyle: { backgroundColor: activeColors.background },
+            }}
+          >
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="(auth)/login" options={{ title: 'Store Login' }} />
+            <Stack.Screen name="(auth)/register-store" options={{ title: 'Setup Hardware Store' }} />
+            <Stack.Screen name="categories-management" options={{ title: 'Categories & Subcategories' }} />
+            <Stack.Screen name="custom-fields" options={{ title: 'Custom Specifications' }} />
+            <Stack.Screen name="catalogue-import" options={{ title: 'Bulk CSV Import' }} />
+          </Stack>
+        </PaperProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }
 

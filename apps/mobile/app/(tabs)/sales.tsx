@@ -5,7 +5,10 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Platform,
+  StatusBar as RNStatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Text,
   Searchbar,
@@ -56,6 +59,11 @@ interface CartLine {
 
 export default function SalesScreen() {
   const { store, deviceId, user, language, isDarkMode } = useAppStore();
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(
+    insets.top,
+    (Platform.OS === 'android' ? RNStatusBar.currentHeight : 0) || 0
+  );
   const activeColors = isDarkMode ? darkColors : lightColors;
   const themeShadows = getThemeShadows(isDarkMode);
 
@@ -280,7 +288,16 @@ export default function SalesScreen() {
   return (
     <View style={[styles.container, { backgroundColor: activeColors.background }]}>
       {/* 1. Top Header & Search Bar */}
-      <Surface style={[styles.searchHeaderCard, { backgroundColor: activeColors.surface, borderBottomColor: activeColors.border }]}>
+      <Surface
+        style={[
+          styles.searchHeaderCard,
+          {
+            backgroundColor: activeColors.surface,
+            borderBottomColor: activeColors.border,
+            paddingTop: Math.max(topInset + 8, 16),
+          },
+        ]}
+      >
         <View style={styles.headerTitleRow}>
           <MaterialCommunityIcons name="point-of-sale" size={24} color={activeColors.primary} />
           <Text style={[styles.headerTitle, { color: activeColors.textPrimary }]}>New Bill / Sale</Text>

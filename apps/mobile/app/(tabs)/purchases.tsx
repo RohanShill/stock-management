@@ -5,7 +5,10 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Platform,
+  StatusBar as RNStatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Text,
   Card,
@@ -52,6 +55,11 @@ interface PurchaseLineItem {
 
 export default function PurchasesScreen() {
   const { store, deviceId, user, language, isDarkMode } = useAppStore();
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(
+    insets.top,
+    (Platform.OS === 'android' ? RNStatusBar.currentHeight : 0) || 0
+  );
   const activeColors = isDarkMode ? darkColors : lightColors;
   const themeShadows = getThemeShadows(isDarkMode);
 
@@ -278,7 +286,13 @@ export default function PurchasesScreen() {
   const selectedSupplierObj = suppliers.find((s) => s.id === selectedSupplierId);
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: activeColors.background }]} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={[styles.container, { backgroundColor: activeColors.background }]}
+      contentContainerStyle={[
+        styles.content,
+        { paddingTop: Math.max(topInset + 8, spacing.md) },
+      ]}
+    >
       {/* 1. Header Card */}
       <Surface style={[styles.headerCard, { backgroundColor: activeColors.surface, borderColor: activeColors.border, ...themeShadows.card }]}>
         <View style={styles.headerTitleRow}>
