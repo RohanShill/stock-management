@@ -22,7 +22,6 @@ import { Category } from '@hardware-store/shared';
 import { useAppStore } from '../../src/store/useAppStore.js';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
 import { CategoryRepository } from '../../src/database/repositories/categoryRepository.js';
-import { resetDemoData } from '../../src/demo/index.js';
 import { lightColors, darkColors, spacing, borderRadius, shadows } from '../../src/theme/tokens.js';
 
 export default function SettingsScreen() {
@@ -440,33 +439,6 @@ export default function SettingsScreen() {
     }
   };
 
-  // Reset Data to Factory State
-  const handleResetData = () => {
-    Alert.alert(
-      'Reset All Data',
-      'This will reset your store catalogue and stock back to clean starting hardware samples.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset Store Data',
-          style: 'destructive',
-          onPress: async () => {
-            const res = await resetDemoData();
-            if (res.success) {
-              Alert.alert('Reset Done', 'Database reset to fresh hardware store catalogue.');
-              await loadData();
-              if (typeof window !== 'undefined' && window.location) {
-                window.location.reload();
-              }
-            } else {
-              Alert.alert('Error', res.message);
-            }
-          },
-        },
-      ]
-    );
-  };
-
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: activeColors.background }]}
@@ -761,38 +733,6 @@ export default function SettingsScreen() {
           </View>
           <MaterialCommunityIcons name="download" size={20} color={activeColors.primary} />
         </TouchableOpacity>
-
-        <Divider
-          style={[
-            styles.divider,
-            { backgroundColor: isDarkMode ? '#1F2937' : '#F1F5F9' },
-          ]}
-        />
-
-        {/* Reset Data */}
-        <TouchableOpacity style={styles.menuRow} onPress={handleResetData} activeOpacity={0.7}>
-          <View
-            style={[
-              styles.menuIconCircle,
-              { backgroundColor: isDarkMode ? '#450A0A' : '#FEE2E2' },
-            ]}
-          >
-            <MaterialCommunityIcons name="restore" size={20} color="#DC2626" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.menuTitle, { color: activeColors.textPrimary }]}>
-              Reset Sample Data
-            </Text>
-            <Text style={[styles.menuSub, { color: activeColors.textSecondary }]}>
-              Restore clean default hardware store inventory
-            </Text>
-          </View>
-          <MaterialCommunityIcons
-            name="chevron-right"
-            size={20}
-            color={activeColors.textSecondary}
-          />
-        </TouchableOpacity>
       </Surface>
 
       {/* 6. About */}
@@ -810,10 +750,10 @@ export default function SettingsScreen() {
           Manju Hardware Store Management
         </Text>
         <Text style={[styles.aboutVersion, { color: activeColors.textSecondary }]}>
-          Version 1.0.0 • Offline First
+          Version 1.0.0 • Production Ready • Offline First
         </Text>
         <Text style={[styles.aboutFootnote, { color: activeColors.textMuted }]}>
-          Data stored safely on your device in local SQLite database.
+          Data stored safely on your device in secure local SQLite database.
         </Text>
       </Surface>
 

@@ -31,7 +31,7 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
     return dbInstance;
   }
 
-  const dbFileName = isDemoMode() ? DEMO_DB_NAME : 'hardware_store.db';
+  const dbFileName = 'manju_hardware_store.db';
   dbInstance = await SQLite.openDatabaseAsync(dbFileName);
 
   // Enable WAL mode and foreign keys for high performance and integrity
@@ -43,11 +43,6 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 
   // Run non-destructive column migrations
   await runVersionedMigrations(dbInstance);
-
-  // In demo mode, automatically seed fictional sample data if empty
-  if (isDemoMode()) {
-    await seedDemoDataIfEmpty(dbInstance);
-  }
 
   return dbInstance;
 }

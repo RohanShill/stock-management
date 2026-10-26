@@ -12,7 +12,7 @@ export interface WebDatabase {
   withTransactionAsync<T>(callback: () => Promise<T>): Promise<T>;
 }
 
-const STORAGE_KEY = 'hw_store_local_db_v1';
+const STORAGE_KEY = 'manju_hardware_store_v1';
 
 class WebSQLiteStore {
   private tables: Record<string, any[]> = {
@@ -109,7 +109,7 @@ class WebSQLiteStore {
           }
 
           if (this.tables.stores[0]) {
-            this.tables.stores[0].name = 'Manju Store Management';
+            this.tables.stores[0].name = 'Manju Hardware Store';
             this.tables.stores[0].email = 'store@manjustore.in';
           }
 

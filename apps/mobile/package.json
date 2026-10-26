@@ -4,9 +4,7 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "demo": "cross-env EXPO_PUBLIC_DEMO_MODE=true APP_ENV=demo expo start",
     "android": "expo run:android",
-    "android:demo": "cross-env EXPO_PUBLIC_DEMO_MODE=true APP_ENV=demo expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "vitest run"
