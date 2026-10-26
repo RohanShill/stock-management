@@ -183,6 +183,7 @@ CREATE TABLE IF NOT EXISTS customers (
   storeId TEXT NOT NULL,
   name TEXT NOT NULL,
   phone TEXT,
+  email TEXT,
   address TEXT,
   businessName TEXT,
   gstin TEXT,

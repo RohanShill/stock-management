@@ -14,6 +14,7 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
     'ALTER TABLE products ADD COLUMN imageUrl TEXT;',
     'ALTER TABLE products ADD COLUMN customValues TEXT;',
     'ALTER TABLE product_variants ADD COLUMN customValues TEXT;',
+    'ALTER TABLE customers ADD COLUMN email TEXT;',
   ];
 
   for (const query of safeAlterQueries) {
