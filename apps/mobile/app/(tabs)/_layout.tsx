@@ -1,6 +1,7 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppStore } from '../../src/store/useAppStore.js';
 import { t } from '../../src/i18n/strings.js';
 import { lightColors, darkColors, getThemeShadows } from '../../src/theme/tokens.js';
@@ -8,9 +9,13 @@ import { lightColors, darkColors, getThemeShadows } from '../../src/theme/tokens
 export default function TabLayout() {
   const isDarkMode = useAppStore((s) => s.isDarkMode);
   const language = useAppStore((s) => s.language);
+  const insets = useSafeAreaInsets();
 
   const activeColors = isDarkMode ? darkColors : lightColors;
   const themeShadows = getThemeShadows(isDarkMode);
+
+  const bottomInset = insets.bottom > 0 ? insets.bottom : 8;
+  const tabHeight = 56 + bottomInset;
 
   return (
     <Tabs
@@ -19,9 +24,9 @@ export default function TabLayout() {
           backgroundColor: activeColors.surface,
           borderTopColor: activeColors.border,
           borderTopWidth: 0.5,
-          height: 68,
-          paddingBottom: 12,
-          paddingTop: 8,
+          height: tabHeight,
+          paddingBottom: bottomInset,
+          paddingTop: 6,
           ...themeShadows.floating,
         },
         tabBarActiveTintColor: activeColors.primary,
