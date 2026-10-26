@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  TextInput as RNTextInput,
 } from 'react-native';
 import { Text, Surface, Portal, Dialog, TextInput, Chip } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -40,6 +41,222 @@ interface StockStats {
   outOfStockCount: number;
 }
 
+interface RestockItemFormProps {
+  item: RestockItem;
+  mode: 'add' | 'sell';
+  onChangeItem: () => void;
+  onCancel: () => void;
+  onConfirm: (item: RestockItem, mode: 'add' | 'sell', qty: number, note: string) => Promise<void>;
+  updatingStock: boolean;
+  isDarkMode: boolean;
+  activeColors: any;
+}
+
+const RestockItemForm: React.FC<RestockItemFormProps> = React.memo(({
+  item,
+  mode,
+  onChangeItem,
+  onCancel,
+  onConfirm,
+  updatingStock,
+  isDarkMode,
+  activeColors,
+}) => {
+  const [currentMode, setCurrentMode] = useState<'add' | 'sell'>(mode);
+  const [qty, setQty] = useState('10');
+  const [note, setNote] = useState('');
+
+  useEffect(() => {
+    setCurrentMode(mode);
+    setQty('10');
+    setNote('');
+  }, [item, mode]);
+
+  const numQty = parseFloat(qty) || 0;
+  const isInsufficient = currentMode === 'sell' && numQty > item.currentStock;
+  const isConfirmDisabled = updatingStock || qty.trim() === '' || numQty <= 0 || isInsufficient;
+
+  return (
+    <View>
+      {/* Target Item Header */}
+      <View
+        style={[
+          styles.targetItemCard,
+          {
+            backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC',
+            borderColor: activeColors.border,
+          },
+        ]}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.targetName, { color: activeColors.textPrimary }]}>{item.productName}</Text>
+          <Text style={[styles.targetSub, { color: activeColors.textSecondary }]}>
+            {item.variantName}{' '}
+            {item.brand ? `• ${item.brand}` : ''}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={onChangeItem}
+          style={styles.changeBtn}
+        >
+          <Text style={[styles.changeBtnText, { color: activeColors.primary }]}>Change</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Current Stock */}
+      <View style={styles.currentStockRow}>
+        <Text style={[styles.currentLabel, { color: activeColors.textSecondary }]}>Available Stock:</Text>
+        <Text style={[styles.currentVal, { color: activeColors.textPrimary }]}>
+          {item.currentStock} {item.unit}
+        </Text>
+      </View>
+
+      {/* Presets Chips */}
+      <Text style={[styles.inputLabel, { color: activeColors.textSecondary, marginTop: spacing.md }]}>
+        {currentMode === 'sell' ? 'QUANTITY SOLD' : 'SELECT QUANTITY TO ADD'}
+      </Text>
+      <View style={styles.chipsContainer}>
+        {['5', '10', '20', '50', '100'].map((preset) => (
+          <Chip
+            key={preset}
+            selected={qty === preset}
+            onPress={() => setQty(preset)}
+            style={[
+              styles.qtyChip,
+              qty === preset &&
+                (currentMode === 'sell' ? styles.qtyChipSellActive : styles.qtyChipActive),
+            ]}
+            textStyle={[
+              styles.qtyChipText,
+              qty === preset &&
+                (currentMode === 'sell'
+                  ? styles.qtyChipSellTextActive
+                  : styles.qtyChipTextActive),
+            ]}
+            showSelectedOverlay={false}
+          >
+            {currentMode === 'sell' ? `-${preset}` : `+${preset}`}
+          </Chip>
+        ))}
+      </View>
+
+      {/* Custom numeric input */}
+      <View style={{ marginTop: spacing.sm }}>
+        <Text style={[styles.inputLabel, { color: activeColors.textSecondary }]}>
+          QUANTITY ({item.unit.toUpperCase()}) *
+        </Text>
+        <RNTextInput
+          value={qty}
+          onChangeText={(val) => {
+            const cleaned = val.replace(/[^0-9.]/g, '');
+            setQty(cleaned);
+          }}
+          keyboardType="decimal-pad"
+          returnKeyType="done"
+          selectTextOnFocus
+          autoCorrect={false}
+          style={[
+            styles.smoothNumericInput,
+            {
+              backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC',
+              borderColor: isInsufficient ? '#DC2626' : (currentMode === 'sell' ? '#DC2626' : activeColors.primary),
+              color: activeColors.textPrimary,
+            },
+          ]}
+          placeholderTextColor={activeColors.textMuted}
+          placeholder="e.g. 10"
+        />
+      </View>
+
+      {/* Optional Note / Customer */}
+      <View style={{ marginTop: spacing.sm }}>
+        <Text style={[styles.inputLabel, { color: activeColors.textSecondary }]}>
+          CUSTOMER NAME / NOTE (OPTIONAL)
+        </Text>
+        <RNTextInput
+          value={note}
+          onChangeText={setNote}
+          autoCorrect={false}
+          style={[
+            styles.smoothNoteInput,
+            {
+              backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC',
+              borderColor: activeColors.border,
+              color: activeColors.textPrimary,
+            },
+          ]}
+          placeholderTextColor={activeColors.textMuted}
+          placeholder="e.g. Sold to Cash Customer"
+        />
+      </View>
+
+      {/* Live Preview */}
+      <View style={styles.previewContainerFixed}>
+        {currentMode === 'sell' ? (
+          isInsufficient ? (
+            <View style={styles.previewBoxError}>
+              <Text style={styles.previewTextError}>
+                ⚠️ Insufficient stock! Available: {item.currentStock}{' '}
+                {item.unit}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.previewBoxSell}>
+              <Text style={styles.previewTextSell}>
+                Stock after Sale:{' '}
+                <Text style={styles.previewHighlightSell}>
+                  {Math.max(0, item.currentStock - numQty)}{' '}
+                  {item.unit}
+                </Text>
+              </Text>
+            </View>
+          )
+        ) : (
+          <View style={styles.previewBox}>
+            <Text style={styles.previewText}>
+              New Total Stock will be:{' '}
+              <Text style={styles.previewHighlight}>
+                {Math.max(0, item.currentStock) + numQty}{' '}
+                {item.unit}
+              </Text>
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Action Buttons */}
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: spacing.md }}>
+        <TouchableOpacity
+          onPress={onCancel}
+          style={styles.dialogCancelBtn}
+          disabled={updatingStock}
+        >
+          <Text style={[styles.dialogCancelText, { color: activeColors.textSecondary }]}>Cancel</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => onConfirm(item, currentMode, numQty, note)}
+          disabled={isConfirmDisabled}
+          style={[
+            currentMode === 'sell'
+              ? styles.dialogConfirmBtnSell
+              : styles.dialogConfirmBtn,
+            isConfirmDisabled && { opacity: 0.5 },
+          ]}
+        >
+          <Text style={styles.dialogConfirmText}>
+            {updatingStock
+              ? 'Processing...'
+              : currentMode === 'sell'
+              ? 'Confirm Sale'
+              : 'Confirm Stock'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+});
+
 export default function HomeScreen() {
   const router = useRouter();
   const { store, deviceId, isDarkMode } = useAppStore();
@@ -62,8 +279,6 @@ export default function HomeScreen() {
   const [restockModalVisible, setRestockModalVisible] = useState(false);
   const [restockMode, setRestockMode] = useState<'add' | 'sell'>('add');
   const [selectedRestockItem, setSelectedRestockItem] = useState<RestockItem | null>(null);
-  const [restockQty, setRestockQty] = useState('10');
-  const [restockNote, setRestockNote] = useState('');
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [updatingStock, setUpdatingStock] = useState(false);
 
@@ -157,8 +372,6 @@ export default function HomeScreen() {
   const handleOpenRestockForItem = (item: RestockItem) => {
     setSelectedRestockItem(item);
     setRestockMode('add');
-    setRestockQty('10');
-    setRestockNote('');
     setItemSearchQuery('');
     setRestockModalVisible(true);
   };
@@ -166,8 +379,6 @@ export default function HomeScreen() {
   const handleOpenGeneralAddStock = () => {
     setSelectedRestockItem(null);
     setRestockMode('add');
-    setRestockQty('10');
-    setRestockNote('');
     setItemSearchQuery('');
     setRestockModalVisible(true);
   };
@@ -175,30 +386,25 @@ export default function HomeScreen() {
   const handleOpenGeneralSellStock = () => {
     setSelectedRestockItem(null);
     setRestockMode('sell');
-    setRestockQty('10');
-    setRestockNote('');
     setItemSearchQuery('');
     setRestockModalVisible(true);
   };
 
-  const handleConfirmStockOperation = async () => {
-    if (!selectedRestockItem) {
-      Alert.alert(
-        'Select Product',
-        `Please choose a product to ${restockMode === 'sell' ? 'sell' : 'add stock to'}.`
-      );
-      return;
-    }
-    const qty = parseFloat(restockQty);
+  const handleConfirmStockOperation = async (
+    item: RestockItem,
+    mode: 'add' | 'sell',
+    qty: number,
+    note: string
+  ) => {
     if (isNaN(qty) || qty <= 0) {
       Alert.alert('Invalid Quantity', 'Please enter a valid stock quantity (e.g. 10)');
       return;
     }
 
-    if (restockMode === 'sell' && qty > selectedRestockItem.currentStock) {
+    if (mode === 'sell' && qty > item.currentStock) {
       Alert.alert(
         'Insufficient Stock',
-        `Cannot sell ${qty} ${selectedRestockItem.unit}. Available stock is ${selectedRestockItem.currentStock} ${selectedRestockItem.unit}.`
+        `Cannot sell ${qty} ${item.unit}. Available stock is ${item.currentStock} ${item.unit}.`
       );
       return;
     }
@@ -207,23 +413,23 @@ export default function HomeScreen() {
       setUpdatingStock(true);
       const storeId = store?.id || 'store-1';
       await InventoryRepository.adjustStock(
-        selectedRestockItem.variantId,
+        item.variantId,
         qty,
-        (selectedRestockItem.unit as any) || 'piece',
-        restockMode === 'sell' ? 'sale' : 'increase',
-        restockNote.trim() ||
-          (restockMode === 'sell'
-            ? `Sold ${qty} ${selectedRestockItem.unit}`
+        (item.unit as any) || 'piece',
+        mode === 'sell' ? 'sale' : 'increase',
+        note.trim() ||
+          (mode === 'sell'
+            ? `Sold ${qty} ${item.unit}`
             : 'Manual stock addition'),
         storeId,
         deviceId
       );
 
       Alert.alert(
-        restockMode === 'sell' ? 'Sale Recorded' : 'Stock Updated',
-        restockMode === 'sell'
-          ? `Sold -${qty} ${selectedRestockItem.unit} of "${selectedRestockItem.productName}"`
-          : `Added +${qty} ${selectedRestockItem.unit} to "${selectedRestockItem.productName}"`,
+        mode === 'sell' ? 'Sale Recorded' : 'Stock Updated',
+        mode === 'sell'
+          ? `Sold -${qty} ${item.unit} of "${item.productName}"`
+          : `Added +${qty} ${item.unit} to "${item.productName}"`,
         [
           { text: 'Done' },
           {
@@ -234,7 +440,6 @@ export default function HomeScreen() {
       );
       setRestockModalVisible(false);
       setSelectedRestockItem(null);
-      setRestockNote('');
       await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Operation failed';
@@ -707,174 +912,35 @@ export default function HomeScreen() {
                 </ScrollView>
               </View>
             ) : (
-              <View>
-                {/* Target Item Header */}
-                <View
-                  style={[
-                    styles.targetItemCard,
-                    {
-                      backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC',
-                      borderColor: activeColors.border,
-                    },
-                  ]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.targetName, { color: activeColors.textPrimary }]}>{selectedRestockItem.productName}</Text>
-                    <Text style={[styles.targetSub, { color: activeColors.textSecondary }]}>
-                      {selectedRestockItem.variantName}{' '}
-                      {selectedRestockItem.brand ? `• ${selectedRestockItem.brand}` : ''}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => setSelectedRestockItem(null)}
-                    style={styles.changeBtn}
-                  >
-                    <Text style={[styles.changeBtnText, { color: activeColors.primary }]}>Change</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Current Stock */}
-                <View style={styles.currentStockRow}>
-                  <Text style={[styles.currentLabel, { color: activeColors.textSecondary }]}>Available Stock:</Text>
-                  <Text style={[styles.currentVal, { color: activeColors.textPrimary }]}>
-                    {selectedRestockItem.currentStock} {selectedRestockItem.unit}
-                  </Text>
-                </View>
-
-                {/* Presets Chips */}
-                <Text style={[styles.dialogLabel, { color: activeColors.textSecondary, marginTop: spacing.md }]}>
-                  {restockMode === 'sell' ? 'Quantity Sold:' : 'Select Quantity to Add:'}
-                </Text>
-                <View style={styles.chipsContainer}>
-                  {['5', '10', '20', '50', '100'].map((preset) => (
-                    <Chip
-                      key={preset}
-                      selected={restockQty === preset}
-                      onPress={() => setRestockQty(preset)}
-                      style={[
-                        styles.qtyChip,
-                        restockQty === preset &&
-                          (restockMode === 'sell' ? styles.qtyChipSellActive : styles.qtyChipActive),
-                      ]}
-                      textStyle={[
-                        styles.qtyChipText,
-                        restockQty === preset &&
-                          (restockMode === 'sell'
-                            ? styles.qtyChipSellTextActive
-                            : styles.qtyChipTextActive),
-                      ]}
-                      showSelectedOverlay={false}
-                    >
-                      {restockMode === 'sell' ? `-${preset}` : `+${preset}`}
-                    </Chip>
-                  ))}
-                </View>
-
-                {/* Custom numeric input */}
-                <TextInput
-                  label={`Quantity (${selectedRestockItem.unit}) *`}
-                  value={restockQty}
-                  onChangeText={setRestockQty}
-                  keyboardType="numeric"
-                  mode="outlined"
-                  style={{ marginTop: spacing.sm, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }}
-                  textColor={activeColors.textPrimary}
-                  placeholderTextColor={activeColors.textMuted}
-                  outlineColor={activeColors.border}
-                  activeOutlineColor={activeColors.primary}
-                  placeholder="e.g. 15"
-                />
-
-                {/* Optional Note / Customer */}
-                <TextInput
-                  label="Customer Name / Note (Optional)"
-                  value={restockNote}
-                  onChangeText={setRestockNote}
-                  mode="outlined"
-                  style={{ marginTop: spacing.sm, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }}
-                  textColor={activeColors.textPrimary}
-                  placeholderTextColor={activeColors.textMuted}
-                  outlineColor={activeColors.border}
-                  activeOutlineColor={activeColors.primary}
-                  placeholder="e.g. Sold to Cash Customer"
-                />
-
-                {/* Live Preview */}
-                {restockMode === 'sell' ? (
-                  (parseFloat(restockQty) || 0) > selectedRestockItem.currentStock ? (
-                    <View style={styles.previewBoxError}>
-                      <Text style={styles.previewTextError}>
-                        ⚠️ Insufficient stock! Available: {selectedRestockItem.currentStock}{' '}
-                        {selectedRestockItem.unit}
-                      </Text>
-                    </View>
-                  ) : (
-                    <View style={styles.previewBoxSell}>
-                      <Text style={styles.previewTextSell}>
-                        Stock after Sale:{' '}
-                        <Text style={styles.previewHighlightSell}>
-                          {selectedRestockItem.currentStock - (parseFloat(restockQty) || 0)}{' '}
-                          {selectedRestockItem.unit}
-                        </Text>
-                      </Text>
-                    </View>
-                  )
-                ) : (
-                  <View style={styles.previewBox}>
-                    <Text style={styles.previewText}>
-                      New Total Stock will be:{' '}
-                      <Text style={styles.previewHighlight}>
-                        {Math.max(0, selectedRestockItem.currentStock) +
-                          (parseFloat(restockQty) || 0)}{' '}
-                        {selectedRestockItem.unit}
-                      </Text>
-                    </Text>
-                  </View>
-                )}
-              </View>
+              <RestockItemForm
+                item={selectedRestockItem}
+                mode={restockMode}
+                onChangeItem={() => setSelectedRestockItem(null)}
+                onCancel={() => {
+                  setRestockModalVisible(false);
+                  setSelectedRestockItem(null);
+                }}
+                onConfirm={handleConfirmStockOperation}
+                updatingStock={updatingStock}
+                isDarkMode={isDarkMode}
+                activeColors={activeColors}
+              />
             )}
           </Dialog.Content>
 
-          <Dialog.Actions>
-            <TouchableOpacity
-              onPress={() => {
-                setRestockModalVisible(false);
-                setSelectedRestockItem(null);
-              }}
-              style={styles.dialogCancelBtn}
-            >
-              <Text style={styles.dialogCancelText}>Cancel</Text>
-            </TouchableOpacity>
-
-            {selectedRestockItem && (
+          {!selectedRestockItem && (
+            <Dialog.Actions>
               <TouchableOpacity
-                onPress={handleConfirmStockOperation}
-                disabled={
-                  updatingStock ||
-                  (restockMode === 'sell' &&
-                    (parseFloat(restockQty) || 0) > selectedRestockItem.currentStock)
-                }
-                style={[
-                  restockMode === 'sell'
-                    ? styles.dialogConfirmBtnSell
-                    : styles.dialogConfirmBtn,
-                  (updatingStock ||
-                    (restockMode === 'sell' &&
-                      (parseFloat(restockQty) || 0) > selectedRestockItem.currentStock)) && {
-                    opacity: 0.5,
-                  },
-                ]}
+                onPress={() => {
+                  setRestockModalVisible(false);
+                  setSelectedRestockItem(null);
+                }}
+                style={styles.dialogCancelBtn}
               >
-                <Text style={styles.dialogConfirmText}>
-                  {updatingStock
-                    ? 'Processing...'
-                    : restockMode === 'sell'
-                    ? 'Confirm Sale'
-                    : 'Confirm Stock'}
-                </Text>
+                <Text style={[styles.dialogCancelText, { color: activeColors.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
-            )}
-          </Dialog.Actions>
+            </Dialog.Actions>
+          )}
         </Dialog>
       </Portal>
     </ScrollView>
@@ -1296,12 +1362,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   previewBox: {
-    marginTop: spacing.md,
     backgroundColor: '#ECFDF5',
-    padding: spacing.md,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: '#A7F3D0',
+    justifyContent: 'center',
   },
   previewText: {
     fontSize: 13,
@@ -1312,12 +1379,13 @@ const styles = StyleSheet.create({
     color: '#047857',
   },
   previewBoxSell: {
-    marginTop: spacing.md,
     backgroundColor: '#EEF2FF',
-    padding: spacing.md,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: '#C7D2FE',
+    justifyContent: 'center',
   },
   previewTextSell: {
     fontSize: 13,
@@ -1328,17 +1396,44 @@ const styles = StyleSheet.create({
     color: '#4338CA',
   },
   previewBoxError: {
-    marginTop: spacing.md,
     backgroundColor: '#FEF2F2',
-    padding: spacing.md,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: '#FECACA',
+    justifyContent: 'center',
   },
   previewTextError: {
     fontSize: 13,
     color: '#DC2626',
     fontWeight: '700',
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 6,
+    letterSpacing: 0.5,
+  },
+  smoothNumericInput: {
+    height: 48,
+    borderWidth: 1.5,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: 14,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  smoothNoteInput: {
+    height: 44,
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: 12,
+    fontSize: 14,
+  },
+  previewContainerFixed: {
+    minHeight: 52,
+    justifyContent: 'center',
+    marginTop: spacing.sm,
   },
   dialogCancelBtn: {
     paddingHorizontal: 14,
