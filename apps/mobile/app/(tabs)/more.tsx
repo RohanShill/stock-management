@@ -465,72 +465,13 @@ export default function SettingsScreen() {
         <View style={{ flex: 1 }}>
           <Text style={[styles.headerTitle, { color: activeColors.textPrimary }]}>Settings</Text>
           <Text style={[styles.headerSub, { color: activeColors.textSecondary }]}>
-            Store info, appearance, categories, and data export
+            Appearance, categories, and data export
           </Text>
         </View>
       </Surface>
 
-      {/* 2. Store Identity (Hardcoded, No Config) */}
+      {/* 2. Appearance / Dark Mode Section */}
       <View style={styles.sectionHeaderRow}>
-        <Text style={[styles.sectionTitle, { color: activeColors.textPrimary }]}>
-          Store Information
-        </Text>
-      </View>
-
-      <Surface
-        style={[
-          styles.card,
-          {
-            backgroundColor: activeColors.surface,
-            borderColor: activeColors.border,
-          },
-        ]}
-      >
-        <View style={styles.storeInfoRow}>
-          <View
-            style={[
-              styles.storeIconCircle,
-              { backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF' },
-            ]}
-          >
-            <MaterialCommunityIcons name="storefront" size={22} color={activeColors.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.storeNameLabel, { color: activeColors.textPrimary }]}>
-              Manju Hardware Store
-            </Text>
-            <Text style={[styles.storeOwnerSub, { color: activeColors.textSecondary }]}>
-              Authorized Hardware & Sanitary • Offline First
-            </Text>
-          </View>
-          <View
-            style={[
-              styles.hardcodedBadge,
-              {
-                backgroundColor: isDarkMode ? '#064E3B' : '#DCFCE7',
-                borderColor: isDarkMode ? '#059669' : '#BBF7D0',
-              },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="lock-check"
-              size={13}
-              color={isDarkMode ? '#34D399' : '#15803D'}
-            />
-            <Text
-              style={[
-                styles.hardcodedBadgeText,
-                { color: isDarkMode ? '#34D399' : '#15803D' },
-              ]}
-            >
-              Permanent
-            </Text>
-          </View>
-        </View>
-      </Surface>
-
-      {/* 3. Appearance / Dark Mode Section */}
-      <View style={[styles.sectionHeaderRow, { marginTop: spacing.lg }]}>
         <Text style={[styles.sectionTitle, { color: activeColors.textPrimary }]}>
           Appearance
         </Text>
@@ -876,40 +817,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
     ...shadows.card,
-  },
-  storeInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  storeIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: borderRadius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  storeNameLabel: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  storeOwnerSub: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  hardcodedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-  },
-  hardcodedBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
   },
 
   // Theme Row
