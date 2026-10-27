@@ -1,336 +1,39 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
+  Text,
   StyleSheet,
-  FlatList,
   ScrollView,
   TouchableOpacity,
   Image,
   Modal,
   Platform,
   StatusBar as RNStatusBar,
-  TextInput as RNTextInput,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  Text,
-  Searchbar,
-  Portal,
-  Dialog,
-  TextInput,
-  Chip,
-  IconButton,
-  Surface,
-} from 'react-native-paper';
+import { Portal, Dialog, Searchbar } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
-import {
-  Product,
-  ProductVariant,
-  Category,
-  Subcategory,
-  MeasurementType,
-  StandardUnit,
-  formatPaiseToINR,
-  rupeeToPaise,
-  paiseToRupee,
-  generateSku,
-} from '@hardware-store/shared';
+import { Category, Subcategory } from '@hardware-store/shared';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
 import { InventoryRepository } from '../../src/database/repositories/inventoryRepository.js';
-import { CategoryRepository } from '../../src/database/repositories/categoryRepository.js';
+import {
+  MatrixRepository,
+  MatrixGridData,
+  MatrixCellData,
+} from '../../src/database/repositories/matrixRepository.js';
+import { CategorySubTabs } from '../../src/components/CategorySubTabs.js';
+import { ProductMatrixGrid } from '../../src/components/ProductMatrixGrid.js';
+import { MatrixActionBar } from '../../src/components/MatrixActionBar.js';
 import { useAppStore } from '../../src/store/useAppStore.js';
-import { lightColors, darkColors, colors, spacing, borderRadius, shadows, getThemeShadows } from '../../src/theme/tokens.js';
-import { StockSuccessModal, StockSuccessInfo } from '../../src/components/StockSuccessModal.js';
-import { ProductSuccessModal, ProductSuccessInfo } from '../../src/components/ProductSuccessModal.js';
-import { formatUnitBadge } from '../../src/utils/formatters.js';
-
-interface VariantFormItem {
-  id?: string;
-  name: string;
-  size: string;
-  sellingPriceRs?: string;
-  costPriceRs?: string;
-  openingStock: string;
-  currentStock?: number;
-  minStockLevel: string;
-  rackLocation: string;
-}
-
-const UNIT_OPTIONS: Array<{ value: StandardUnit; label: string }> = [
-  { value: 'piece', label: 'Piece' },
-  { value: 'm', label: 'Meter' },
-  { value: 'box', label: 'Box' },
-  { value: 'kg', label: 'Kg' },
-  { value: 'l', label: 'Liter' },
-  { value: 'set', label: 'Set' },
-];
-
-function mapUnitToMeasurementType(unit: StandardUnit): MeasurementType {
-  if (unit === 'm' || unit === 'mm' || unit === 'cm' || unit === 'ft' || unit === 'inch') return 'length';
-  if (unit === 'kg' || unit === 'g') return 'weight';
-  if (unit === 'l' || unit === 'ml') return 'volume';
-  return 'count';
-}
-
-interface QuickStockModalProps {
-  target: {
-    productId: string;
-    productName: string;
-    variant: ProductVariant;
-    unit: string;
-  } | null;
-  mode: 'add' | 'sell';
-  onDismiss: () => void;
-  onConfirm: (mode: 'add' | 'sell', qty: number, note: string) => Promise<void>;
-  updatingStock: boolean;
-  isDarkMode: boolean;
-  activeColors: any;
-}
-
-const QuickStockModal: React.FC<QuickStockModalProps> = React.memo(({
-  target,
-  mode,
-  onDismiss,
-  onConfirm,
-  updatingStock,
-  isDarkMode,
-  activeColors,
-}) => {
-  const [currentMode, setCurrentMode] = useState<'add' | 'sell'>(mode);
-  const [qty, setQty] = useState('10');
-  const [note, setNote] = useState('');
-
-  useEffect(() => {
-    if (target) {
-      setCurrentMode(mode);
-      setQty('10');
-      setNote('');
-    }
-  }, [target, mode]);
-
-  if (!target) return null;
-
-  const currentStock = target.variant.currentStock || 0;
-  const numQty = parseFloat(qty) || 0;
-  const isInsufficient = currentMode === 'sell' && numQty > currentStock;
-  const isConfirmDisabled = updatingStock || qty.trim() === '' || numQty <= 0 || isInsufficient;
-
-  return (
-    <Portal>
-      <Dialog
-        visible={target !== null}
-        onDismiss={onDismiss}
-        style={[styles.dialog, { backgroundColor: activeColors.surface }]}
-      >
-        <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
-          {currentMode === 'sell' ? 'Sell Stock (Stock Out)' : 'Add Stock (Restock)'}
-        </Dialog.Title>
-        <Dialog.Content>
-          <View>
-            {/* Mode Selector Toggle */}
-            <View style={styles.modeToggleRow}>
-              <TouchableOpacity
-                style={[
-                  styles.modeBtn,
-                  currentMode === 'add' && styles.modeBtnActiveAdd,
-                ]}
-                onPress={() => setCurrentMode('add')}
-              >
-                <Text
-                  style={[
-                    styles.modeBtnText,
-                    currentMode === 'add' && styles.modeBtnTextActive,
-                  ]}
-                >
-                  + Add Stock
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.modeBtn,
-                  currentMode === 'sell' && styles.modeBtnActiveSell,
-                ]}
-                onPress={() => setCurrentMode('sell')}
-              >
-                <Text
-                  style={[
-                    styles.modeBtnText,
-                    currentMode === 'sell' && styles.modeBtnTextActive,
-                  ]}
-                >
-                  - Sell Stock
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.dialogProdName, { color: activeColors.textPrimary }]}>
-              {target.productName}
-            </Text>
-            <Text style={[styles.dialogVariantName, { color: activeColors.textSecondary }]}>
-              Size: {target.variant.name || target.variant.size || 'Standard'}
-            </Text>
-
-            <View style={styles.dialogStockRow}>
-              <Text style={[styles.dialogStockLabel, { color: activeColors.textSecondary }]}>
-                Current Available Stock:
-              </Text>
-              <Text style={[styles.dialogStockVal, { color: activeColors.textPrimary }]}>
-                {currentStock} {target.unit}
-              </Text>
-            </View>
-
-            {/* Presets */}
-            <Text style={[styles.inputLabel, { color: activeColors.textSecondary, marginTop: spacing.md }]}>
-              {currentMode === 'sell' ? 'QUANTITY SOLD' : 'SELECT QUANTITY TO ADD'}
-            </Text>
-            <View style={styles.quickChipsRow}>
-              {['5', '10', '20', '50', '100'].map((preset) => (
-                <Chip
-                  key={preset}
-                  selected={qty === preset}
-                  onPress={() => setQty(preset)}
-                  style={[
-                    styles.qtyChip,
-                    qty === preset &&
-                      (currentMode === 'sell' ? styles.qtyChipSellActive : styles.qtyChipActive),
-                  ]}
-                  textStyle={[
-                    styles.qtyChipText,
-                    qty === preset &&
-                      (currentMode === 'sell' ? styles.qtyChipSellTextActive : styles.qtyChipTextActive),
-                  ]}
-                  showSelectedOverlay={false}
-                >
-                  {currentMode === 'sell' ? `-${preset}` : `+${preset}`}
-                </Chip>
-              ))}
-            </View>
-
-            {/* Stable Native Numeric Input - No Paper outline layout thrashing */}
-            <View style={{ marginTop: spacing.sm }}>
-              <Text style={[styles.inputLabel, { color: activeColors.textSecondary }]}>
-                QUANTITY ({target.unit.toUpperCase()}) *
-              </Text>
-              <RNTextInput
-                value={qty}
-                onChangeText={(val) => {
-                  const cleaned = val.replace(/[^0-9.]/g, '');
-                  setQty(cleaned);
-                }}
-                keyboardType="decimal-pad"
-                returnKeyType="done"
-                selectTextOnFocus
-                autoCorrect={false}
-                style={[
-                  styles.smoothNumericInput,
-                  {
-                    backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC',
-                    borderColor: isInsufficient ? '#DC2626' : (currentMode === 'sell' ? '#DC2626' : activeColors.primary),
-                    color: activeColors.textPrimary,
-                  },
-                ]}
-                placeholderTextColor={activeColors.textMuted}
-                placeholder="e.g. 10"
-              />
-            </View>
-
-            {/* Optional Note / Customer */}
-            <View style={{ marginTop: spacing.sm }}>
-              <Text style={[styles.inputLabel, { color: activeColors.textSecondary }]}>
-                NOTE / CUSTOMER NAME (OPTIONAL)
-              </Text>
-              <RNTextInput
-                value={note}
-                onChangeText={setNote}
-                autoCorrect={false}
-                style={[
-                  styles.smoothNoteInput,
-                  {
-                    backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC',
-                    borderColor: activeColors.border,
-                    color: activeColors.textPrimary,
-                  },
-                ]}
-                placeholderTextColor={activeColors.textMuted}
-                placeholder="e.g. Sold to Rahul, Cash sale"
-              />
-            </View>
-
-            {/* Stable Live Preview Box with fixed minHeight to prevent Dialog vertical jitter */}
-            <View style={styles.previewContainerFixed}>
-              {currentMode === 'sell' ? (
-                isInsufficient ? (
-                  <View style={styles.previewBoxError}>
-                    <Text style={styles.previewTextError}>
-                      ⚠️ Insufficient stock! Available: {currentStock} {target.unit}
-                    </Text>
-                  </View>
-                ) : (
-                  <View style={styles.previewBoxSell}>
-                    <Text style={styles.previewTextSell}>
-                      Stock after Sale:{' '}
-                      <Text style={styles.previewHighlightSell}>
-                        {Math.max(0, currentStock - numQty)} {target.unit}
-                      </Text>
-                    </Text>
-                  </View>
-                )
-              ) : (
-                <View style={styles.previewBox}>
-                  <Text style={styles.previewText}>
-                    New Stock will be:{' '}
-                    <Text style={styles.previewHighlight}>
-                      {Math.max(0, currentStock) + numQty} {target.unit}
-                    </Text>
-                  </Text>
-                </View>
-              )}
-            </View>
-          </View>
-        </Dialog.Content>
-
-        <Dialog.Actions>
-          <TouchableOpacity
-            onPress={onDismiss}
-            style={styles.dialogCancelBtn}
-            disabled={updatingStock}
-          >
-            <Text style={styles.dialogCancelText}>Cancel</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => onConfirm(currentMode, numQty, note)}
-            disabled={isConfirmDisabled}
-            style={[
-              currentMode === 'sell'
-                ? styles.dialogConfirmBtnSell
-                : styles.dialogConfirmBtn,
-              isConfirmDisabled && { opacity: 0.5 },
-            ]}
-          >
-            <Text style={styles.dialogConfirmText}>
-              {updatingStock
-                ? 'Processing...'
-                : currentMode === 'sell'
-                ? 'Confirm Sale'
-                : 'Confirm Stock'}
-            </Text>
-          </TouchableOpacity>
-        </Dialog.Actions>
-      </Dialog>
-    </Portal>
-  );
-});
+import { lightColors, darkColors, borderRadius, getThemeShadows } from '../../src/theme/tokens.js';
 
 export default function ProductsScreen() {
   const router = useRouter();
   const routerParams = useLocalSearchParams<{
     categoryId?: string;
-    filter?: 'all' | 'in' | 'low' | 'out';
-    action?: string;
   }>();
 
   const { store, deviceId, isDarkMode, showToast } = useAppStore();
@@ -342,2047 +45,839 @@ export default function ProductsScreen() {
         (Platform.OS === 'android' ? RNStatusBar.currentHeight : 0) || 0,
         40
       );
+
   const activeColors = isDarkMode ? darkColors : lightColors;
   const themeShadows = getThemeShadows(isDarkMode);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
-
-  const [products, setProducts] = useState<Array<Product & { variants: ProductVariant[] }>>([]);
+  // Categories & Subcategories State
   const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [activeSubcategoryId, setActiveSubcategoryId] = useState<string>('');
 
-  const [loading, setLoading] = useState(false);
+  // Matrix Grid State
+  const [matrixData, setMatrixData] = useState<MatrixGridData>({
+    brands: [],
+    sizes: [],
+    cells: {},
+  });
+  const [loading, setLoading] = useState(true);
 
-  // Form Modal State (Add / Edit)
-  const [formVisible, setFormVisible] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<(Product & { variants: ProductVariant[] }) | null>(null);
-  const [formName, setFormName] = useState('');
-  const [formBrand, setFormBrand] = useState('');
-  const [formCategoryId, setFormCategoryId] = useState('');
-  const [formSubcategoryId, setFormSubcategoryId] = useState('');
-  const [formImageUrl, setFormImageUrl] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-  const [formBaseUnit, setFormBaseUnit] = useState<StandardUnit>('piece');
-  const [formVariants, setFormVariants] = useState<VariantFormItem[]>([
-    {
-      name: 'Standard',
-      size: 'Standard',
-      openingStock: '10',
-      minStockLevel: '5',
-      rackLocation: '',
-    },
-  ]);
-  const [savingProduct, setSavingProduct] = useState(false);
+  // Cell Selection
+  const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null);
+  const [selectedCell, setSelectedCell] = useState<MatrixCellData | null>(null);
+  const [selectedSize, setSelectedSize] = useState<string>('');
+  const [selectedBrand, setSelectedBrand] = useState<string>('');
 
-  // Quick Restock Dialog State
-  const [quickStockTarget, setQuickStockTarget] = useState<{
-    productId: string;
-    productName: string;
-    variant: ProductVariant;
-    unit: string;
-  } | null>(null);
-  const [quickStockMode, setQuickStockMode] = useState<'add' | 'sell'>('add');
-  const [updatingStock, setUpdatingStock] = useState(false);
-  const [stockSuccess, setStockSuccess] = useState<StockSuccessInfo | null>(null);
-  const [productSuccess, setProductSuccess] = useState<ProductSuccessInfo | null>(null);
+  // Quick Stock / Sell Modal State
+  const [actionModalMode, setActionModalMode] = useState<'add' | 'sell' | null>(null);
+  const [actionQty, setActionQty] = useState('10');
+  const [actionPriceRs, setActionPriceRs] = useState('');
+  const [actionNote, setActionNote] = useState('');
+  const [submittingAction, setSubmittingAction] = useState(false);
 
-  // New Category Dialog
-  const [newCatDialogVisible, setNewCatDialogVisible] = useState(false);
+  // New Category Modal
+  const [newCatModalVisible, setNewCatModalVisible] = useState(false);
   const [newCatName, setNewCatName] = useState('');
-  const [creatingCat, setCreatingCat] = useState(false);
+  const [submittingCat, setSubmittingCat] = useState(false);
 
-  // New Subcategory Dialog
-  const [newSubcatDialogVisible, setNewSubcatDialogVisible] = useState(false);
-  const [newSubcatName, setNewSubcatName] = useState('');
-  const [creatingSubcat, setCreatingSubcat] = useState(false);
+  // Search filter
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Delete Product Confirmation Dialog
-  const [deleteConfirmProd, setDeleteConfirmProd] = useState<Product | null>(null);
-  const [deletingProduct, setDeletingProduct] = useState(false);
+  const activeCategory = useMemo(() => {
+    return categories.find((c) => c.id === selectedCategoryId) || categories[0] || null;
+  }, [categories, selectedCategoryId]);
 
-  const loadData = useCallback(async () => {
+  /**
+   * Loads matrix data for the active category & subcategory
+   */
+  const loadMatrix = useCallback(async (catId: string, subcatId: string) => {
+    if (!catId || !subcatId) return;
     try {
       setLoading(true);
       const storeId = store?.id || 'store-1';
-      const [prods, cats, subcats] = await Promise.all([
-        ProductRepository.getProductsWithVariants(storeId),
-        ProductRepository.getCategories(storeId),
-        CategoryRepository.getSubcategories(undefined, storeId),
-      ]);
-      setProducts(prods);
-      setCategories(cats);
-      setSubcategories(subcats);
+      const data = await MatrixRepository.getMatrixData(storeId, catId, subcatId);
+      setMatrixData(data);
 
-      if (cats.length > 0 && !formCategoryId) {
-        setFormCategoryId(cats[0].id);
-        const firstCatSubcats = subcats.filter((s) => s.categoryId === cats[0].id && s.active);
-        setFormSubcategoryId(firstCatSubcats[0]?.id || '');
+      // Auto-select first cell if none selected
+      if (data.sizes.length > 0 && data.brands.length > 0) {
+        const firstSize = data.sizes[0];
+        const firstBrand = data.brands[0];
+        const key = `${firstSize}___${firstBrand.toLowerCase()}`;
+        setSelectedCellKey(key);
+        setSelectedSize(firstSize);
+        setSelectedBrand(firstBrand);
+        setSelectedCell(data.cells[key] || null);
+      } else {
+        setSelectedCellKey(null);
+        setSelectedCell(null);
+        setSelectedSize('');
+        setSelectedBrand('');
       }
     } catch (e) {
-      console.error('Error loading products & categories:', e);
+      console.error('Error loading matrix data:', e);
+      showToast('Could not load inventory grid', 'error');
     } finally {
       setLoading(false);
     }
-  }, [store, formCategoryId]);
+  }, [store, showToast]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  /**
+   * Loads sub-tabs (Pipes, Pipe Fittings, Others) and matrix data for a category
+   */
+  const switchCategory = useCallback(async (catId: string, preferredSubcatId?: string) => {
+    try {
+      setLoading(true);
+      setSelectedCategoryId(catId);
 
-  // Handle URL search params
-  useEffect(() => {
-    if (routerParams.categoryId) {
-      setSelectedCategory(routerParams.categoryId);
-    }
-    if (routerParams.filter && ['all', 'in', 'low', 'out'].includes(routerParams.filter)) {
-      setStockFilter(routerParams.filter);
-    }
-    if (routerParams.action === 'add') {
-      openAddProductForm();
-    }
-  }, [routerParams.categoryId, routerParams.filter, routerParams.action]);
+      const storeId = store?.id || 'store-1';
+      const cat = categories.find((c) => c.id === catId);
+      const catName = cat?.name || 'Pipes';
 
-  // Category map for quick lookup
-  const categoryMap = useMemo(() => {
-    const map = new Map<string, string>();
-    categories.forEach((c) => map.set(c.id, c.name));
-    return map;
-  }, [categories]);
-
-  // Subcategory map for quick lookup
-  const subcategoryMap = useMemo(() => {
-    const map = new Map<string, string>();
-    subcategories.forEach((sc) => map.set(sc.id, sc.name));
-    return map;
-  }, [subcategories]);
-
-  // Active subcategories under currently filtered category
-  const activeSubcategories = useMemo(() => {
-    if (!selectedCategory) return [];
-    return subcategories.filter((s) => s.categoryId === selectedCategory && s.active);
-  }, [subcategories, selectedCategory]);
-
-  // Subcategories available for the current modal form category
-  const formAvailableSubcategories = useMemo(() => {
-    if (!formCategoryId) return [];
-    return subcategories.filter((s) => s.categoryId === formCategoryId && s.active);
-  }, [subcategories, formCategoryId]);
-
-  // Filtering products
-  const filteredProducts = useMemo(() => {
-    return products.filter((prod) => {
-      // 1. Search Query
-      if (searchQuery.trim()) {
-        const query = searchQuery.trim().toLowerCase();
-        const matchName = prod.name.toLowerCase().includes(query);
-        const matchBrand = (prod.brand || '').toLowerCase().includes(query);
-        const matchCategory = (categoryMap.get(prod.categoryId) || '').toLowerCase().includes(query);
-        const matchSubcategory = (subcategoryMap.get(prod.subcategoryId) || '').toLowerCase().includes(query);
-        const matchVariant = prod.variants.some(
-          (v) =>
-            v.name.toLowerCase().includes(query) ||
-            (v.size && v.size.toLowerCase().includes(query)) ||
-            (v.sku && v.sku.toLowerCase().includes(query))
-        );
-        if (!matchName && !matchBrand && !matchCategory && !matchSubcategory && !matchVariant) {
-          return false;
-        }
-      }
-
-      // 2. Category Filter
-      if (selectedCategory && prod.categoryId !== selectedCategory) {
-        return false;
-      }
-
-      // 2b. Subcategory Filter
-      if (selectedSubcategory && prod.subcategoryId !== selectedSubcategory) {
-        return false;
-      }
-
-      // 3. Stock Level Filter
-      if (stockFilter !== 'all') {
-        const totalStock = prod.variants.reduce((sum, v) => sum + (v.currentStock || 0), 0);
-        const hasLowVariant = prod.variants.some(
-          (v) => (v.currentStock || 0) <= (v.minStockLevel || 5) && (v.currentStock || 0) > 0
-        );
-        const hasOutVariant = prod.variants.some((v) => (v.currentStock || 0) <= 0);
-
-        if (stockFilter === 'out' && !hasOutVariant) return false;
-        if (stockFilter === 'low' && !hasLowVariant) return false;
-        if (stockFilter === 'in' && totalStock <= 0) return false;
-      }
-
-      return true;
-    });
-  }, [products, searchQuery, selectedCategory, selectedSubcategory, stockFilter, categoryMap, subcategoryMap]);
-
-  // Selected Category helpers for dynamic Units & Presets
-  const selectedCatObj = useMemo(
-    () => categories.find((c) => c.id === formCategoryId),
-    [categories, formCategoryId]
-  );
-  const catNameLower = (selectedCatObj?.name || '').toLowerCase();
-  const isPaintCategory = catNameLower.includes('paint');
-  const isPipeCategory = catNameLower.includes('pipe') || catNameLower.includes('plumb');
-
-  const availableUnits = useMemo(() => {
-    if (isPaintCategory) {
-      return [
-        { value: 'l' as StandardUnit, label: 'Liter (L)' },
-        { value: 'kg' as StandardUnit, label: 'Kg (Putty/Powder)' },
-        { value: 'box' as StandardUnit, label: 'Box / Carton' },
-        { value: 'piece' as StandardUnit, label: 'Piece' },
-      ];
-    }
-    if (isPipeCategory) {
-      return [
-        { value: 'piece' as StandardUnit, label: 'Piece (Pipe/Fitting)' },
-        { value: 'm' as StandardUnit, label: 'Meter (Length)' },
-        { value: 'box' as StandardUnit, label: 'Box / Bundle' },
-      ];
-    }
-    return UNIT_OPTIONS;
-  }, [isPaintCategory, isPipeCategory]);
-
-  const quickPresets = useMemo(() => {
-    if (isPaintCategory) {
-      if (formBaseUnit === 'kg') {
-        return ['1 kg', '5 kg', '10 kg', '20 kg', '40 kg (Bag)'];
-      }
-      return ['200 ml', '500 ml', '1 Liter', '4 Liter', '10 Liter', '20 Liter (Bucket)'];
-    }
-    if (isPipeCategory) {
-      return ['1/2" (15mm)', '3/4" (20mm)', '1" (25mm)', '1.25" (32mm)', '1.5" (40mm)', '2" (50mm)', '4" (110mm)'];
-    }
-    return [];
-  }, [isPaintCategory, isPipeCategory, formBaseUnit]);
-
-  // Open Form for Adding New Product
-  const openAddProductForm = () => {
-    setEditingProduct(null);
-    setFormName('');
-    setFormBrand('');
-    const defaultCat = selectedCategory || categories[0]?.id || '';
-    setFormCategoryId(defaultCat);
-    const catSubcats = subcategories.filter((s) => s.categoryId === defaultCat && s.active);
-    setFormSubcategoryId(catSubcats[0]?.id || '');
-    setFormImageUrl('');
-    setFormDescription('');
-
-    const cat = categories.find((c) => c.id === defaultCat);
-    const isPaint = cat?.name.toLowerCase().includes('paint');
-
-    setFormBaseUnit(isPaint ? 'l' : 'piece');
-    setFormVariants([
-      {
-        name: isPaint ? '1 Liter' : 'Standard',
-        size: isPaint ? '1 Liter' : 'Standard',
-        openingStock: '10',
-        minStockLevel: '5',
-        rackLocation: '',
-      },
-    ]);
-    setFormVisible(true);
-  };
-
-  // Open Form for Editing Existing Product
-  const openEditProductForm = (prod: Product & { variants: ProductVariant[] }) => {
-    setEditingProduct(prod);
-    setFormName(prod.name);
-    setFormBrand(prod.brand || '');
-    setFormCategoryId(prod.categoryId);
-    setFormSubcategoryId(prod.subcategoryId || '');
-    setFormImageUrl(prod.imageUrl || '');
-    setFormDescription(prod.description || '');
-    setFormBaseUnit((prod.baseUnit as StandardUnit) || 'piece');
-
-    if (prod.variants && prod.variants.length > 0) {
-      setFormVariants(
-        prod.variants.map((v) => ({
-          id: v.id,
-          name: v.name || v.size || 'Standard',
-          size: v.size || v.name || 'Standard',
-          sellingPriceRs: v.sellingPricePaise ? (v.sellingPricePaise / 100).toString() : '',
-          costPriceRs: v.purchasePricePaise ? (v.purchasePricePaise / 100).toString() : '',
-          openingStock: (v.currentStock !== undefined ? v.currentStock : (v.openingStock || 0)).toString(),
-          currentStock: v.currentStock,
-          minStockLevel: (v.minStockLevel || 5).toString(),
-          rackLocation: v.rackLocation || '',
-        }))
+      // Ensures default sub-tabs (Pipes, Pipe Fittings, Others) exist
+      const subtabs = await MatrixRepository.ensureDefaultSubTabs(
+        storeId,
+        catId,
+        catName,
+        deviceId
       );
-    } else {
-      setFormVariants([
-        {
-          name: 'Standard',
-          size: 'Standard',
-          openingStock: '10',
-          minStockLevel: '5',
-          rackLocation: '',
-        },
-      ]);
-    }
+      setSubcategories(subtabs);
 
-    setFormVisible(true);
-  };
+      const activeSub = preferredSubcatId && subtabs.some((s) => s.id === preferredSubcatId)
+        ? preferredSubcatId
+        : subtabs[0]?.id || '';
 
-  // Image Picking
-  const handlePickImage = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.7,
-      });
+      setActiveSubcategoryId(activeSub);
 
-      if (!result.canceled && result.assets[0]?.uri) {
-        setFormImageUrl(result.assets[0].uri);
+      if (activeSub) {
+        await loadMatrix(catId, activeSub);
+      } else {
+        setMatrixData({ brands: [], sizes: [], cells: {} });
+        setLoading(false);
       }
     } catch (e) {
-      showToast('Could not pick image from gallery', 'error');
+      console.error('Error switching category:', e);
+      setLoading(false);
     }
-  };
+  }, [store, categories, deviceId, loadMatrix]);
 
-  const handleTakePhoto = async () => {
+  /**
+   * Initial Data Load: Load Categories
+   */
+  const initData = useCallback(async () => {
     try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        showToast('Camera permission is required to capture photos', 'warning');
-        return;
-      }
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.7,
-      });
+      setLoading(true);
+      const storeId = store?.id || 'store-1';
+      let cats = await ProductRepository.getCategories(storeId);
 
-      if (!result.canceled && result.assets[0]?.uri) {
-        setFormImageUrl(result.assets[0].uri);
+      // If no categories exist, create default "Pipes" category
+      if (!cats || cats.length === 0) {
+        const newCat = await ProductRepository.createCategory(
+          { name: 'Pipes', description: 'Pipes, fittings and accessories' },
+          storeId,
+          deviceId
+        );
+        cats = [newCat];
+      }
+
+      setCategories(cats);
+
+      const targetCatId = routerParams.categoryId && cats.some((c) => c.id === routerParams.categoryId)
+        ? routerParams.categoryId
+        : cats[0]?.id || '';
+
+      if (targetCatId) {
+        await switchCategory(targetCatId);
       }
     } catch (e) {
-      showToast('Could not open camera', 'error');
+      console.error('Error initializing products screen:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [store, deviceId, routerParams.categoryId, switchCategory]);
+
+  useEffect(() => {
+    initData();
+  }, [initData]);
+
+  /**
+   * Handle sub-tab selection (e.g. switching between Pipes, Pipe Fittings, Others)
+   */
+  const handleSelectSubTab = async (subcatId: string) => {
+    setActiveSubcategoryId(subcatId);
+    await loadMatrix(selectedCategoryId, subcatId);
+  };
+
+  /**
+   * Add a custom sub-tab dynamically via the '+' button
+   */
+  const handleAddSubTab = async (tabName: string) => {
+    try {
+      const storeId = store?.id || 'store-1';
+      const created = await MatrixRepository.addSubTab(
+        storeId,
+        selectedCategoryId,
+        tabName,
+        deviceId
+      );
+
+      setSubcategories((prev) => [...prev, created]);
+      setActiveSubcategoryId(created.id);
+      await loadMatrix(selectedCategoryId, created.id);
+      showToast(`Section "${tabName}" added!`, 'success');
+    } catch (e) {
+      console.error('Error adding sub-tab:', e);
+      showToast('Could not add section', 'error');
     }
   };
 
-  // Variant Management inside Form
-  const addVariantRow = () => {
-    setFormVariants((prev) => [
-      ...prev,
-      {
-        name: isPaintCategory
-          ? `Pack ${prev.length + 1}`
-          : isPipeCategory
-          ? `Diameter ${prev.length + 1}`
-          : `Size ${prev.length + 1}`,
-        size: '',
-        openingStock: '10',
-        minStockLevel: '5',
-        rackLocation: '',
-      },
-    ]);
-  };
-
-  const removeVariantRow = (index: number) => {
-    if (formVariants.length <= 1) {
-      showToast('Each product must have at least one size/variant', 'warning');
-      return;
-    }
-    setFormVariants((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
-  const updateVariantRow = (index: number, field: keyof VariantFormItem, value: string) => {
-    setFormVariants((prev) => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
-      return updated;
-    });
-  };
-
-  const handleSelectCategory = (catId: string) => {
-    setFormCategoryId(catId);
-    const cat = categories.find((c) => c.id === catId);
-    if (!cat) return;
-    const n = cat.name.toLowerCase();
-    const isPaint = n.includes('paint');
-    const isPipe = n.includes('pipe') || n.includes('plumb');
-
-    if (isPaint) {
-      if (formBaseUnit !== 'l' && formBaseUnit !== 'kg' && formBaseUnit !== 'box') {
-        setFormBaseUnit('l');
-      }
-      if (formVariants.length === 1 && (formVariants[0].size === 'Standard' || !formVariants[0].size)) {
-        updateVariantRow(0, 'size', '1 Liter');
-        updateVariantRow(0, 'name', '1 Liter');
-      }
-    } else if (isPipe) {
-      if (formBaseUnit === 'l' || formBaseUnit === 'kg') {
-        setFormBaseUnit('piece');
-      }
-      if (formVariants.length === 1 && formVariants[0].size === '1 Liter') {
-        updateVariantRow(0, 'size', 'Standard');
-        updateVariantRow(0, 'name', 'Standard');
-      }
+  /**
+   * Add a Brand Column
+   */
+  const handleAddBrand = async (brandName: string) => {
+    try {
+      const storeId = store?.id || 'store-1';
+      await MatrixRepository.addBrand(
+        storeId,
+        selectedCategoryId,
+        activeSubcategoryId,
+        brandName,
+        matrixData.sizes,
+        deviceId
+      );
+      await loadMatrix(selectedCategoryId, activeSubcategoryId);
+      showToast(`Brand "${brandName}" added!`, 'success');
+    } catch (e) {
+      console.error('Error adding brand:', e);
+      showToast('Could not add brand', 'error');
     }
   };
 
-  const handleApplyPresetSize = (presetLabel: string) => {
-    // If only 1 variant and it has default 'Standard' or empty, replace it
-    if (
-      formVariants.length === 1 &&
-      (!formVariants[0].size ||
-        formVariants[0].size === 'Standard' ||
-        formVariants[0].size === '1 Liter')
-    ) {
-      updateVariantRow(0, 'size', presetLabel);
-      updateVariantRow(0, 'name', presetLabel);
-      return;
+  /**
+   * Add a Size Row
+   */
+  const handleAddSize = async (sizeName: string) => {
+    try {
+      const storeId = store?.id || 'store-1';
+      await MatrixRepository.addSize(
+        storeId,
+        selectedCategoryId,
+        activeSubcategoryId,
+        sizeName,
+        matrixData.brands,
+        deviceId
+      );
+      await loadMatrix(selectedCategoryId, activeSubcategoryId);
+      showToast(`Size "${sizeName}" added!`, 'success');
+    } catch (e) {
+      console.error('Error adding size:', e);
+      showToast('Could not add size', 'error');
     }
+  };
 
-    // Check if this preset already exists
-    const exists = formVariants.some(
-      (v) => v.size.trim().toLowerCase() === presetLabel.trim().toLowerCase()
+  /**
+   * Handle Cell Selection
+   */
+  const handleSelectCell = (
+    cellKey: string,
+    cell: MatrixCellData | null,
+    size: string,
+    brand: string
+  ) => {
+    setSelectedCellKey(cellKey);
+    setSelectedCell(cell);
+    setSelectedSize(size);
+    setSelectedBrand(brand);
+  };
+
+  /**
+   * Open Stock In Modal
+   */
+  const handleOpenStockIn = () => {
+    if (!selectedSize || !selectedBrand) return;
+    setActionModalMode('add');
+    setActionQty('10');
+    setActionNote('');
+    setActionPriceRs(
+      selectedCell?.purchasePricePaise
+        ? (selectedCell.purchasePricePaise / 100).toString()
+        : ''
     );
-    if (exists) {
-      showToast(`"${presetLabel}" is already in your size list`, 'info');
-      return;
-    }
-
-    // Otherwise append a new variant
-    setFormVariants((prev) => [
-      ...prev,
-      {
-        name: presetLabel,
-        size: presetLabel,
-        openingStock: '10',
-        minStockLevel: '5',
-        rackLocation: '',
-      },
-    ]);
   };
 
-  // Create Category Handler
-  const handleCreateCategory = async () => {
-    if (!newCatName.trim()) {
-      showToast('Please enter a category name', 'warning');
+  /**
+   * Open Sell Modal
+   */
+  const handleOpenSell = () => {
+    if (!selectedSize || !selectedBrand) return;
+    setActionModalMode('sell');
+    setActionQty('1');
+    setActionNote('');
+    setActionPriceRs(
+      selectedCell?.sellingPricePaise
+        ? (selectedCell.sellingPricePaise / 100).toString()
+        : ''
+    );
+  };
+
+  /**
+   * Confirm Stock Adjustment (Stock In or Sell)
+   */
+  const handleConfirmStockAction = async () => {
+    if (!actionModalMode || submittingAction) return;
+    const numQty = parseFloat(actionQty);
+    if (isNaN(numQty) || numQty <= 0) {
+      showToast('Please enter a valid quantity', 'warning');
       return;
     }
+
+    const currentStock = selectedCell ? selectedCell.currentStock : 0;
+    if (actionModalMode === 'sell' && numQty > currentStock) {
+      showToast(`Not enough stock. Available: ${currentStock}`, 'warning');
+      return;
+    }
+
     try {
-      setCreatingCat(true);
+      setSubmittingAction(true);
+      const storeId = store?.id || 'store-1';
+
+      // Ensure variant exists in database
+      let variantId = selectedCell?.variantId;
+      if (!variantId) {
+        // If cell had no record, create variant on the fly
+        await MatrixRepository.addSize(
+          storeId,
+          selectedCategoryId,
+          activeSubcategoryId,
+          selectedSize,
+          [selectedBrand],
+          deviceId
+        );
+        const refreshed = await MatrixRepository.getMatrixData(
+          storeId,
+          selectedCategoryId,
+          activeSubcategoryId
+        );
+        const cell = refreshed.cells[`${selectedSize}___${selectedBrand.toLowerCase()}`];
+        variantId = cell?.variantId;
+      }
+
+      if (!variantId) {
+        throw new Error('Could not resolve item variant');
+      }
+
+      const reason = actionModalMode === 'sell'
+        ? (actionNote.trim() || `Sold ${numQty} pc of ${selectedSize} ${selectedBrand}`)
+        : (actionNote.trim() || `Restocked ${numQty} pc of ${selectedSize} ${selectedBrand}`);
+
+      await InventoryRepository.adjustStock(
+        variantId,
+        numQty,
+        'piece',
+        actionModalMode === 'sell' ? 'sale' : 'increase',
+        reason,
+        storeId,
+        deviceId
+      );
+
+      setActionModalMode(null);
+      await loadMatrix(selectedCategoryId, activeSubcategoryId);
+      showToast(
+        actionModalMode === 'sell'
+          ? `Sold ${numQty} pc successfully!`
+          : `Added +${numQty} pc to stock!`,
+        'success'
+      );
+    } catch (e: any) {
+      console.error('Error confirming stock action:', e);
+      showToast(e?.message || 'Failed to update stock', 'error');
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
+  /**
+   * Create New Category
+   */
+  const handleCreateCategory = async () => {
+    if (!newCatName.trim() || submittingCat) return;
+    try {
+      setSubmittingCat(true);
       const storeId = store?.id || 'store-1';
       const created = await ProductRepository.createCategory(
-        { name: newCatName.trim(), displayOrder: categories.length },
+        { name: newCatName.trim() },
         storeId,
         deviceId
       );
       setCategories((prev) => [...prev, created]);
-      setFormCategoryId(created.id);
       setNewCatName('');
-      setNewCatDialogVisible(false);
+      setNewCatModalVisible(false);
+      await switchCategory(created.id);
       showToast(`Category "${created.name}" created!`, 'success');
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Could not create category';
-      showToast(msg, 'error');
-    } finally {
-      setCreatingCat(false);
-    }
-  };
-
-  // Create Subcategory Handler
-  const handleCreateSubcategory = async () => {
-    if (!newSubcatName.trim()) {
-      showToast('Please enter a subcategory name', 'warning');
-      return;
-    }
-    try {
-      setCreatingSubcat(true);
-      const storeId = store?.id || 'store-1';
-      const targetCatId = formVisible
-        ? formCategoryId
-        : (selectedCategory || categories[0]?.id || '');
-      const created = await CategoryRepository.createSubcategory(
-        { categoryId: targetCatId, name: newSubcatName.trim() },
-        storeId,
-        deviceId
-      );
-      setNewSubcatDialogVisible(false);
-      setNewSubcatName('');
-      await loadData();
-      if (formVisible) {
-        setFormSubcategoryId(created.id);
-      } else {
-        setSelectedSubcategory(created.id);
-      }
-      showToast(`Subcategory "${created.name}" created!`, 'success');
     } catch (e) {
-      showToast('Failed to create subcategory', 'error');
+      console.error('Error creating category:', e);
+      showToast('Could not create category', 'error');
     } finally {
-      setCreatingSubcat(false);
+      setSubmittingCat(false);
     }
   };
 
-  // Save Product (Create or Update)
-  const handleSaveProduct = async () => {
-    if (!formName.trim()) {
-      showToast('Product Name is mandatory', 'warning');
-      return;
-    }
-    if (!formCategoryId) {
-      showToast('Please select a Category', 'warning');
-      return;
-    }
+  // Filtered matrix based on search query
+  const filteredMatrix = useMemo(() => {
+    if (!searchQuery.trim()) return matrixData;
+    const query = searchQuery.trim().toLowerCase();
 
-    // Validate Variants
-    for (let i = 0; i < formVariants.length; i++) {
-      const v = formVariants[i];
-      if (!v.size.trim() && !v.name.trim()) {
-        showToast(`Please enter a Size/Name for variant #${i + 1}`, 'warning');
-        return;
-      }
-    }
+    // Filter matching brands or sizes
+    const matchedSizes = matrixData.sizes.filter((s) => s.toLowerCase().includes(query));
+    const matchedBrands = matrixData.brands.filter((b) => b.toLowerCase().includes(query));
 
-    try {
-      setSavingProduct(true);
-      const storeId = store?.id || 'store-1';
-
-      // Ensure a valid subcategory exists for SQLite constraint
-      let subcatId = formSubcategoryId;
-      if (!subcatId) {
-        const existingSubcats = await ProductRepository.getSubcategories(formCategoryId, storeId);
-        subcatId = existingSubcats[0]?.id;
-        if (!subcatId) {
-          const autoSubcat = await ProductRepository.createSubcategory(
-            { categoryId: formCategoryId, name: 'General' },
-            storeId,
-            deviceId
-          );
-          subcatId = autoSubcat.id;
-        }
-      }
-
-      const measurementType = mapUnitToMeasurementType(formBaseUnit);
-
-      if (editingProduct) {
-        // UPDATE PRODUCT
-        const productUpdates: Partial<Product> = {
-          name: formName.trim(),
-          brand: formBrand.trim() || undefined,
-          categoryId: formCategoryId,
-          subcategoryId: subcatId,
-          imageUrl: formImageUrl.trim() || undefined,
-          description: formDescription.trim() || undefined,
-          baseUnit: formBaseUnit,
-          measurementType: measurementType,
-        };
-
-        const variantsData: Array<Partial<ProductVariant>> = formVariants.map((v) => {
-          const parsedStock = parseFloat(v.openingStock) || 0;
-          return {
-            id: v.id,
-            name: v.name.trim() || v.size.trim() || 'Standard',
-            size: v.size.trim() || v.name.trim() || 'Standard',
-            sku: generateSku(formName, formBrand, v.size || v.name),
-            sellingPricePaise: v.sellingPriceRs ? Math.round((parseFloat(v.sellingPriceRs) || 0) * 100) : 0,
-            purchasePricePaise: v.costPriceRs ? Math.round((parseFloat(v.costPriceRs) || 0) * 100) : 0,
-            currentStock: parsedStock,
-            openingStock: parsedStock,
-            minStockLevel: parseFloat(v.minStockLevel) || 5,
-            rackLocation: v.rackLocation.trim() || undefined,
-          };
-        });
-
-        await ProductRepository.updateProduct(
-          editingProduct.id,
-          productUpdates,
-          variantsData,
-          storeId,
-          deviceId
-        );
-
-        setFormVisible(false);
-        setProductSuccess({
-          mode: 'update',
-          productName: formName.trim(),
-          brand: formBrand.trim() || undefined,
-          categoryName: categoryMap.get(formCategoryId) || undefined,
-          unit: formBaseUnit,
-          variantCount: variantsData.length,
-        });
-        await loadData();
-      } else {
-        // CREATE NEW PRODUCT
-        const productData: Partial<Product> = {
-          name: formName.trim(),
-          brand: formBrand.trim() || undefined,
-          categoryId: formCategoryId,
-          subcategoryId: subcatId,
-          imageUrl: formImageUrl.trim() || undefined,
-          description: formDescription.trim() || undefined,
-          baseUnit: formBaseUnit,
-          measurementType: measurementType,
-          allowedUnits: [formBaseUnit],
-        };
-
-        const variantsData: Array<Partial<ProductVariant>> = formVariants.map((v) => {
-          const openingStock = parseFloat(v.openingStock) || 0;
-          return {
-            name: v.name.trim() || v.size.trim() || 'Standard',
-            size: v.size.trim() || v.name.trim() || 'Standard',
-            sku: generateSku(formName, formBrand, v.size || v.name),
-            sellingPricePaise: v.sellingPriceRs ? Math.round((parseFloat(v.sellingPriceRs) || 0) * 100) : 0,
-            purchasePricePaise: v.costPriceRs ? Math.round((parseFloat(v.costPriceRs) || 0) * 100) : 0,
-            openingStock: openingStock,
-            currentStock: openingStock,
-            minStockLevel: parseFloat(v.minStockLevel) || 5,
-            rackLocation: v.rackLocation.trim() || undefined,
-          };
-        });
-
-        await ProductRepository.createProduct(productData, variantsData, storeId, deviceId);
-
-        setFormVisible(false);
-        setProductSuccess({
-          mode: 'create',
-          productName: formName.trim(),
-          brand: formBrand.trim() || undefined,
-          categoryName: categoryMap.get(formCategoryId) || undefined,
-          unit: formBaseUnit,
-          variantCount: variantsData.length,
-        });
-        await loadData();
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to save product';
-      showToast(msg, 'error');
-    } finally {
-      setSavingProduct(false);
-    }
-  };
-
-  // Delete / Archive Product
-  const handleArchiveProduct = (prod: Product) => {
-    setDeleteConfirmProd(prod);
-  };
-
-  const handleConfirmDeleteProduct = async () => {
-    if (!deleteConfirmProd) return;
-    try {
-      setDeletingProduct(true);
-      const storeId = store?.id || deleteConfirmProd.storeId || 'store-1';
-      await ProductRepository.archiveProduct(deleteConfirmProd.id, storeId, deviceId);
-      setDeleteConfirmProd(null);
-      showToast(`"${deleteConfirmProd.name}" deleted`, 'info');
-      await loadData();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Could not delete product';
-      showToast(msg, 'error');
-    } finally {
-      setDeletingProduct(false);
-    }
-  };
-
-  // Quick Stock Variant (Add or Sell)
-  const handleConfirmQuickStock = async (mode: 'add' | 'sell', qty: number, note: string) => {
-    if (!quickStockTarget) return;
-    if (isNaN(qty) || qty <= 0) {
-      showToast('Please enter a valid stock quantity', 'warning');
-      return;
-    }
-
-    const currentStock = quickStockTarget.variant.currentStock || 0;
-    if (mode === 'sell' && qty > currentStock) {
-      showToast(
-        `Cannot sell ${qty} ${quickStockTarget.unit}. Available: ${currentStock} ${quickStockTarget.unit}`,
-        'warning'
-      );
-      return;
-    }
-
-    try {
-      setUpdatingStock(true);
-      const storeId = store?.id || 'store-1';
-      await InventoryRepository.adjustStock(
-        quickStockTarget.variant.id,
-        qty,
-        (quickStockTarget.unit as any) || 'piece',
-        mode === 'sell' ? 'sale' : 'increase',
-        note.trim() ||
-          (mode === 'sell'
-            ? `Sold ${qty} ${quickStockTarget.unit}`
-            : 'Restock from Catalogue'),
-        storeId,
-        deviceId
-      );
-
-      const previousStock = currentStock;
-      const newStock = mode === 'sell' ? Math.max(0, currentStock - qty) : currentStock + qty;
-      const successData: StockSuccessInfo = {
-        mode,
-        qty,
-        unit: quickStockTarget.unit,
-        productName: quickStockTarget.productName,
-        variantName: quickStockTarget.variant.name || quickStockTarget.variant.size || '',
-        previousStock,
-        newStock,
-      };
-
-      setQuickStockTarget(null);
-      setStockSuccess(successData);
-      await loadData();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Could not update stock';
-      showToast(msg, 'error');
-    } finally {
-      setUpdatingStock(false);
-    }
-  };
+    return {
+      brands: matchedBrands.length > 0 ? matchedBrands : matrixData.brands,
+      sizes: matchedSizes.length > 0 ? matchedSizes : matrixData.sizes,
+      cells: matrixData.cells,
+    };
+  }, [matrixData, searchQuery]);
 
   return (
     <View style={[styles.container, { backgroundColor: activeColors.background }]}>
-      {/* 1. Top Search Bar */}
+      {/* 1. Header Bar: Logo + Store Name + Active Category Header */}
       <View
         style={[
-          styles.topBar,
+          styles.headerBar,
           {
             backgroundColor: activeColors.surface,
             borderBottomColor: activeColors.border,
-            paddingTop: Math.max(topInset + 8, 16),
+            paddingTop: topInset + 4,
           },
+          themeShadows.card,
         ]}
       >
-        <Searchbar
-          placeholder="Search by name, brand, or size..."
-          onChangeText={setSearchQuery}
-          value={searchQuery}
-          style={[
-            styles.searchbar,
-            {
-              backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9',
-            },
-          ]}
-          inputStyle={[styles.searchbarInput, { color: activeColors.textPrimary }]}
-          placeholderTextColor={activeColors.textMuted}
-          iconColor={activeColors.textSecondary}
-        />
-
-        {/* Stock Filter Chips */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterScroll}
-        >
-          {[
-            { id: 'all', label: 'All Items' },
-            { id: 'in', label: 'In Stock' },
-            { id: 'low', label: 'Low Stock' },
-            { id: 'out', label: 'Out of Stock' },
-          ].map((item) => (
-            <Chip
-              key={item.id}
-              selected={stockFilter === item.id}
-              onPress={() => setStockFilter(item.id as any)}
+        <View style={styles.storeHeaderRow}>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Text
               style={[
-                styles.filterChip,
-                {
-                  backgroundColor: stockFilter === item.id ? (isDarkMode ? '#1E293B' : '#EFF6FF') : (isDarkMode ? '#111827' : '#F1F5F9'),
-                  borderColor: stockFilter === item.id ? activeColors.primary : activeColors.border,
-                  borderWidth: stockFilter === item.id ? 1 : 0,
-                },
+                styles.storeTitle,
+                { color: activeColors.textPrimary },
               ]}
-              textStyle={[
-                styles.filterChipText,
-                { color: stockFilter === item.id ? activeColors.primary : activeColors.textSecondary },
-                stockFilter === item.id && styles.filterChipTextActive,
-              ]}
-              showSelectedOverlay={false}
+              numberOfLines={1}
             >
-              {item.label}
-            </Chip>
-          ))}
-        </ScrollView>
+              Manju Hardware Store
+            </Text>
+            <Text
+              style={[
+                styles.categoryHeadline,
+                { color: activeColors.primary },
+              ]}
+            >
+              {activeCategory?.name?.toLowerCase() || 'pipe'}
+            </Text>
+          </View>
 
-        {/* Category Filter Chips with + Category */}
+          {/* Quick Search Toggle / Input */}
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={() => setNewCatModalVisible(true)}
+            style={[
+              styles.addCatBtn,
+              {
+                backgroundColor: activeColors.primaryLight,
+                borderColor: activeColors.primaryBorder || activeColors.primary,
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="shape-plus"
+              size={16}
+              color={activeColors.primary}
+            />
+            <Text
+              style={[
+                styles.addCatBtnText,
+                { color: activeColors.primary },
+              ]}
+            >
+              + Category
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Categories Bar */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.categoryScroll}
         >
-          <TouchableOpacity
-            style={[
-              styles.catTab,
-              {
-                backgroundColor: selectedCategory === null ? activeColors.primary : (isDarkMode ? '#1E293B' : '#F1F5F9'),
-              },
-            ]}
-            onPress={() => {
-              setSelectedCategory(null);
-              setSelectedSubcategory(null);
-            }}
-          >
-            <Text
-              style={[
-                styles.catTabText,
-                {
-                  color: selectedCategory === null ? '#FFFFFF' : activeColors.textSecondary,
-                  fontWeight: selectedCategory === null ? '700' : '600',
-                },
-              ]}
-            >
-              All Categories
-            </Text>
-          </TouchableOpacity>
-
-          {categories.map((c) => (
-            <TouchableOpacity
-              key={c.id}
-              style={[
-                styles.catTab,
-                {
-                  backgroundColor: selectedCategory === c.id ? activeColors.primary : (isDarkMode ? '#1E293B' : '#F1F5F9'),
-                },
-              ]}
-              onPress={() => {
-                setSelectedCategory(c.id);
-                setSelectedSubcategory(null);
-              }}
-            >
-              <Text
-                style={[
-                  styles.catTabText,
-                  {
-                    color: selectedCategory === c.id ? '#FFFFFF' : activeColors.textSecondary,
-                    fontWeight: selectedCategory === c.id ? '700' : '600',
-                  },
-                ]}
-              >
-                {c.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-
-          {/* Quick Add Category Button */}
-          <TouchableOpacity
-            style={[
-              styles.addCatTab,
-              {
-                backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
-                borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
-              },
-            ]}
-            onPress={() => setNewCatDialogVisible(true)}
-          >
-            <MaterialCommunityIcons name="plus" size={14} color={activeColors.primary} />
-            <Text style={[styles.addCatTabText, { color: activeColors.primary }]}>New</Text>
-          </TouchableOpacity>
-        </ScrollView>
-
-        {/* Subcategories Filter Row */}
-        {selectedCategory && activeSubcategories.length > 0 && (
-          <View
-            style={[
-              styles.subcatBar,
-              {
-                backgroundColor: isDarkMode ? '#0F172A' : '#F8FAFC',
-                borderTopColor: isDarkMode ? '#1E293B' : '#E2E8F0',
-              },
-            ]}
-          >
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.subcatScroll}
-            >
+          {categories.map((c) => {
+            const isSelected = c.id === selectedCategoryId;
+            return (
               <TouchableOpacity
+                key={c.id}
+                activeOpacity={0.7}
+                onPress={() => switchCategory(c.id)}
                 style={[
-                  styles.subcatTab,
+                  styles.categoryPill,
                   {
-                    backgroundColor:
-                      selectedSubcategory === null
-                        ? activeColors.primary
-                        : (isDarkMode ? '#1E293B' : '#FFFFFF'),
-                    borderColor:
-                      selectedSubcategory === null
-                        ? activeColors.primary
-                        : (isDarkMode ? '#334155' : '#CBD5E1'),
+                    backgroundColor: isSelected
+                      ? activeColors.primary
+                      : isDarkMode
+                      ? activeColors.surfaceElevated
+                      : activeColors.surfaceSubtle,
+                    borderColor: isSelected
+                      ? activeColors.primary
+                      : activeColors.border,
                   },
                 ]}
-                onPress={() => setSelectedSubcategory(null)}
               >
                 <Text
                   style={[
-                    styles.subcatTabText,
+                    styles.categoryPillText,
                     {
-                      color:
-                        selectedSubcategory === null
-                          ? '#FFFFFF'
-                          : activeColors.textSecondary,
-                      fontWeight: selectedSubcategory === null ? '700' : '600',
+                      color: isSelected ? '#FFFFFF' : activeColors.textSecondary,
+                      fontWeight: isSelected ? '700' : '600',
                     },
                   ]}
                 >
-                  All {categoryMap.get(selectedCategory) || 'Items'}
+                  {c.name}
                 </Text>
               </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
-              {activeSubcategories.map((sc) => (
+      {/* 2. Sub-Tabs Bar: [ Pipes ] [ Pipe Fittings ] [ Others ] [ + Add Section ] */}
+      <CategorySubTabs
+        subcategories={subcategories}
+        activeSubcategoryId={activeSubcategoryId}
+        onSelectSubcategory={handleSelectSubTab}
+        onAddSubTab={handleAddSubTab}
+        isDarkMode={isDarkMode}
+        activeColors={activeColors}
+      />
+
+      {/* 3. Search Filter Bar (Optional quick lookup) */}
+      <View style={styles.searchWrap}>
+        <Searchbar
+          placeholder={`Search ${activeCategory?.name || 'items'} by size or brand...`}
+          onChangeText={setSearchQuery}
+          value={searchQuery}
+          style={[
+            styles.searchbar,
+            {
+              backgroundColor: isDarkMode
+                ? activeColors.surfaceElevated
+                : activeColors.surfaceSubtle,
+            },
+          ]}
+          inputStyle={{
+            fontSize: 13,
+            color: activeColors.textPrimary,
+            minHeight: 36,
+          }}
+          placeholderTextColor={activeColors.textMuted}
+          iconColor={activeColors.textSecondary}
+        />
+      </View>
+
+      {/* 4. Main Matrix Table View */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 20 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator size="large" color={activeColors.primary} />
+            <Text style={[styles.loadingText, { color: activeColors.textMuted }]}>
+              Loading Table...
+            </Text>
+          </View>
+        ) : (
+          <ProductMatrixGrid
+            data={filteredMatrix}
+            selectedCellKey={selectedCellKey}
+            onSelectCell={handleSelectCell}
+            onAddBrand={handleAddBrand}
+            onAddSize={handleAddSize}
+            isDarkMode={isDarkMode}
+            activeColors={activeColors}
+            emptyLabel={activeCategory?.name || 'Items'}
+          />
+        )}
+      </ScrollView>
+
+      {/* 5. Bottom Action Bar: [ stock ] (Green) & [ sell ] (Red) */}
+      <MatrixActionBar
+        selectedCell={selectedCell}
+        selectedSize={selectedSize}
+        selectedBrand={selectedBrand}
+        onStockIn={handleOpenStockIn}
+        onSell={handleOpenSell}
+        isDarkMode={isDarkMode}
+        activeColors={activeColors}
+      />
+
+      {/* Quick Stock / Sell Dialog */}
+      <Portal>
+        <Dialog
+          visible={actionModalMode !== null}
+          onDismiss={() => setActionModalMode(null)}
+          style={[
+            styles.actionDialog,
+            { backgroundColor: activeColors.surface },
+          ]}
+        >
+          <Dialog.Title
+            style={[
+              styles.actionDialogTitle,
+              {
+                color: actionModalMode === 'sell' ? '#DC2626' : '#059669',
+              },
+            ]}
+          >
+            {actionModalMode === 'sell' ? '🔴 Sell Item (Stock Out)' : '🟢 Stock In (Add Inventory)'}
+          </Dialog.Title>
+          <Dialog.Content>
+            <View style={styles.actionItemBanner}>
+              <Text
+                style={[
+                  styles.actionItemTitle,
+                  { color: activeColors.textPrimary },
+                ]}
+              >
+                {selectedSize} • {selectedBrand}
+              </Text>
+              <Text
+                style={[
+                  styles.actionItemStock,
+                  { color: activeColors.textSecondary },
+                ]}
+              >
+                Current Stock: <Text style={{ fontWeight: '800' }}>{selectedCell ? selectedCell.currentStock : 0} pc</Text>
+              </Text>
+            </View>
+
+            <Text
+              style={[
+                styles.inputLabel,
+                { color: activeColors.textPrimary },
+              ]}
+            >
+              Quantity ({actionModalMode === 'sell' ? 'Bechna hai' : 'Aaya hai'}):
+            </Text>
+            <TextInput
+              style={[
+                styles.actionInput,
+                {
+                  backgroundColor: isDarkMode
+                    ? activeColors.surfaceElevated
+                    : activeColors.surfaceSubtle,
+                  color: activeColors.textPrimary,
+                  borderColor: activeColors.border,
+                },
+              ]}
+              keyboardType="numeric"
+              value={actionQty}
+              onChangeText={setActionQty}
+              autoFocus
+            />
+
+            {/* Quick Quantity Presets */}
+            <View style={styles.presetsRow}>
+              {[1, 2, 5, 10, 20, 50].map((num) => (
                 <TouchableOpacity
-                  key={sc.id}
+                  key={num}
+                  onPress={() => setActionQty(num.toString())}
                   style={[
-                    styles.subcatTab,
+                    styles.presetBtn,
                     {
-                      backgroundColor:
-                        selectedSubcategory === sc.id
-                          ? activeColors.primary
-                          : (isDarkMode ? '#1E293B' : '#FFFFFF'),
-                      borderColor:
-                        selectedSubcategory === sc.id
-                          ? activeColors.primary
-                          : (isDarkMode ? '#334155' : '#CBD5E1'),
+                      backgroundColor: actionQty === num.toString()
+                        ? activeColors.primary
+                        : isDarkMode
+                        ? activeColors.surfaceElevated
+                        : activeColors.surfaceSubtle,
+                      borderColor: activeColors.border,
                     },
                   ]}
-                  onPress={() => setSelectedSubcategory(sc.id)}
                 >
                   <Text
                     style={[
-                      styles.subcatTabText,
+                      styles.presetBtnText,
                       {
-                        color:
-                          selectedSubcategory === sc.id
-                            ? '#FFFFFF'
-                            : activeColors.textSecondary,
-                        fontWeight: selectedSubcategory === sc.id ? '700' : '600',
+                        color: actionQty === num.toString()
+                          ? '#FFFFFF'
+                          : activeColors.textPrimary,
                       },
                     ]}
                   >
-                    {sc.name}
+                    +{num}
                   </Text>
                 </TouchableOpacity>
               ))}
+            </View>
 
-              {/* Quick Add Subcategory Button */}
-              <TouchableOpacity
+            <Text
+              style={[
+                styles.inputLabel,
+                { color: activeColors.textPrimary, marginTop: 12 },
+              ]}
+            >
+              Note (Optional):
+            </Text>
+            <TextInput
+              style={[
+                styles.noteInput,
+                {
+                  backgroundColor: isDarkMode
+                    ? activeColors.surfaceElevated
+                    : activeColors.surfaceSubtle,
+                  color: activeColors.textPrimary,
+                  borderColor: activeColors.border,
+                },
+              ]}
+              placeholder="e.g. Counter Cash, Wholesale Bill etc."
+              placeholderTextColor={activeColors.textMuted}
+              value={actionNote}
+              onChangeText={setActionNote}
+            />
+          </Dialog.Content>
+
+          <Dialog.Actions>
+            <TouchableOpacity
+              onPress={() => setActionModalMode(null)}
+              style={styles.dialogCancelBtn}
+            >
+              <Text
                 style={[
-                  styles.addSubcatTab,
-                  {
-                    backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
-                    borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
-                  },
+                  styles.dialogCancelText,
+                  { color: activeColors.textSecondary },
                 ]}
-                onPress={() => {
-                  setNewSubcatName('');
-                  setNewSubcatDialogVisible(true);
-                }}
               >
-                <MaterialCommunityIcons
-                  name="plus"
-                  size={14}
-                  color={activeColors.primary}
-                />
-                <Text style={[styles.addSubcatTabText, { color: activeColors.primary }]}>
-                  Subcategory
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        )}
-      </View>
+                Cancel
+              </Text>
+            </TouchableOpacity>
 
-      {/* 2. Product Catalogue List */}
-      <FlatList
-        data={filteredProducts}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={[styles.listContent, { backgroundColor: activeColors.background }]}
-        refreshing={loading}
-        onRefresh={loadData}
-        ListEmptyComponent={
-          <Surface
+            <TouchableOpacity
+              onPress={handleConfirmStockAction}
+              disabled={submittingAction}
+              style={[
+                styles.dialogConfirmBtn,
+                {
+                  backgroundColor: actionModalMode === 'sell' ? '#DC2626' : '#059669',
+                },
+              ]}
+            >
+              <Text style={styles.dialogConfirmText}>
+                {submittingAction
+                  ? 'Processing...'
+                  : actionModalMode === 'sell'
+                  ? 'Confirm Sell'
+                  : 'Confirm Stock In'}
+              </Text>
+            </TouchableOpacity>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      {/* Modal: Add Category */}
+      <Modal
+        visible={newCatModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNewCatModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
             style={[
-              styles.emptyContainer,
+              styles.modalCard,
               {
                 backgroundColor: activeColors.surface,
                 borderColor: activeColors.border,
               },
+              themeShadows.card,
             ]}
           >
-            <MaterialCommunityIcons name="package-variant" size={48} color={activeColors.textMuted} />
-            <Text style={[styles.emptyTitle, { color: activeColors.textPrimary }]}>No Products Found</Text>
-            <Text style={[styles.emptySubtitle, { color: activeColors.textSecondary }]}>
-              {searchQuery.trim()
-                ? 'Try a different search keyword or filter.'
-                : 'Tap the "+" button below to add your first product!'}
-            </Text>
-            <TouchableOpacity
-              style={[styles.emptyBtn, { backgroundColor: activeColors.primary }]}
-              onPress={openAddProductForm}
-            >
-              <MaterialCommunityIcons name="plus" size={16} color="#FFFFFF" />
-              <Text style={styles.emptyBtnText}>Add Product</Text>
-            </TouchableOpacity>
-          </Surface>
-        }
-        renderItem={({ item }) => {
-          const totalStock = item.variants.reduce((s, v) => s + (v.currentStock || 0), 0);
-          const categoryName = categoryMap.get(item.categoryId) || 'General';
-
-          return (
-            <Surface
+            <Text
               style={[
-                styles.productCard,
+                styles.modalTitle,
+                { color: activeColors.textPrimary },
+              ]}
+            >
+              Nayi Category Banayein
+            </Text>
+            <Text
+              style={[
+                styles.modalSubtitle,
+                { color: activeColors.textMuted },
+              ]}
+            >
+              Jaise: Pipes, Sanitary, Electrical, Paints etc.
+            </Text>
+
+            <TextInput
+              style={[
+                styles.input,
                 {
-                  backgroundColor: activeColors.surface,
+                  backgroundColor: isDarkMode
+                    ? activeColors.surfaceElevated
+                    : activeColors.surfaceSubtle,
+                  color: activeColors.textPrimary,
                   borderColor: activeColors.border,
-                  ...themeShadows.card,
                 },
               ]}
-            >
-              {/* Product Header */}
-              <View style={styles.cardHeader}>
-                {/* Product Image / Thumbnail */}
-                <View
-                  style={[
-                    styles.thumbWrapper,
-                    { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' },
-                  ]}
-                >
-                  {item.imageUrl ? (
-                    <Image source={{ uri: item.imageUrl }} style={styles.productImage} />
-                  ) : (
-                    <MaterialCommunityIcons
-                      name="cube-outline"
-                      size={28}
-                      color={activeColors.textSecondary}
-                    />
-                  )}
-                </View>
-
-                {/* Name & Brand */}
-                <View style={styles.cardHeaderInfo}>
-                  <Text style={[styles.productName, { color: activeColors.textPrimary }]} numberOfLines={1}>
-                    {item.name}
-                  </Text>
-                  <View style={styles.tagRow}>
-                    {item.brand ? (
-                      <View
-                        style={[
-                          styles.brandTag,
-                          { backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF' },
-                        ]}
-                      >
-                        <Text style={[styles.brandTagText, { color: activeColors.primary }]}>{item.brand}</Text>
-                      </View>
-                    ) : null}
-                    <View
-                      style={[
-                        styles.categoryTag,
-                        { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' },
-                      ]}
-                    >
-                      <Text style={[styles.categoryTagText, { color: activeColors.textSecondary }]}>{categoryName}</Text>
-                    </View>
-                    {subcategoryMap.get(item.subcategoryId) ? (
-                      <View
-                        style={[
-                          styles.subcatTag,
-                          {
-                            backgroundColor: isDarkMode ? '#1E3A8A' : '#EEF2FF',
-                            borderColor: isDarkMode ? '#2563EB' : '#C7D2FE',
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.subcatTagText,
-                            { color: isDarkMode ? '#93C5FD' : '#4338CA' },
-                          ]}
-                        >
-                          {subcategoryMap.get(item.subcategoryId)}
-                        </Text>
-                      </View>
-                    ) : null}
-                    <View
-                      style={[
-                        styles.unitTag,
-                        {
-                          backgroundColor: isDarkMode ? '#111827' : '#F8FAFC',
-                          borderColor: activeColors.border,
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.unitTagText, { color: activeColors.textMuted }]}>{formatUnitBadge(item.baseUnit)}</Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
-
-              {/* Description if present */}
-              {item.description ? (
-                <Text style={[styles.productDesc, { color: activeColors.textSecondary }]} numberOfLines={2}>
-                  {item.description}
-                </Text>
-              ) : null}
-
-              {/* Variants / Sizes Section */}
-              <View
-                style={[
-                  styles.variantsBox,
-                  {
-                    backgroundColor: isDarkMode ? '#0F172A' : '#F8FAFC',
-                    borderColor: isDarkMode ? '#1F2937' : '#F1F5F9',
-                  },
-                ]}
-              >
-                <View style={styles.variantSectionHeader}>
-                  <Text style={[styles.variantHeaderTitle, { color: activeColors.textPrimary }]}>
-                    Sizes & Inventory:
-                  </Text>
-                  <Text style={[styles.totalStockLabel, { color: activeColors.textSecondary }]}>
-                    Total: <Text style={{ fontWeight: '700', color: activeColors.textPrimary }}>{totalStock} {item.baseUnit}</Text>
-                  </Text>
-                </View>
-
-                {item.variants.map((v) => {
-                  const stock = v.currentStock || 0;
-                  const min = v.minStockLevel || 5;
-                  const isOut = stock <= 0;
-                  const isLow = stock <= min;
-
-                  return (
-                    <View
-                      key={v.id}
-                      style={[
-                        styles.variantRow,
-                        {
-                          backgroundColor: activeColors.surface,
-                          borderColor: activeColors.border,
-                        },
-                      ]}
-                    >
-                      <View style={styles.variantLeft}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={[styles.variantSizeName, { color: activeColors.textPrimary }]}>
-                            {v.name || v.size || 'Standard'}
-                          </Text>
-                          {v.rackLocation ? (
-                            <Text style={[styles.variantRack, { color: activeColors.textMuted }]}>
-                              📍 {v.rackLocation}
-                            </Text>
-                          ) : null}
-                        </View>
-                        {(v.sellingPricePaise || 0) > 0 ? (
-                          <View style={styles.variantPriceRow}>
-                            <Text style={styles.sellingPriceText}>
-                              ₹{(v.sellingPricePaise || 0) / 100}
-                            </Text>
-                            {v.purchasePricePaise ? (
-                              <Text style={styles.costPriceText}>
-                                (Cost: ₹{v.purchasePricePaise / 100})
-                              </Text>
-                            ) : null}
-                          </View>
-                        ) : null}
-                      </View>
-
-                      {/* Stock Pill & Action */}
-                      <View style={styles.variantRight}>
-                        <View
-                          style={[
-                            styles.stockStatusBadge,
-                            isOut
-                              ? styles.badgeOut
-                              : isLow
-                              ? styles.badgeLow
-                              : styles.badgeIn,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.stockStatusBadgeText,
-                              isOut
-                                ? styles.badgeTextOut
-                                : isLow
-                                ? styles.badgeTextLow
-                                : styles.badgeTextIn,
-                            ]}
-                          >
-                            {stock} {item.baseUnit || 'pcs'}
-                          </Text>
-                        </View>
-
-                        {/* Quick Stock Action Buttons: +Stock and -Sell */}
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <TouchableOpacity
-                            style={styles.quickAddChip}
-                            onPress={() => {
-                              setQuickStockMode('add');
-                              setQuickStockTarget({
-                                productId: item.id,
-                                productName: item.name,
-                                variant: v,
-                                unit: item.baseUnit || 'pcs',
-                              });
-                            }}
-                          >
-                            <MaterialCommunityIcons name="plus" size={14} color="#16A34A" />
-                            <Text style={styles.quickAddChipText}>Stock</Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={styles.quickSellChip}
-                            onPress={() => {
-                              setQuickStockMode('sell');
-                              setQuickStockTarget({
-                                productId: item.id,
-                                productName: item.name,
-                                variant: v,
-                                unit: item.baseUnit || 'pcs',
-                              });
-                            }}
-                          >
-                            <MaterialCommunityIcons name="minus" size={14} color="#DC2626" />
-                            <Text style={styles.quickSellChipText}>Sell</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-
-              {/* Bottom Card Actions */}
-              <View style={styles.cardActionsRow}>
-                <TouchableOpacity
-                  style={styles.editBtn}
-                  onPress={() => openEditProductForm(item)}
-                >
-                  <MaterialCommunityIcons name="pencil-outline" size={16} color={activeColors.primary} />
-                  <Text style={[styles.editBtnText, { color: activeColors.primary }]}>Edit Details</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.archiveBtn}
-                  onPress={() => handleArchiveProduct(item)}
-                >
-                  <MaterialCommunityIcons name="trash-can-outline" size={16} color="#DC2626" />
-                  <Text style={styles.archiveBtnText}>Delete</Text>
-                </TouchableOpacity>
-              </View>
-            </Surface>
-          );
-        }}
-      />
-
-      {/* Floating Action Button (FAB) */}
-      <TouchableOpacity
-        style={[
-          styles.fab,
-          {
-            backgroundColor: activeColors.primary,
-            ...themeShadows.floating,
-          },
-        ]}
-        onPress={openAddProductForm}
-        activeOpacity={0.85}
-      >
-        <MaterialCommunityIcons name="plus" size={28} color="#FFFFFF" />
-      </TouchableOpacity>
-
-      {/* 3. Add / Edit Product Modal */}
-      <Modal
-        visible={formVisible}
-        animationType="slide"
-        onRequestClose={() => setFormVisible(false)}
-      >
-        <View style={[styles.modalContainer, { backgroundColor: activeColors.background }]}>
-          {/* Modal Header */}
-          <View
-            style={[
-              styles.modalHeader,
-              {
-                backgroundColor: activeColors.surface,
-                borderBottomColor: activeColors.border,
-              },
-            ]}
-          >
-            <Text style={[styles.modalTitle, { color: activeColors.textPrimary }]}>
-              {editingProduct ? 'Edit Product' : 'Add New Product'}
-            </Text>
-            <TouchableOpacity
-              onPress={() => setFormVisible(false)}
-              style={styles.modalCloseBtn}
-            >
-              <MaterialCommunityIcons name="close" size={24} color={activeColors.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 60 }}>
-            {/* Product Name */}
-            <TextInput
-              label="Product Name *"
-              value={formName}
-              onChangeText={setFormName}
-              mode="outlined"
-              style={[styles.input, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
-              textColor={activeColors.textPrimary}
+              placeholder="Category Name likhein..."
               placeholderTextColor={activeColors.textMuted}
-              outlineColor={activeColors.border}
-              activeOutlineColor={activeColors.primary}
-              placeholder="e.g. Astral CPVC Pipe, Asian Paint Royale"
+              value={newCatName}
+              onChangeText={setNewCatName}
+              autoFocus
             />
 
-            {/* Brand Name */}
-            <TextInput
-              label="Brand Name (Optional)"
-              value={formBrand}
-              onChangeText={setFormBrand}
-              mode="outlined"
-              style={[styles.input, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
-              textColor={activeColors.textPrimary}
-              placeholderTextColor={activeColors.textMuted}
-              outlineColor={activeColors.border}
-              activeOutlineColor={activeColors.primary}
-              placeholder="e.g. Astral, Berger, Havells, Godrej"
-            />
-
-            {/* Category Selector */}
-            <Text style={[styles.fieldLabel, { color: activeColors.textSecondary, marginTop: spacing.xs }]}>
-              Category *
-            </Text>
-            <View style={styles.catChipsWrapper}>
-              {categories.map((c) => {
-                const isCatSelected = formCategoryId === c.id;
-                return (
-                  <Chip
-                    key={c.id}
-                    selected={isCatSelected}
-                    onPress={() => handleSelectCategory(c.id)}
-                    style={[
-                      styles.formCatChip,
-                      {
-                        backgroundColor: isCatSelected
-                          ? (isDarkMode ? '#1E293B' : '#EFF6FF')
-                          : (isDarkMode ? '#111827' : '#F1F5F9'),
-                        borderColor: isCatSelected ? activeColors.primary : activeColors.border,
-                        borderWidth: 1,
-                      },
-                    ]}
-                    textStyle={[
-                      styles.formCatChipText,
-                      {
-                        color: isCatSelected ? activeColors.primary : activeColors.textSecondary,
-                        fontWeight: isCatSelected ? '700' : '600',
-                      },
-                    ]}
-                    showSelectedOverlay={false}
-                  >
-                    {c.name}
-                  </Chip>
-                );
-              })}
+            <View style={styles.modalActions}>
               <TouchableOpacity
-                style={[
-                  styles.formNewCatBtn,
-                  {
-                    backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
-                    borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
-                  },
-                ]}
-                onPress={() => setNewCatDialogVisible(true)}
-              >
-                <MaterialCommunityIcons name="plus" size={14} color={activeColors.primary} />
-                <Text style={[styles.formNewCatText, { color: activeColors.primary }]}>
-                  + New Category
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Sub-category Selector */}
-            <View style={styles.fieldHeaderRow}>
-              <Text style={[styles.fieldLabel, { color: activeColors.textSecondary }]}>
-                Sub-category *
-              </Text>
-              <Text style={styles.unitHintText}>
-                💡 E.g. CPVC Pipes, PVC Pipes, Angles & Elbows
-              </Text>
-            </View>
-            <View style={styles.catChipsWrapper}>
-              {formAvailableSubcategories.map((sc) => {
-                const isSubSelected = formSubcategoryId === sc.id;
-                return (
-                  <Chip
-                    key={sc.id}
-                    selected={isSubSelected}
-                    onPress={() => setFormSubcategoryId(sc.id)}
-                    style={[
-                      styles.formCatChip,
-                      {
-                        backgroundColor: isSubSelected
-                          ? (isDarkMode ? '#1E3A8A' : '#DBEAFE')
-                          : (isDarkMode ? '#1E293B' : '#F1F5F9'),
-                        borderColor: isSubSelected
-                          ? activeColors.primary
-                          : (isDarkMode ? '#334155' : '#E2E8F0'),
-                        borderWidth: 1,
-                      },
-                    ]}
-                    textStyle={[
-                      styles.formCatChipText,
-                      {
-                        color: isSubSelected ? activeColors.primary : activeColors.textSecondary,
-                        fontWeight: isSubSelected ? '700' : '600',
-                      },
-                    ]}
-                    showSelectedOverlay={false}
-                  >
-                    {sc.name}
-                  </Chip>
-                );
-              })}
-              <TouchableOpacity
-                style={[
-                  styles.formNewCatBtn,
-                  {
-                    backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
-                    borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
-                  },
-                ]}
                 onPress={() => {
-                  setNewSubcatName('');
-                  setNewSubcatDialogVisible(true);
+                  setNewCatName('');
+                  setNewCatModalVisible(false);
                 }}
-              >
-                <MaterialCommunityIcons name="plus" size={14} color={activeColors.primary} />
-                <Text style={[styles.formNewCatText, { color: activeColors.primary }]}>
-                  + Subcategory
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Measurement Unit */}
-            <View style={styles.fieldHeaderRow}>
-              <Text style={[styles.fieldLabel, { color: activeColors.textSecondary }]}>
-                Measurement Unit *
-              </Text>
-              {isPaintCategory && (
-                <Text style={styles.unitHintText}>💡 Liquid paints in Liters, Putty in Kg</Text>
-              )}
-              {isPipeCategory && (
-                <Text style={styles.unitHintText}>💡 Pipes sold in Pieces or Meters</Text>
-              )}
-            </View>
-            <View style={styles.unitChipsRow}>
-              {availableUnits.map((u) => {
-                const isUnitSelected = formBaseUnit === u.value;
-                return (
-                  <Chip
-                    key={u.value}
-                    selected={isUnitSelected}
-                    onPress={() => setFormBaseUnit(u.value)}
-                    style={[
-                      styles.unitChip,
-                      {
-                        backgroundColor: isUnitSelected
-                          ? activeColors.primary
-                          : (isDarkMode ? '#111827' : '#F1F5F9'),
-                        borderColor: isUnitSelected ? activeColors.primary : activeColors.border,
-                        borderWidth: 1,
-                      },
-                    ]}
-                    textStyle={[
-                      styles.unitChipText,
-                      {
-                        color: isUnitSelected ? '#FFFFFF' : activeColors.textSecondary,
-                        fontWeight: isUnitSelected ? '700' : '600',
-                      },
-                    ]}
-                    showSelectedOverlay={false}
-                  >
-                    {u.label}
-                  </Chip>
-                );
-              })}
-            </View>
-
-            {/* Product Photo */}
-            <Text style={[styles.fieldLabel, { color: activeColors.textSecondary, marginTop: spacing.md }]}>
-              Photo (Optional)
-            </Text>
-            <View style={styles.photoPickerRow}>
-              <View
                 style={[
-                  styles.photoPreviewBox,
-                  {
-                    backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9',
-                    borderColor: activeColors.border,
-                  },
+                  styles.btnCancel,
+                  { borderColor: activeColors.border },
                 ]}
               >
-                {formImageUrl ? (
-                  <Image source={{ uri: formImageUrl }} style={styles.photoPreviewImage} />
-                ) : (
-                  <MaterialCommunityIcons name="camera-plus" size={28} color={activeColors.textMuted} />
-                )}
-              </View>
-              <View style={styles.photoButtonsCol}>
-                <TouchableOpacity
+                <Text
                   style={[
-                    styles.photoBtn,
-                    {
-                      backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
-                      borderColor: isDarkMode ? '#374151' : '#BFDBFE',
-                      borderWidth: 1,
-                    },
+                    styles.btnCancelText,
+                    { color: activeColors.textSecondary },
                   ]}
-                  onPress={handlePickImage}
                 >
-                  <MaterialCommunityIcons name="image" size={16} color={activeColors.primary} />
-                  <Text style={[styles.photoBtnText, { color: activeColors.primary }]}>
-                    Choose from Gallery
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.photoBtn,
-                    {
-                      backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
-                      borderColor: isDarkMode ? '#374151' : '#BFDBFE',
-                      borderWidth: 1,
-                    },
-                  ]}
-                  onPress={handleTakePhoto}
-                >
-                  <MaterialCommunityIcons name="camera" size={16} color={activeColors.primary} />
-                  <Text style={[styles.photoBtnText, { color: activeColors.primary }]}>
-                    Take Photo
-                  </Text>
-                </TouchableOpacity>
-                {formImageUrl ? (
-                  <TouchableOpacity
-                    style={styles.removePhotoBtn}
-                    onPress={() => setFormImageUrl('')}
-                  >
-                    <Text style={styles.removePhotoText}>Remove Photo</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            </View>
-
-            {/* Sizes & Stock Section */}
-            <View style={styles.variantsHeaderRow}>
-              <View style={{ flex: 1, paddingRight: 8 }}>
-                <Text style={[styles.formSectionTitle, { color: activeColors.textPrimary }]}>
-                  {isPaintCategory
-                    ? 'Pack Sizes & Cans in Stock'
-                    : isPipeCategory
-                    ? 'Pipe Diameters & Stock'
-                    : 'Sizes & Stock'}
+                  Cancel
                 </Text>
-                <Text style={[styles.formSectionSub, { color: activeColors.textSecondary }]}>
-                  {isPaintCategory
-                    ? 'Choose can/bucket sizes below or enter custom size.'
-                    : isPipeCategory
-                    ? 'Choose pipe diameter below or enter custom size.'
-                    : 'Add sizes or keep Standard.'}
-                </Text>
-              </View>
-              <TouchableOpacity style={styles.addSizeBtn} onPress={addVariantRow}>
-                <MaterialCommunityIcons name="plus" size={16} color="#FFFFFF" />
-                <Text style={styles.addSizeBtnText}>
-                  {isPaintCategory
-                    ? '+ Add Pack Size'
-                    : isPipeCategory
-                    ? '+ Add Diameter'
-                    : '+ Add Size'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Quick 1-Tap Presets Bar */}
-            {quickPresets.length > 0 && (
-              <View
-                style={[
-                  styles.presetsContainer,
-                  {
-                    backgroundColor: isDarkMode ? '#111827' : '#F8FAFC',
-                    borderColor: activeColors.border,
-                  },
-                ]}
-              >
-                <View style={styles.presetsTitleRow}>
-                  <MaterialCommunityIcons name="lightning-bolt" size={14} color="#D97706" />
-                  <Text style={[styles.presetsTitleText, { color: activeColors.textPrimary }]}>
-                    {isPaintCategory ? 'Quick 1-Tap Pack Sizes:' : 'Quick 1-Tap Pipe Diameters:'}
-                  </Text>
-                </View>
-                <View style={styles.presetChipsRow}>
-                  {quickPresets.map((preset) => {
-                    const isAlreadySelected = formVariants.some(
-                      (v) => v.size.trim().toLowerCase() === preset.trim().toLowerCase()
-                    );
-                    return (
-                      <TouchableOpacity
-                        key={preset}
-                        style={[
-                          styles.presetChip,
-                          {
-                            backgroundColor: isAlreadySelected
-                              ? (isDarkMode ? '#064E3B' : '#DCFCE7')
-                              : (isDarkMode ? '#1E293B' : '#FFFFFF'),
-                            borderColor: isAlreadySelected
-                              ? (isDarkMode ? '#059669' : '#86EFAC')
-                              : (isDarkMode ? '#374151' : '#CBD5E1'),
-                          },
-                        ]}
-                        onPress={() => handleApplyPresetSize(preset)}
-                        activeOpacity={0.7}
-                      >
-                        <MaterialCommunityIcons
-                          name={isAlreadySelected ? 'check' : 'plus'}
-                          size={12}
-                          color={isAlreadySelected ? (isDarkMode ? '#34D399' : '#16A34A') : activeColors.primary}
-                        />
-                        <Text
-                          style={[
-                            styles.presetChipText,
-                            {
-                              color: isAlreadySelected
-                                ? (isDarkMode ? '#34D399' : '#16A34A')
-                                : activeColors.textPrimary,
-                              fontWeight: isAlreadySelected ? '700' : '600',
-                            },
-                          ]}
-                        >
-                          {preset}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            )}
-
-            {formVariants.map((v, idx) => (
-              <Surface
-                key={idx}
-                style={[
-                  styles.variantFormCard,
-                  {
-                    backgroundColor: isDarkMode ? '#111827' : '#F8FAFC',
-                    borderColor: activeColors.border,
-                  },
-                ]}
-              >
-                <View style={styles.variantCardHeader}>
-                  <Text style={[styles.variantCardIndex, { color: activeColors.textPrimary }]}>
-                    {isPaintCategory
-                      ? `Pack Size #${idx + 1}`
-                      : isPipeCategory
-                      ? `Pipe Size #${idx + 1}`
-                      : `Size / Variant #${idx + 1}`}
-                  </Text>
-                  {formVariants.length > 1 && (
-                    <TouchableOpacity
-                      onPress={() => removeVariantRow(idx)}
-                      style={styles.deleteVariantBtn}
-                    >
-                      <MaterialCommunityIcons name="trash-can-outline" size={18} color="#DC2626" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {/* Size / Name input */}
-                <TextInput
-                  label={
-                    isPaintCategory
-                      ? 'Pack / Can Size *'
-                      : isPipeCategory
-                      ? 'Pipe Diameter / Size *'
-                      : 'Size / Name *'
-                  }
-                  value={v.size}
-                  onChangeText={(val) => {
-                    updateVariantRow(idx, 'size', val);
-                    updateVariantRow(idx, 'name', val);
-                  }}
-                  mode="outlined"
-                  style={[styles.smallInput, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
-                  textColor={activeColors.textPrimary}
-                  placeholderTextColor={activeColors.textMuted}
-                  outlineColor={activeColors.border}
-                  activeOutlineColor={activeColors.primary}
-                  placeholder={
-                    isPaintCategory
-                      ? 'e.g. 1 Liter, 4 Liter, 20L Bucket, 500ml'
-                      : isPipeCategory
-                      ? 'e.g. 1/2 inch, 20mm, 25mm, 110mm'
-                      : 'e.g. 20mm, 1 Litre, Standard'
-                  }
-                />
-
-                {/* Stock & Min Level */}
-                <View style={styles.rowInputs}>
-                  <TextInput
-                    label={
-                      isPaintCategory
-                        ? formBaseUnit === 'kg'
-                          ? 'Bags / Tins in Stock *'
-                          : 'Cans / Buckets in Stock *'
-                        : isPipeCategory
-                        ? 'Pipes / Pcs in Stock *'
-                        : `Stock Units (${formBaseUnit}) *`
-                    }
-                    value={v.openingStock}
-                    onChangeText={(val) => updateVariantRow(idx, 'openingStock', val)}
-                    keyboardType="numeric"
-                    mode="outlined"
-                    style={[styles.smallInput, { flex: 1, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
-                    textColor={activeColors.textPrimary}
-                    placeholderTextColor={activeColors.textMuted}
-                    outlineColor={activeColors.border}
-                    activeOutlineColor={activeColors.primary}
-                    placeholder={
-                      isPaintCategory
-                        ? 'e.g. 10 cans'
-                        : isPipeCategory
-                        ? 'e.g. 20 pipes'
-                        : '10'
-                    }
-                  />
-                  <TextInput
-                    label="Min Alert Level"
-                    value={v.minStockLevel}
-                    onChangeText={(val) => updateVariantRow(idx, 'minStockLevel', val)}
-                    keyboardType="numeric"
-                    mode="outlined"
-                    style={[styles.smallInput, { flex: 1, backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
-                    textColor={activeColors.textPrimary}
-                    placeholderTextColor={activeColors.textMuted}
-                    outlineColor={activeColors.border}
-                    activeOutlineColor={activeColors.primary}
-                    placeholder="5"
-                  />
-                </View>
-
-                {/* Shelf Location */}
-                <TextInput
-                  label="Rack / Shelf Location (Optional)"
-                  value={v.rackLocation}
-                  onChangeText={(val) => updateVariantRow(idx, 'rackLocation', val)}
-                  mode="outlined"
-                  style={[styles.smallInput, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
-                  textColor={activeColors.textPrimary}
-                  placeholderTextColor={activeColors.textMuted}
-                  outlineColor={activeColors.border}
-                  activeOutlineColor={activeColors.primary}
-                  placeholder={
-                    isPaintCategory
-                      ? 'e.g. Paint Rack B-1, Shelf 2'
-                      : isPipeCategory
-                      ? 'e.g. Pipe Rack A-1'
-                      : 'e.g. Rack A-3, Shelf 2'
-                  }
-                />
-              </Surface>
-            ))}
-
-            {/* Save Button */}
-            <TouchableOpacity
-              style={[
-                styles.saveProductBtn,
-                { backgroundColor: activeColors.primary },
-                savingProduct && { opacity: 0.7 },
-              ]}
-              onPress={handleSaveProduct}
-              disabled={savingProduct}
-            >
-              <Text style={styles.saveProductBtnText}>
-                {savingProduct ? 'Saving Product...' : 'Save Product'}
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-
-          {/* Inline Dialog: Add New Category (Overlay over Add Product Modal) */}
-          {newCatDialogVisible && (
-            <View style={styles.dialogBackdrop}>
-              <View style={[styles.inlineDialogCard, { backgroundColor: activeColors.surface }]}>
-                <Text style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
-                  Add New Category
-                </Text>
-                <View style={{ marginTop: spacing.sm, marginBottom: spacing.md }}>
-                  <Text style={[styles.inputLabel, { color: activeColors.textSecondary }]}>
-                    CATEGORY NAME *
-                  </Text>
-                  <RNTextInput
-                    value={newCatName}
-                    onChangeText={setNewCatName}
-                    placeholder="e.g. Pipes, Paints, Tools, Sanitary"
-                    placeholderTextColor={activeColors.textMuted}
-                    style={[
-                      styles.smoothNumericInput,
-                      {
-                        backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC',
-                        borderColor: activeColors.primary,
-                        color: activeColors.textPrimary,
-                        fontWeight: '600',
-                      },
-                    ]}
-                    autoFocus
-                  />
-                </View>
-                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
-                  <TouchableOpacity
-                    onPress={() => setNewCatDialogVisible(false)}
-                    style={styles.dialogCancelBtn}
-                    disabled={creatingCat}
-                  >
-                    <Text style={styles.dialogCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={handleCreateCategory}
-                    disabled={creatingCat || !newCatName.trim()}
-                    style={[
-                      styles.dialogConfirmBtn,
-                      (creatingCat || !newCatName.trim()) && { opacity: 0.5 },
-                    ]}
-                  >
-                    <Text style={styles.dialogConfirmText}>
-                      {creatingCat ? 'Creating...' : 'Create'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* Inline Dialog: Add New Subcategory (Overlay over Add Product Modal) */}
-          {newSubcatDialogVisible && (
-            <View style={styles.dialogBackdrop}>
-              <View style={[styles.inlineDialogCard, { backgroundColor: activeColors.surface }]}>
-                <Text style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
-                  New Subcategory
-                </Text>
-                <Text style={{ color: activeColors.textSecondary, fontSize: 13, marginBottom: 12 }}>
-                  Add a subcategory under{' '}
-                  <Text style={{ fontWeight: '700', color: activeColors.primary }}>
-                    {categoryMap.get(formCategoryId) || 'Category'}
-                  </Text>
-                </Text>
-                <View style={{ marginTop: spacing.xs, marginBottom: spacing.md }}>
-                  <Text style={[styles.inputLabel, { color: activeColors.textSecondary }]}>
-                    SUBCATEGORY NAME *
-                  </Text>
-                  <RNTextInput
-                    value={newSubcatName}
-                    onChangeText={setNewSubcatName}
-                    placeholder="e.g. Angles & Elbows, CPVC Pipes"
-                    placeholderTextColor={activeColors.textMuted}
-                    style={[
-                      styles.smoothNumericInput,
-                      {
-                        backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC',
-                        borderColor: activeColors.primary,
-                        color: activeColors.textPrimary,
-                        fontWeight: '600',
-                      },
-                    ]}
-                    autoFocus
-                  />
-                </View>
-                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
-                  <TouchableOpacity
-                    onPress={() => setNewSubcatDialogVisible(false)}
-                    style={styles.dialogCancelBtn}
-                    disabled={creatingSubcat}
-                  >
-                    <Text style={styles.dialogCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={handleCreateSubcategory}
-                    disabled={creatingSubcat || !newSubcatName.trim()}
-                    style={[
-                      styles.dialogConfirmBtn,
-                      (creatingSubcat || !newSubcatName.trim()) && { opacity: 0.5 },
-                    ]}
-                  >
-                    <Text style={styles.dialogConfirmText}>
-                      {creatingSubcat ? 'Creating...' : 'Create'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          )}
-        </View>
-      </Modal>
-
-      {/* 4. Quick Restock / Sell Stock Dialog */}
-      <QuickStockModal
-        target={quickStockTarget}
-        mode={quickStockMode}
-        onDismiss={() => setQuickStockTarget(null)}
-        onConfirm={handleConfirmQuickStock}
-        updatingStock={updatingStock}
-        isDarkMode={isDarkMode}
-        activeColors={activeColors}
-      />
-
-      {/* 4.5. Modern Stock Success Confirmation Dialog */}
-      <StockSuccessModal
-        visible={!!stockSuccess}
-        info={stockSuccess}
-        onDismiss={() => setStockSuccess(null)}
-        onViewHistory={() => {
-          setStockSuccess(null);
-          router.push('/(tabs)/history');
-        }}
-        isDarkMode={isDarkMode}
-        activeColors={activeColors}
-      />
-
-      {/* 4.6. Modern Product Added / Updated Confirmation Modal */}
-      <ProductSuccessModal
-        visible={!!productSuccess}
-        info={productSuccess}
-        onDismiss={() => setProductSuccess(null)}
-        isDarkMode={isDarkMode}
-        activeColors={activeColors}
-      />
-
-      {/* 5. New Category Dialog (Only rendered on main screen when modal is closed) */}
-      {!formVisible && (
-        <Portal>
-          <Dialog
-            visible={newCatDialogVisible}
-            onDismiss={() => setNewCatDialogVisible(false)}
-            style={[styles.dialog, { backgroundColor: activeColors.surface }]}
-          >
-            <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
-              Add New Category
-            </Dialog.Title>
-            <Dialog.Content>
-              <TextInput
-                label="Category Name *"
-                value={newCatName}
-                onChangeText={setNewCatName}
-                mode="outlined"
-                style={{ backgroundColor: activeColors.surface }}
-                textColor={activeColors.textPrimary}
-                placeholder="e.g. Pipes, Paints, Tools, Sanitary"
-              />
-            </Dialog.Content>
-            <Dialog.Actions>
-              <TouchableOpacity
-                onPress={() => setNewCatDialogVisible(false)}
-                style={styles.dialogCancelBtn}
-              >
-                <Text style={styles.dialogCancelText}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 onPress={handleCreateCategory}
-                disabled={creatingCat}
-                style={[styles.dialogConfirmBtn, creatingCat && { opacity: 0.7 }]}
-              >
-                <Text style={styles.dialogConfirmText}>
-                  {creatingCat ? 'Creating...' : 'Create'}
-                </Text>
-              </TouchableOpacity>
-            </Dialog.Actions>
-          </Dialog>
-
-          {/* 6. Delete Product Confirmation Dialog */}
-          <Dialog
-            visible={!!deleteConfirmProd}
-            onDismiss={() => {
-              if (!deletingProduct) setDeleteConfirmProd(null);
-            }}
-            style={[styles.dialog, { backgroundColor: activeColors.surface }]}
-          >
-            <Dialog.Title style={[styles.dialogTitle, { color: '#EF4444' }]}>
-              Delete Product
-            </Dialog.Title>
-            <Dialog.Content>
-              <Text style={{ color: activeColors.textPrimary, fontSize: 15, marginBottom: 8, fontWeight: '600' }}>
-                Are you sure you want to delete "{deleteConfirmProd?.name}"?
-              </Text>
-              <Text style={{ color: activeColors.textSecondary, fontSize: 13, lineHeight: 18 }}>
-                This will remove the product and its sizes from your active catalogue. Historical transactions and sales will remain preserved.
-              </Text>
-            </Dialog.Content>
-            <Dialog.Actions style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 10 }}>
-              <TouchableOpacity
-                style={styles.dialogCancelBtn}
-                onPress={() => setDeleteConfirmProd(null)}
-                disabled={deletingProduct}
-              >
-                <Text style={styles.dialogCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+                disabled={!newCatName.trim() || submittingCat}
                 style={[
-                  styles.dialogConfirmBtnSell,
-                  { backgroundColor: '#DC2626' },
-                  deletingProduct && { opacity: 0.7 },
+                  styles.btnConfirm,
+                  {
+                    backgroundColor: newCatName.trim()
+                      ? activeColors.primary
+                      : activeColors.border,
+                  },
                 ]}
-                onPress={handleConfirmDeleteProduct}
-                disabled={deletingProduct}
               >
-                <Text style={styles.dialogConfirmText}>
-                  {deletingProduct ? 'Deleting...' : 'Delete Product'}
+                <Text style={styles.btnConfirmText}>
+                  {submittingCat ? 'Creating...' : '+ Create'}
                 </Text>
               </TouchableOpacity>
-            </Dialog.Actions>
-          </Dialog>
-
-          {/* 7. New Subcategory Dialog */}
-          <Dialog
-            visible={newSubcatDialogVisible}
-            onDismiss={() => setNewSubcatDialogVisible(false)}
-            style={[styles.dialog, { backgroundColor: activeColors.surface }]}
-          >
-            <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
-              New Subcategory
-            </Dialog.Title>
-            <Dialog.Content>
-              <Text style={{ color: activeColors.textSecondary, fontSize: 13, marginBottom: 12 }}>
-                Add a subcategory under{' '}
-                <Text style={{ fontWeight: '700', color: activeColors.primary }}>
-                  {categoryMap.get(selectedCategory || categories[0]?.id || '') || 'Pipes'}
-                </Text>
-              </Text>
-              <TextInput
-                label="Subcategory Name (e.g. Angles & Elbows, CPVC Pipes)"
-                value={newSubcatName}
-                onChangeText={setNewSubcatName}
-                mode="outlined"
-                style={{ backgroundColor: activeColors.surface }}
-                textColor={activeColors.textPrimary}
-                placeholderTextColor={activeColors.textMuted}
-                outlineColor={activeColors.border}
-                activeOutlineColor={activeColors.primary}
-                autoFocus
-              />
-            </Dialog.Content>
-            <Dialog.Actions>
-              <TouchableOpacity
-                onPress={() => setNewSubcatDialogVisible(false)}
-                style={styles.dialogCancelBtn}
-              >
-                <Text style={styles.dialogCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleCreateSubcategory}
-                style={[styles.dialogConfirmBtn, creatingSubcat && { opacity: 0.7 }]}
-                disabled={creatingSubcat}
-              >
-                <Text style={styles.dialogConfirmText}>
-                  {creatingSubcat ? 'Creating...' : 'Create'}
-                </Text>
-              </TouchableOpacity>
-            </Dialog.Actions>
-          </Dialog>
-        </Portal>
-      )}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2390,937 +885,211 @@ export default function ProductsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
   },
-  topBar: {
-    backgroundColor: '#FFFFFF',
+  headerBar: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
   },
-  searchbar: {
-    marginHorizontal: spacing.md,
-    backgroundColor: '#F1F5F9',
-    borderRadius: borderRadius.md,
-    elevation: 0,
-    height: 44,
+  storeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
   },
-  searchbarInput: {
-    fontSize: 14,
-    minHeight: 44,
+  logo: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
   },
-  filterScroll: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    gap: 6,
+  storeTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
-  filterChip: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: borderRadius.sm,
-    height: 32,
+  categoryHeadline: {
+    fontSize: 13,
+    fontWeight: '800',
+    textTransform: 'lowercase',
+    marginTop: 1,
+    letterSpacing: 0.5,
   },
-  filterChipActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#BFDBFE',
+  addCatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
     borderWidth: 1,
+    gap: 4,
   },
-  filterChipText: {
+  addCatBtnText: {
     fontSize: 12,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  filterChipTextActive: {
-    color: colors.primary,
     fontWeight: '700',
   },
   categoryScroll: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: 2,
     gap: 8,
-    alignItems: 'center',
+    paddingVertical: 2,
   },
-  catTab: {
-    paddingHorizontal: 12,
+  categoryPill: {
+    paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: borderRadius.full,
-    backgroundColor: '#F1F5F9',
-  },
-  catTabActive: {
-    backgroundColor: colors.primary,
-  },
-  catTabText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  catTabTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  addCatTab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    backgroundColor: '#EFF6FF',
-  },
-  addCatTabText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  subcatBar: {
-    borderTopWidth: 1,
-    paddingVertical: 8,
-    marginTop: 4,
-  },
-  subcatScroll: {
-    paddingHorizontal: spacing.md,
-    gap: 6,
-    alignItems: 'center',
-  },
-  subcatTab: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: borderRadius.full,
     borderWidth: 1,
   },
-  subcatTabText: {
-    fontSize: 11,
-  },
-  addSubcatTab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-  },
-  addSubcatTabText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  subcatTag: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: borderRadius.xs,
-    borderWidth: 1,
-  },
-  subcatTagText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  // Catalogue List
-  listContent: {
-    padding: spacing.md,
-    paddingBottom: 90,
-    gap: spacing.md,
-  },
-  productCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    ...shadows.card,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  thumbWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.md,
-    backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-    marginRight: spacing.sm,
-  },
-  productImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  cardHeaderInfo: {
-    flex: 1,
-  },
-  productName: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  tagRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
-    flexWrap: 'wrap',
-  },
-  brandTag: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: borderRadius.xs,
-  },
-  brandTagText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  categoryTag: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: borderRadius.xs,
-  },
-  categoryTagText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  unitTag: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: borderRadius.xs,
-  },
-  unitTagText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  productDesc: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: spacing.sm,
-    lineHeight: 16,
-  },
-
-  // Variants Box inside Card
-  variantsBox: {
-    marginTop: spacing.md,
-    backgroundColor: '#F8FAFC',
-    borderRadius: borderRadius.md,
-    padding: spacing.sm,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    gap: 6,
-  },
-  variantSectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  variantHeaderTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
-    textTransform: 'uppercase',
-  },
-  totalStockLabel: {
-    fontSize: 12,
-    color: '#64748B',
-  },
-  variantRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 8,
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  variantLeft: {
-    flex: 1,
-  },
-  variantSizeName: {
+  categoryPillText: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
   },
-  variantRack: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  variantPriceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 2,
-  },
-  sellingPriceText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: colors.primary,
-  },
-  costPriceText: {
-    fontSize: 11,
-    color: '#94A3B8',
-  },
-  variantRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  stockStatusBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: borderRadius.xs,
-  },
-  badgeIn: {
-    backgroundColor: '#DCFCE7',
-  },
-  badgeLow: {
-    backgroundColor: '#FEF3C7',
-  },
-  badgeOut: {
-    backgroundColor: '#FEE2E2',
-  },
-  stockStatusBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  badgeTextIn: {
-    color: '#15803D',
-  },
-  badgeTextLow: {
-    color: '#B45309',
-  },
-  badgeTextOut: {
-    color: '#DC2626',
-  },
-  quickAddChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: borderRadius.xs,
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-  },
-  quickAddChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#16A34A',
-  },
-  quickSellChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: borderRadius.xs,
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECDD3',
-  },
-  quickSellChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
-
-  // Card bottom actions
-  cardActionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: spacing.md,
-    marginTop: spacing.sm,
-    paddingTop: spacing.xs,
-  },
-  editBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  editBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  archiveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  archiveBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#DC2626',
-  },
-
-  // Empty State
-  emptyContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: borderRadius.lg,
-    padding: spacing.xl,
-    alignItems: 'center',
-    marginTop: spacing.xl,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginTop: spacing.sm,
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 4,
-    marginBottom: spacing.md,
-  },
-  emptyBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: borderRadius.md,
-  },
-  emptyBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-
-  // FAB
-  fab: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 6,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-  },
-
-  // Full Screen Modal (Add / Edit)
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  modalCloseBtn: {
-    padding: 4,
-  },
-  modalBody: {
-    padding: spacing.lg,
-  },
-  formSectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: spacing.sm,
-  },
-  formSectionSub: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#475569',
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: '#FFFFFF',
-    marginBottom: spacing.sm,
-    fontSize: 14,
-  },
-  smallInput: {
-    backgroundColor: '#FFFFFF',
-    fontSize: 13,
-    marginBottom: 6,
-  },
-  catChipsWrapper: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: spacing.sm,
-  },
-  formCatChip: {
-    backgroundColor: '#F1F5F9',
-  },
-  formCatChipActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#BFDBFE',
-    borderWidth: 1,
-  },
-  formCatChipText: {
-    fontSize: 12,
-    color: '#475569',
-  },
-  formCatChipTextActive: {
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  formNewCatBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
+  searchWrap: {
+    paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    backgroundColor: '#EFF6FF',
   },
-  formNewCatText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primary,
+  searchbar: {
+    height: 38,
+    borderRadius: borderRadius.lg,
   },
-  photoPickerRow: {
-    flexDirection: 'row',
+  loadingWrap: {
+    padding: 40,
     alignItems: 'center',
-    gap: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  photoPreviewBox: {
-    width: 80,
-    height: 80,
-    borderRadius: borderRadius.md,
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
   },
-  photoPreviewImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    fontWeight: '500',
   },
-  photoButtonsCol: {
-    flex: 1,
-    gap: 6,
+  actionDialog: {
+    borderRadius: borderRadius.xl,
   },
-  photoBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    backgroundColor: '#EFF6FF',
-    borderRadius: borderRadius.sm,
+  actionDialogTitle: {
+    fontSize: 17,
+    fontWeight: '800',
   },
-  photoBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  removePhotoBtn: {
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-  },
-  removePhotoText: {
-    fontSize: 12,
-    color: '#DC2626',
-    fontWeight: '600',
-  },
-  unitChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  unitChip: {
-    backgroundColor: '#F1F5F9',
-  },
-  unitChipActive: {
-    backgroundColor: colors.primary,
-  },
-  unitChipText: {
-    fontSize: 12,
-    color: '#475569',
-    fontWeight: '600',
-  },
-  unitChipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  fieldHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.sm,
-    marginBottom: 6,
-  },
-  unitHintText: {
-    fontSize: 11,
-    color: '#0284C7',
-    fontWeight: '600',
-  },
-  presetsContainer: {
-    marginBottom: spacing.md,
-    backgroundColor: '#F8FAFC',
+  actionItemBanner: {
     padding: 10,
     borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    marginBottom: 12,
   },
-  presetsTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 8,
-  },
-  presetsTitleText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  presetChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  presetChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FFFFFF',
-    borderColor: '#CBD5E1',
-    borderWidth: 1,
-    borderRadius: borderRadius.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
-  presetChipSelected: {
-    backgroundColor: '#DCFCE7',
-    borderColor: '#86EFAC',
-  },
-  presetChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  presetChipTextSelected: {
-    color: '#16A34A',
-    fontWeight: '700',
-  },
-  variantsHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
-  },
-  addSizeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#16A34A',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: borderRadius.sm,
-  },
-  addSizeBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  variantFormCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: spacing.md,
-  },
-  variantCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  variantCardIndex: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  deleteVariantBtn: {
-    padding: 4,
-  },
-  rowInputs: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  saveProductBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: spacing.lg,
-    ...shadows.card,
-  },
-  saveProductBtnText: {
+  actionItemTitle: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontWeight: '800',
   },
-
-  // Dialogs
-  dialog: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: borderRadius.lg,
-  },
-  dialogTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  dialogProdName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  dialogVariantName: {
+  actionItemStock: {
     fontSize: 13,
-    color: '#64748B',
     marginTop: 2,
   },
-  dialogStockRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
-  },
-  dialogStockLabel: {
-    fontSize: 13,
-    color: '#64748B',
-  },
-  dialogStockVal: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  quickChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 4,
-  },
-  qtyChip: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: borderRadius.sm,
-  },
-  qtyChipActive: {
-    backgroundColor: '#DCFCE7',
-  },
-  qtyChipText: {
-    fontSize: 12,
-    color: '#475569',
-    fontWeight: '600',
-  },
-  qtyChipTextActive: {
-    color: '#16A34A',
-    fontWeight: '700',
-  },
-  qtyChipSellActive: {
-    backgroundColor: '#FEE2E2',
-  },
-  qtyChipSellTextActive: {
-    color: '#DC2626',
-    fontWeight: '700',
-  },
-  modeToggleRow: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: borderRadius.sm,
-    padding: 3,
-    marginBottom: spacing.md,
-  },
-  modeBtn: {
-    flex: 1,
-    paddingVertical: 7,
-    alignItems: 'center',
-    borderRadius: borderRadius.sm - 2,
-  },
-  modeBtnActiveAdd: {
-    backgroundColor: '#16A34A',
-  },
-  modeBtnActiveSell: {
-    backgroundColor: '#DC2626',
-  },
-  modeBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  modeBtnTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  previewBox: {
-    backgroundColor: '#F0FDF4',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-    justifyContent: 'center',
-  },
-  previewText: {
-    fontSize: 13,
-    color: '#166534',
-  },
-  previewHighlight: {
-    fontWeight: '800',
-    color: '#15803D',
-  },
-  previewBoxSell: {
-    backgroundColor: '#EFF6FF',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    justifyContent: 'center',
-  },
-  previewTextSell: {
-    fontSize: 13,
-    color: '#1E40AF',
-  },
-  previewHighlightSell: {
-    fontWeight: '800',
-    color: '#1D4ED8',
-  },
-  previewBoxError: {
-    backgroundColor: '#FEF2F2',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-    borderColor: '#FECDD3',
-    justifyContent: 'center',
-  },
-  previewTextError: {
-    fontSize: 13,
-    color: '#DC2626',
-    fontWeight: '700',
-  },
   inputLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     marginBottom: 6,
-    letterSpacing: 0.5,
   },
-  smoothNumericInput: {
-    height: 48,
-    borderWidth: 1.5,
-    borderRadius: borderRadius.sm,
+  actionInput: {
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
     paddingHorizontal: 14,
+    paddingVertical: 10,
     fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 10,
+  },
+  presetsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+    marginBottom: 8,
+  },
+  presetBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  presetBtnText: {
+    fontSize: 12,
     fontWeight: '700',
   },
-  smoothNoteInput: {
-    height: 44,
+  noteInput: {
     borderWidth: 1,
-    borderRadius: borderRadius.sm,
-    paddingHorizontal: 12,
-    fontSize: 14,
-  },
-  previewContainerFixed: {
-    minHeight: 52,
-    justifyContent: 'center',
-    marginTop: spacing.sm,
-  },
-  dialogCancelBtn: {
+    borderRadius: borderRadius.lg,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    marginRight: 8,
+    fontSize: 13,
+  },
+  dialogCancelBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
   dialogCancelText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#64748B',
   },
   dialogConfirmBtn: {
-    backgroundColor: '#16A34A',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: borderRadius.sm,
-  },
-  dialogConfirmBtnSell: {
-    backgroundColor: '#DC2626',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: borderRadius.sm,
+    borderRadius: borderRadius.md,
+    marginLeft: 8,
   },
   dialogConfirmText: {
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFFFFF',
   },
-  dialogBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 99999,
-    elevation: 20,
-    padding: spacing.lg,
+    padding: 24,
   },
-  inlineDialogCard: {
+  modalCard: {
     width: '100%',
-    maxWidth: 420,
-    borderRadius: borderRadius.md,
-    padding: spacing.lg,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 24,
+    maxWidth: 400,
+    borderRadius: borderRadius.xl,
+    padding: 20,
+    borderWidth: 1,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+    marginBottom: 14,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    marginBottom: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  btnCancel: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  btnConfirm: {
+    flex: 1.4,
+    paddingVertical: 11,
+    borderRadius: borderRadius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnConfirmText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
