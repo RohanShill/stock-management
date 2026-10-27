@@ -149,7 +149,7 @@ export default function SettingsScreen() {
   const handleDeleteSubcategory = (sub: Subcategory) => {
     Alert.alert(
       'Delete Section',
-      `Kya aap section "${sub.name}" ko delete karna chahte hain? Is section ke items table se hat jayenge.`,
+      `Are you sure you want to delete section "${sub.name}"? Items in this section will be removed from the table.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {

@@ -824,7 +824,15 @@ export default function ProductsScreen() {
             {actionModalMode === 'sell' ? '🔴 Sell Item (Stock Out)' : '🟢 Stock In (Add Inventory)'}
           </Dialog.Title>
           <Dialog.Content>
-            <View style={styles.actionItemBanner}>
+            <View
+              style={[
+                styles.actionItemBanner,
+                {
+                  backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC',
+                  borderColor: isDarkMode ? '#334155' : '#E2E8F0',
+                },
+              ]}
+            >
               <Text
                 style={[
                   styles.actionItemTitle,
@@ -839,7 +847,15 @@ export default function ProductsScreen() {
                   { color: activeColors.textSecondary },
                 ]}
               >
-                Current Stock: <Text style={{ fontWeight: '800' }}>{selectedCell ? selectedCell.currentStock : 0} pc</Text>
+                Available Stock:{' '}
+                <Text
+                  style={{
+                    fontWeight: '800',
+                    color: (selectedCell?.currentStock || 0) > 0 ? activeColors.textPrimary : '#DC2626',
+                  }}
+                >
+                  {selectedCell ? selectedCell.currentStock : 0} pcs
+                </Text>
               </Text>
             </View>
 
@@ -849,7 +865,7 @@ export default function ProductsScreen() {
                 { color: activeColors.textPrimary },
               ]}
             >
-              Quantity ({actionModalMode === 'sell' ? 'Bechna hai' : 'Aaya hai'}):
+              {actionModalMode === 'sell' ? 'Quantity to Sell (pcs):' : 'Quantity to Add (pcs):'}
             </Text>
             <TextInput
               style={[
@@ -859,53 +875,32 @@ export default function ProductsScreen() {
                     ? activeColors.surfaceElevated
                     : activeColors.surfaceSubtle,
                   color: activeColors.textPrimary,
-                  borderColor: activeColors.border,
+                  borderColor:
+                    actionModalMode === 'sell' &&
+                    parseInt(actionQty || '0', 10) > (selectedCell?.currentStock || 0)
+                      ? '#DC2626'
+                      : activeColors.border,
                 },
               ]}
               keyboardType="numeric"
+              placeholder="Enter quantity..."
+              placeholderTextColor={activeColors.textMuted}
               value={actionQty}
               onChangeText={setActionQty}
               autoFocus
             />
 
-            {/* Quick Quantity Presets */}
-            <View style={styles.presetsRow}>
-              {[1, 2, 5, 10, 20, 50].map((num) => (
-                <TouchableOpacity
-                  key={num}
-                  onPress={() => setActionQty(num.toString())}
-                  style={[
-                    styles.presetBtn,
-                    {
-                      backgroundColor: actionQty === num.toString()
-                        ? activeColors.primary
-                        : isDarkMode
-                        ? activeColors.surfaceElevated
-                        : activeColors.surfaceSubtle,
-                      borderColor: activeColors.border,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.presetBtnText,
-                      {
-                        color: actionQty === num.toString()
-                          ? '#FFFFFF'
-                          : activeColors.textPrimary,
-                      },
-                    ]}
-                  >
-                    +{num}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {actionModalMode === 'sell' &&
+              parseInt(actionQty || '0', 10) > (selectedCell?.currentStock || 0) && (
+                <Text style={styles.stockWarningText}>
+                  ⚠️ Quantity exceeds available stock ({selectedCell?.currentStock || 0} pcs)
+                </Text>
+              )}
 
             <Text
               style={[
                 styles.inputLabel,
-                { color: activeColors.textPrimary, marginTop: 12 },
+                { color: activeColors.textPrimary, marginTop: 10 },
               ]}
             >
               Note (Optional):
@@ -989,7 +984,7 @@ export default function ProductsScreen() {
                 { color: activeColors.textPrimary },
               ]}
             >
-              Nayi Category Banayein
+              Create New Category
             </Text>
             <Text
               style={[
@@ -997,7 +992,7 @@ export default function ProductsScreen() {
                 { color: activeColors.textMuted },
               ]}
             >
-              Jaise: Pipes, Sanitary, Electrical, Paints etc.
+              e.g. Pipes, Sanitary, Electrical, Paints etc.
             </Text>
 
             <TextInput
@@ -1011,7 +1006,7 @@ export default function ProductsScreen() {
                   borderColor: activeColors.border,
                 },
               ]}
-              placeholder="Category Name likhein..."
+              placeholder="Enter category name..."
               placeholderTextColor={activeColors.textMuted}
               value={newCatName}
               onChangeText={setNewCatName}
@@ -1146,9 +1141,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   actionItemBanner: {
-    padding: 10,
-    borderRadius: borderRadius.md,
-    marginBottom: 12,
+    padding: 12,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    marginBottom: 14,
   },
   actionItemTitle: {
     fontSize: 16,
@@ -1156,7 +1152,7 @@ const styles = StyleSheet.create({
   },
   actionItemStock: {
     fontSize: 13,
-    marginTop: 2,
+    marginTop: 3,
   },
   inputLabel: {
     fontSize: 13,
@@ -1164,29 +1160,20 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   actionInput: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: borderRadius.lg,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 20,
     fontWeight: '800',
-    marginBottom: 10,
+    marginBottom: 6,
   },
-  presetsRow: {
-    flexDirection: 'row',
-    gap: 6,
-    flexWrap: 'wrap',
-    marginBottom: 8,
-  },
-  presetBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-  },
-  presetBtnText: {
+  stockWarningText: {
+    color: '#DC2626',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
+    marginTop: 2,
+    marginBottom: 8,
   },
   noteInput: {
     borderWidth: 1,

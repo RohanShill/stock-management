@@ -27,7 +27,7 @@ interface ProductMatrixGridProps {
   emptyLabel?: string;
 }
 
-const ROW_HEADER_WIDTH = 125;
+const ROW_HEADER_WIDTH = 94;
 const COLUMN_WIDTH = 95;
 const CELL_HEIGHT = 56;
 const HEADER_HEIGHT = 48;
@@ -133,7 +133,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
     const clean = newBrandName.trim();
     if (!clean || submittingBrand) return;
     if (brands.some((b) => b.toLowerCase() === clean.toLowerCase())) {
-      Alert.alert('Brand Exists', `Brand "${clean}" pehle se table me maujood hai.`);
+      Alert.alert('Brand Exists', `Brand "${clean}" is already present in the table.`);
       return;
     }
     try {
@@ -152,7 +152,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
     const clean = newSizeName.trim();
     if (!clean || submittingSize) return;
     if (sizes.some((s) => s.toLowerCase() === clean.toLowerCase())) {
-      Alert.alert('Size Exists', `Size "${clean}" pehle se table me maujood hai.`);
+      Alert.alert('Size Exists', `Size "${clean}" is already present in the table.`);
       return;
     }
     try {
@@ -254,7 +254,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                     onPress={() => {
                       Alert.alert(
                         'Remove Brand Column',
-                        `Kya aap "${brand}" brand column ko table se remove karna chahte hain?`,
+                        `Are you sure you want to remove the "${brand}" brand column from the table?`,
                         [
                           { text: 'Cancel', style: 'cancel' },
                           {
@@ -308,12 +308,12 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
             <View style={styles.emptyTableBanner}>
               <MaterialCommunityIcons name="table-plus" size={32} color={activeColors.primary} />
               <Text style={[styles.emptyTableTitle, { color: activeColors.textPrimary }]}>
-                {brands.length > 0 ? `Brand "${brands.join(', ')}" added!` : 'Koi item nahi mila'}
+                {brands.length > 0 ? `Brand "${brands.join(', ')}" added!` : 'No items found'}
               </Text>
               <Text style={[styles.emptyTableSubtitle, { color: activeColors.textMuted }]}>
                 {brands.length > 0
-                  ? 'Ab niche "Add Size +" daba kar sizes add karein'
-                  : 'Upar "add brands +" ya niche "Add Size +" daba kar start karein'}
+                  ? 'Tap "+ Add Size / Item" below to add sizes'
+                  : 'Tap "add brands +" above or "+ Add Size" below to get started'}
               </Text>
               <TouchableOpacity
                 onPress={() => setAddSizeVisible(true)}
@@ -605,7 +605,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                     { color: activeColors.textPrimary },
                   ]}
                 >
-                  Naya Brand Add Karein
+                  Add New Brand
                 </Text>
                 <Text
                   style={[
@@ -613,7 +613,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                     { color: activeColors.textMuted },
                   ]}
                 >
-                  Jaise: Supreme, AKG, Finolex, Ashirvad etc.
+                  e.g. Supreme, AKG, Finolex, Ashirvad etc.
                 </Text>
               </View>
             </View>
@@ -629,7 +629,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                   borderColor: activeColors.border,
                 },
               ]}
-              placeholder="Brand Name likhein..."
+              placeholder="Enter brand name..."
               placeholderTextColor={activeColors.textMuted}
               value={newBrandName}
               onChangeText={setNewBrandName}
@@ -718,7 +718,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                     { color: activeColors.textPrimary },
                   ]}
                 >
-                  Naya Size / Item Add Karein
+                  Add New Size / Item
                 </Text>
                 <Text
                   style={[
@@ -726,7 +726,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                     { color: activeColors.textMuted },
                   ]}
                 >
-                  Jaise: 1/2", 3/4", 1", 1 1/4", 2" etc.
+                  e.g. 1/2", 3/4", 1", 1 1/4", 2" etc.
                 </Text>
               </View>
             </View>
@@ -742,7 +742,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                   borderColor: activeColors.border,
                 },
               ]}
-              placeholder="Size ya Item Name likhein..."
+              placeholder="Enter size or item name..."
               placeholderTextColor={activeColors.textMuted}
               value={newSizeName}
               onChangeText={setNewSizeName}
@@ -859,9 +859,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   headerTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
   },
   headerCell: {
     width: COLUMN_WIDTH,
@@ -900,7 +900,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRightWidth: 1.5,
     borderBottomWidth: 1,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
   },
   rowHeaderContent: {
     flexDirection: 'row',
@@ -908,14 +908,14 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   dragHandle: {
-    paddingVertical: 8,
-    paddingHorizontal: 2,
+    paddingVertical: 6,
+    paddingHorizontal: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   rowHeaderText: {
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '700',
     textAlign: 'center',
   },
   reorderArrowsCol: {
@@ -963,13 +963,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 3,
     borderRightWidth: 1.5,
     borderBottomWidth: 1,
+    paddingHorizontal: 2,
   },
   addSizeText: {
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,

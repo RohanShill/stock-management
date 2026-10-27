@@ -98,7 +98,7 @@ export const MatrixActionBar: React.FC<MatrixActionBarProps> = ({
                 { color: activeColors.textMuted },
               ]}
             >
-              Table me se koi v cell tap karein
+              Tap any cell in the table to manage stock
             </Text>
           </View>
         )}

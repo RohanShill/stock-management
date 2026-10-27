@@ -43,7 +43,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
     const clean = newTabName.trim();
     if (!clean || submitting) return;
     if (subcategories.some((s) => s.name.toLowerCase() === clean.toLowerCase())) {
-      Alert.alert('Section Exists', `Section "${clean}" pehle se maujood hai.`);
+      Alert.alert('Section Exists', `Section "${clean}" already exists.`);
       return;
     }
     try {
@@ -175,7 +175,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                     { color: activeColors.textPrimary },
                   ]}
                 >
-                  Naya Section Add Karein
+                  Add New Section
                 </Text>
                 <Text
                   style={[
@@ -183,7 +183,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                     { color: activeColors.textMuted },
                   ]}
                 >
-                  Jaise: PVC Valves, Solvent Cement, Teflon etc.
+                  e.g. PVC Valves, Solvent Cement, Teflon etc.
                 </Text>
               </View>
             </View>
@@ -199,7 +199,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                   borderColor: activeColors.border,
                 },
               ]}
-              placeholder="Section Name likhein..."
+              placeholder="Enter section name..."
               placeholderTextColor={activeColors.textMuted}
               value={newTabName}
               onChangeText={setNewTabName}
