@@ -152,13 +152,21 @@ export default function ProductsScreen() {
     try {
       setLoading(true);
       setSelectedCategoryId(catId);
+      // Immediately reset subcategories and matrixData so previous category data never leaks into new category
+      setSubcategories([]);
+      setActiveSubcategoryId('');
+      setMatrixData({ brands: [], sizes: [], cells: {} });
+      setSelectedCell(null);
+      setSelectedCellKey(null);
+      setSelectedSize('');
+      setSelectedBrand('');
 
       const storeId = store?.id || 'store-1';
       const list = catList || categories;
       const cat = list.find((c) => c.id === catId);
       const catName = cat?.name || 'Pipes';
 
-      // Ensures default sub-tabs (Pipes, Pipe Fittings, Others) exist
+      // Ensures default sub-tabs exist specifically for this category
       const subtabs = await MatrixRepository.ensureDefaultSubTabs(
         storeId,
         catId,
@@ -179,11 +187,12 @@ export default function ProductsScreen() {
         setMatrixData({ brands: [], sizes: [], cells: {} });
         setLoading(false);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error switching category:', e);
       setLoading(false);
+      showToast(e?.message || 'Error switching category', 'error');
     }
-  }, [store?.id, categories, deviceId, loadMatrix]);
+  }, [store?.id, categories, deviceId, loadMatrix, showToast]);
 
   /**
    * Initial Data Load: Run once on mount

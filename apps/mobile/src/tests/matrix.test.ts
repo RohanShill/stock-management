@@ -102,4 +102,107 @@ describe('MatrixRepository Utilities', () => {
     expect(data.cells['1/2"___supreme'].currentStock).toBe(25);
     expect(data.cells['1/2"___finolex'].currentStock).toBe(15);
   });
+
+  it('ensures Pipes category only gets pipe sections (Pipes, Pipe Fittings, Others)', async () => {
+    let mockSubcategories: any[] = [];
+    const mockDb = {
+      getAllAsync: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('FROM subcategories')) {
+          return Promise.resolve(mockSubcategories);
+        }
+        if (sql.includes('FROM products')) {
+          return Promise.resolve([{ id: 'existing-prod' }]);
+        }
+        return Promise.resolve([]);
+      }),
+      runAsync: vi.fn().mockImplementation((sql: string, params?: any[]) => {
+        if (sql.includes('INSERT INTO subcategories')) {
+          mockSubcategories.push({
+            id: params?.[0],
+            storeId: params?.[1],
+            categoryId: params?.[2],
+            name: params?.[3],
+            displayOrder: params?.[5],
+            active: 1,
+          });
+        }
+        return Promise.resolve({ changes: 1 });
+      }),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+
+    const tabs = await MatrixRepository.ensureDefaultSubTabs('store-1', 'cat-pipes', 'Pipes', 'dev-1');
+    const names = tabs.map((t) => t.name);
+    expect(names).toEqual(['Pipes', 'Pipe Fittings', 'Others']);
+  });
+
+  it('ensures Bath fittings category gets bath sections and no pipe or paint sections', async () => {
+    let mockSubcategories: any[] = [];
+    const mockDb = {
+      getAllAsync: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('FROM subcategories')) {
+          return Promise.resolve(mockSubcategories);
+        }
+        return Promise.resolve([]);
+      }),
+      runAsync: vi.fn().mockImplementation((sql: string, params?: any[]) => {
+        if (sql.includes('INSERT INTO subcategories')) {
+          mockSubcategories.push({
+            id: params?.[0],
+            storeId: params?.[1],
+            categoryId: params?.[2],
+            name: params?.[3],
+            displayOrder: params?.[5],
+            active: 1,
+          });
+        }
+        return Promise.resolve({ changes: 1 });
+      }),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+
+    const tabs = await MatrixRepository.ensureDefaultSubTabs('store-1', 'cat-bath', 'Bath fittings', 'dev-1');
+    const names = tabs.map((t) => t.name);
+    expect(names).toEqual(['Bath Fittings', 'Taps & Showers', 'Others']);
+    expect(names).not.toContain('Pipes');
+    expect(names).not.toContain('Wall Emulsions');
+  });
+
+  it('filters out paint products and brands from getMatrixData', async () => {
+    const mockDb = {
+      getAllAsync: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('FROM products')) {
+          return Promise.resolve([
+            { id: 'p1', brand: 'Jaquar', name: 'Jaquar Tap' },
+            { id: 'p2', brand: 'Asian Paints', name: 'Apex Weatherproof Emulsion' },
+            { id: 'p3', brand: 'Berger', name: 'Walmasta Primer' },
+          ]);
+        }
+        if (sql.includes('FROM product_variants')) {
+          return Promise.resolve([
+            { id: 'v1', productId: 'p1', size: '1/2"', currentStock: 14 },
+            { id: 'v2', productId: 'p2', size: '4L', currentStock: 8 },
+            { id: 'v3', productId: 'p3', size: '10L', currentStock: 5 },
+          ]);
+        }
+        return Promise.resolve([]);
+      }),
+      runAsync: vi.fn().mockResolvedValue({}),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+
+    const data = await MatrixRepository.getMatrixData('store-1', 'cat-bath', 'sub-bath');
+    expect(data.brands).toContain('Jaquar');
+    expect(data.brands).not.toContain('Asian Paints');
+    expect(data.brands).not.toContain('Berger');
+    expect(data.sizes).toEqual(['1/2"']);
+    expect(data.sizes).not.toContain('4L');
+    expect(data.sizes).not.toContain('10L');
+  });
 });

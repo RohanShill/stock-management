@@ -70,68 +70,145 @@ export class MatrixRepository {
     const db = await getDatabase();
     const now = new Date().toISOString();
 
-    // Clean up any old dummy subcategories like 'Albow', 'Elbow', 'Angles', 'Angles & Elbows'
+    const isPipeCategory = categoryName.toLowerCase().includes('pipe');
+    const isBathCategory = categoryName.toLowerCase().includes('bath');
+
+    // 1. Store-wide cleanup of old dummy paint demo subcategories
     await db.runAsync(
       `UPDATE subcategories SET deletedAt = ?, active = 0 WHERE storeId = ? AND (
         LOWER(name) LIKE '%albow%' OR 
         LOWER(name) LIKE '%elbow%' OR 
-        LOWER(name) LIKE '%angles%'
+        LOWER(name) LIKE '%angles%' OR
+        LOWER(name) LIKE '%emulsion%' OR
+        LOWER(name) LIKE '%distemper%' OR
+        LOWER(name) LIKE '%primer%' OR
+        LOWER(name) LIKE '%solvent%' OR
+        LOWER(name) LIKE '%waterproof%' OR
+        LOWER(name) LIKE '%putty%' OR
+        LOWER(name) = 'general' OR
+        id LIKE 'demo-sub-%'
       );`,
       [now, storeId]
     );
 
-    // Clean up any products or variants with 'elbow' / 'albow'
+    // 2. Store-wide cleanup of old dummy paint products & variants
     await db.runAsync(
-      `UPDATE product_variants SET deletedAt = ? WHERE storeId = ? AND (
+      `UPDATE product_variants SET deletedAt = ?, active = 0 WHERE storeId = ? AND (
         LOWER(size) LIKE '%albow%' OR 
         LOWER(size) LIKE '%elbow%' OR 
         LOWER(name) LIKE '%albow%' OR 
-        LOWER(name) LIKE '%elbow%'
+        LOWER(name) LIKE '%elbow%' OR
+        id LIKE 'demo-var-%'
       );`,
       [now, storeId]
     );
 
     await db.runAsync(
-      `UPDATE products SET deletedAt = ? WHERE storeId = ? AND (
+      `UPDATE products SET deletedAt = ?, active = 0 WHERE storeId = ? AND (
         LOWER(name) LIKE '%albow%' OR 
-        LOWER(name) LIKE '%elbow%'
+        LOWER(name) LIKE '%elbow%' OR
+        LOWER(name) LIKE '%emulsion%' OR
+        LOWER(name) LIKE '%distemper%' OR
+        LOWER(name) LIKE '%primer%' OR
+        LOWER(name) LIKE '%solvent%' OR
+        LOWER(name) LIKE '%waterproof%' OR
+        LOWER(name) LIKE '%wall putty%' OR
+        LOWER(name) LIKE '%putty%' OR
+        LOWER(brand) LIKE '%asian paint%' OR
+        LOWER(brand) LIKE '%berger%' OR
+        LOWER(brand) LIKE '%dr. fixit%' OR
+        LOWER(brand) LIKE '%birla white%' OR
+        LOWER(brand) = 'general' OR
+        id LIKE 'demo-%' OR
+        id LIKE 'prod-demo%'
       );`,
       [now, storeId]
     );
 
+    // 3. Category isolation: If NOT pipe category (e.g. Bath fittings), remove any mistakenly attached pipe subcategories or products
+    if (!isPipeCategory) {
+      await db.runAsync(
+        `UPDATE subcategories SET deletedAt = ?, active = 0 WHERE storeId = ? AND categoryId = ? AND (
+          LOWER(name) = 'pipes' OR 
+          LOWER(name) = 'pipe fittings' OR 
+          (LOWER(name) LIKE '%pipe%' AND LOWER(name) NOT LIKE '%bath%')
+        );`,
+        [now, storeId, categoryId]
+      );
+
+      await db.runAsync(
+        `UPDATE products SET deletedAt = ?, active = 0 WHERE storeId = ? AND categoryId = ? AND (
+          LOWER(name) LIKE '%pipe%' OR 
+          LOWER(brand) = 'supreme' OR
+          LOWER(brand) = 'akg' OR
+          LOWER(brand) = 'plast'
+        );`,
+        [now, storeId, categoryId]
+      );
+    }
+
+    // 4. If pipe category, remove any bath fittings subcategories that might be under it
+    if (isPipeCategory) {
+      await db.runAsync(
+        `UPDATE subcategories SET deletedAt = ?, active = 0 WHERE storeId = ? AND categoryId = ? AND (
+          LOWER(name) LIKE '%bath%' OR 
+          LOWER(name) LIKE '%tap%' OR 
+          LOWER(name) LIKE '%shower%'
+        );`,
+        [now, storeId, categoryId]
+      );
+    }
+
+    // 5. Query active subcategories belonging strictly to this category
     let rows = await db.getAllAsync<any>(
       `SELECT * FROM subcategories 
        WHERE categoryId = ? 
          AND storeId = ? 
          AND deletedAt IS NULL 
+         AND active = 1
          AND LOWER(name) NOT LIKE '%albow%' 
          AND LOWER(name) NOT LIKE '%elbow%' 
          AND LOWER(name) NOT LIKE '%angles%'
+         AND LOWER(name) NOT LIKE '%emulsion%'
+         AND LOWER(name) NOT LIKE '%distemper%'
+         AND LOWER(name) NOT LIKE '%primer%'
+         AND LOWER(name) NOT LIKE '%solvent%'
+         AND LOWER(name) NOT LIKE '%waterproof%'
+         AND LOWER(name) NOT LIKE '%putty%'
+         AND LOWER(name) != 'general'
+         AND id NOT LIKE 'demo-sub-%'
        ORDER BY displayOrder ASC, createdAt ASC;`,
       [categoryId, storeId]
     );
 
-    const isPipeCategory = categoryName.toLowerCase().includes('pipe');
+    // If it's a Pipe category, make sure 'Pipes', 'Pipe Fittings' and 'Others' exist
+    if (isPipeCategory) {
+      const hasPipes = rows && rows.some((r) => r.name.toLowerCase() === 'pipes');
+      const hasFittings = rows && rows.some((r) => r.name.toLowerCase().includes('fitting'));
+      const hasOthers = rows && rows.some((r) => r.name.toLowerCase().includes('other'));
 
-    // If it's a Pipe category, make sure 'Pipe Fittings' and 'Others' exist alongside 'Pipes'
-    if (isPipeCategory && rows && rows.length > 0) {
-      const hasFittings = rows.some((r) => r.name.toLowerCase().includes('fitting'));
-      const hasOthers = rows.some((r) => r.name.toLowerCase().includes('other'));
-
+      if (!hasPipes) {
+        const id = uuidv4();
+        await db.runAsync(
+          `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);`,
+          [id, storeId, categoryId, 'Pipes', 'Pipes section', 1, now, now]
+        );
+      }
       if (!hasFittings) {
         const id = uuidv4();
         await db.runAsync(
           `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
-           VALUES (?, ?, ?, 'Pipe Fittings', 'Pipe Fittings section', 2, 1, ?, ?);`,
-          [id, storeId, categoryId, now, now]
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);`,
+          [id, storeId, categoryId, 'Pipe Fittings', 'Pipe Fittings section', 2, now, now]
         );
       }
       if (!hasOthers) {
         const id = uuidv4();
         await db.runAsync(
           `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
-           VALUES (?, ?, ?, 'Others', 'Other accessories section', 3, 1, ?, ?);`,
-          [id, storeId, categoryId, now, now]
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);`,
+          [id, storeId, categoryId, 'Others', 'Other accessories section', 3, now, now]
         );
       }
 
@@ -141,9 +218,18 @@ export class MatrixRepository {
          WHERE categoryId = ? 
            AND storeId = ? 
            AND deletedAt IS NULL 
+           AND active = 1
            AND LOWER(name) NOT LIKE '%albow%' 
            AND LOWER(name) NOT LIKE '%elbow%' 
            AND LOWER(name) NOT LIKE '%angles%'
+           AND LOWER(name) NOT LIKE '%emulsion%'
+           AND LOWER(name) NOT LIKE '%distemper%'
+           AND LOWER(name) NOT LIKE '%primer%'
+           AND LOWER(name) NOT LIKE '%solvent%'
+           AND LOWER(name) NOT LIKE '%waterproof%'
+           AND LOWER(name) NOT LIKE '%putty%'
+           AND LOWER(name) != 'general'
+           AND id NOT LIKE 'demo-sub-%'
          ORDER BY displayOrder ASC, createdAt ASC;`,
         [categoryId, storeId]
       );
@@ -157,10 +243,12 @@ export class MatrixRepository {
       }));
     }
 
-    // No subcategories exist yet, auto-create defaults
+    // No subcategories exist yet, auto-create defaults specifically for THIS category
     const defaultTabs = isPipeCategory
       ? ['Pipes', 'Pipe Fittings', 'Others']
-      : ['General', 'Fittings & Accessories', 'Others'];
+      : isBathCategory
+      ? ['Bath Fittings', 'Taps & Showers', 'Others']
+      : [categoryName, 'Accessories', 'Others'];
 
     const createdTabs: Subcategory[] = [];
 
@@ -189,11 +277,16 @@ export class MatrixRepository {
       createdTabs.push(record);
     }
 
-    // Seed sketch items for "Pipes" tab if it was just created
+    // Seed sketch items for "Pipes" tab ONLY if the entire category has no products at all yet
     if (isPipeCategory && createdTabs.length > 0) {
-      const pipesTab = createdTabs[0];
-      await this.seedSketchPipesData(storeId, categoryId, pipesTab.id, deviceId);
-      // Pipe Fittings and Others start clean so client can add their own items
+      const existingProds = await db.getAllAsync<any>(
+        `SELECT id FROM products WHERE categoryId = ? AND storeId = ? AND deletedAt IS NULL;`,
+        [categoryId, storeId]
+      );
+      if (!existingProds || existingProds.length === 0) {
+        const pipesTab = createdTabs[0];
+        await this.seedSketchPipesData(storeId, categoryId, pipesTab.id, deviceId);
+      }
     }
 
     return createdTabs;
@@ -240,9 +333,10 @@ export class MatrixRepository {
       for (const row of sketchGrid) {
         const stockQty = row[b.key];
         const varId = uuidv4();
-        const sku = `PIPE-${b.name.toUpperCase().slice(0, 3)}-${row.size.replace(/[^0-9]/g, '')}`;
+        // Unique SKU with short UUID component so it NEVER violates SQLite unique constraint
+        const sku = `PIPE-${b.name.toUpperCase().slice(0, 3)}-${row.size.replace(/[^0-9]/g, '')}-${uuidv4().slice(0, 6).toUpperCase()}`;
         await db.runAsync(
-          `INSERT INTO product_variants (id, storeId, productId, name, sku, size, purchasePricePaise, sellingPricePaise, minStockLevel, openingStock, currentStock, active, createdAt, updatedAt)
+          `INSERT OR REPLACE INTO product_variants (id, storeId, productId, name, sku, size, purchasePricePaise, sellingPricePaise, minStockLevel, openingStock, currentStock, active, createdAt, updatedAt)
            VALUES (?, ?, ?, ?, ?, ?, 15000, 22000, 5, ?, ?, 1, ?, ?);`,
           [varId, storeId, prodId, `${prodName} ${row.size}`, sku, row.size, stockQty, stockQty, now, now]
         );
@@ -312,7 +406,21 @@ export class MatrixRepository {
   ): Promise<MatrixGridData> {
     const db = await getDatabase();
 
-    let sql = `SELECT * FROM products WHERE storeId = ? AND categoryId = ? AND deletedAt IS NULL`;
+    let sql = `SELECT * FROM products WHERE storeId = ? AND categoryId = ? AND deletedAt IS NULL AND active = 1
+      AND LOWER(name) NOT LIKE '%albow%'
+      AND LOWER(name) NOT LIKE '%elbow%'
+      AND LOWER(name) NOT LIKE '%emulsion%'
+      AND LOWER(name) NOT LIKE '%distemper%'
+      AND LOWER(name) NOT LIKE '%primer%'
+      AND LOWER(name) NOT LIKE '%solvent%'
+      AND LOWER(name) NOT LIKE '%waterproof%'
+      AND LOWER(name) NOT LIKE '%putty%'
+      AND LOWER(brand) NOT LIKE '%asian paint%'
+      AND LOWER(brand) NOT LIKE '%berger%'
+      AND LOWER(brand) NOT LIKE '%dr. fixit%'
+      AND LOWER(brand) NOT LIKE '%birla white%'
+      AND LOWER(brand) != 'general'
+      AND id NOT LIKE 'demo-%'`;
     const params: any[] = [storeId, categoryId];
 
     if (subcategoryId) {
@@ -370,7 +478,15 @@ export class MatrixRepository {
     // 1. First collect all existing brands from active products in this section
     for (const p of productRows) {
       const rawBrand = (p.brand || '').trim();
-      if (rawBrand && rawBrand.toLowerCase() !== 'general') {
+      const lowerBrand = rawBrand.toLowerCase();
+      if (
+        rawBrand &&
+        lowerBrand !== 'general' &&
+        !lowerBrand.includes('asian paint') &&
+        !lowerBrand.includes('berger') &&
+        !lowerBrand.includes('dr. fixit') &&
+        !lowerBrand.includes('birla white')
+      ) {
         brandSet.add(rawBrand);
       }
     }
@@ -379,8 +495,17 @@ export class MatrixRepository {
     for (const v of variantRows) {
       const prod = prodMap.get(v.productId);
       const rawBrand = (prod?.brand || '').trim();
+      const lowerBrand = rawBrand.toLowerCase();
+
       // User requirement: "general ho hta do bas jo brand client chahega wo add krega"
-      if (!rawBrand || rawBrand.toLowerCase() === 'general') {
+      if (
+        !rawBrand ||
+        lowerBrand === 'general' ||
+        lowerBrand.includes('asian paint') ||
+        lowerBrand.includes('berger') ||
+        lowerBrand.includes('dr. fixit') ||
+        lowerBrand.includes('birla white')
+      ) {
         continue;
       }
 

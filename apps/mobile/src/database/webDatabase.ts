@@ -126,26 +126,46 @@ class WebSQLiteStore {
           const validCatIds = new Set(this.tables.categories.map((c: any) => c.id));
           this.tables.subcategories = this.tables.subcategories.filter((s: any) => validCatIds.has(s.categoryId));
 
-          // Clean up any old dummy subcategories like 'Angles', 'Elbow', 'Albow'
+          // Clean up any old dummy subcategories like 'Angles', 'Elbow', 'Albow', 'Emulsion', 'Distemper', 'Primer', 'Waterproof', 'Putty'
           this.tables.subcategories = (this.tables.subcategories || []).filter(
             (s: any) =>
               !s.name.toLowerCase().includes('angle') &&
               !s.name.toLowerCase().includes('elbow') &&
-              !s.name.toLowerCase().includes('albow')
+              !s.name.toLowerCase().includes('albow') &&
+              !s.name.toLowerCase().includes('emulsion') &&
+              !s.name.toLowerCase().includes('distemper') &&
+              !s.name.toLowerCase().includes('primer') &&
+              !s.name.toLowerCase().includes('solvent') &&
+              !s.name.toLowerCase().includes('waterproof') &&
+              !s.name.toLowerCase().includes('putty') &&
+              s.name.toLowerCase() !== 'general' &&
+              !s.id?.startsWith('demo-sub-')
           );
 
-          // Clean up any products or variants with 'elbow' / 'albow'
+          // Clean up any products or variants with 'elbow' / 'albow' or paint demo items
           this.tables.product_variants = (this.tables.product_variants || []).filter(
             (v: any) =>
               !v.size?.toLowerCase().includes('elbow') &&
               !v.size?.toLowerCase().includes('albow') &&
               !v.name?.toLowerCase().includes('elbow') &&
-              !v.name?.toLowerCase().includes('albow')
+              !v.name?.toLowerCase().includes('albow') &&
+              !v.id?.startsWith('demo-var-')
           );
           this.tables.products = (this.tables.products || []).filter(
             (p: any) =>
               !p.name?.toLowerCase().includes('elbow') &&
-              !p.name?.toLowerCase().includes('albow')
+              !p.name?.toLowerCase().includes('albow') &&
+              !p.name?.toLowerCase().includes('emulsion') &&
+              !p.name?.toLowerCase().includes('distemper') &&
+              !p.name?.toLowerCase().includes('primer') &&
+              !p.name?.toLowerCase().includes('waterproof') &&
+              !p.name?.toLowerCase().includes('putty') &&
+              !p.brand?.toLowerCase().includes('asian paint') &&
+              !p.brand?.toLowerCase().includes('berger') &&
+              !p.brand?.toLowerCase().includes('dr. fixit') &&
+              !p.brand?.toLowerCase().includes('birla white') &&
+              p.brand?.toLowerCase() !== 'general' &&
+              !p.id?.startsWith('demo-')
           );
 
           // Sanitize and repair stock_movements if corrupted
