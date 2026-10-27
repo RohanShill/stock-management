@@ -28,9 +28,9 @@ describe('MatrixRepository Utilities', () => {
   });
 
   it('handles metric or text sizes predictably', () => {
-    const fittings = ['Elbow 1/2"', 'Tee 1/2"', 'Elbow 3/4"', 'Socket 1/2"'];
+    const fittings = ['Nipple 1/2"', 'Tee 1/2"', 'Nipple 3/4"', 'Socket 1/2"'];
     const sorted = MatrixRepository.sortSizes(fittings);
     expect(sorted.length).toBe(4);
-    expect(sorted).toContain('Elbow 1/2"');
+    expect(sorted).toContain('Nipple 1/2"');
   });
 });

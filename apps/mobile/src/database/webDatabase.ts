@@ -126,24 +126,27 @@ class WebSQLiteStore {
           const validCatIds = new Set(this.tables.categories.map((c: any) => c.id));
           this.tables.subcategories = this.tables.subcategories.filter((s: any) => validCatIds.has(s.categoryId));
 
-          if (pipesCat) {
-            const hasAngles = this.tables.subcategories.some(
-              (s: any) => s.categoryId === pipesCat.id && (s.name.includes('Angle') || s.name.includes('Elbow'))
-            );
-            if (!hasAngles) {
-              this.tables.subcategories.push({
-                id: 'sub-pipe-angles',
-                storeId: 'store-1',
-                categoryId: pipesCat.id,
-                name: 'Angles & Elbows',
-                description: 'Angles, elbows, tees & directional fittings',
-                displayOrder: 3,
-                active: 1,
-                createdAt: now,
-                updatedAt: now,
-              });
-            }
-          }
+          // Clean up any old dummy subcategories like 'Angles', 'Elbow', 'Albow'
+          this.tables.subcategories = (this.tables.subcategories || []).filter(
+            (s: any) =>
+              !s.name.toLowerCase().includes('angle') &&
+              !s.name.toLowerCase().includes('elbow') &&
+              !s.name.toLowerCase().includes('albow')
+          );
+
+          // Clean up any products or variants with 'elbow' / 'albow'
+          this.tables.product_variants = (this.tables.product_variants || []).filter(
+            (v: any) =>
+              !v.size?.toLowerCase().includes('elbow') &&
+              !v.size?.toLowerCase().includes('albow') &&
+              !v.name?.toLowerCase().includes('elbow') &&
+              !v.name?.toLowerCase().includes('albow')
+          );
+          this.tables.products = (this.tables.products || []).filter(
+            (p: any) =>
+              !p.name?.toLowerCase().includes('elbow') &&
+              !p.name?.toLowerCase().includes('albow')
+          );
 
           // Sanitize and repair stock_movements if corrupted
           if (Array.isArray(this.tables.stock_movements)) {
@@ -280,11 +283,11 @@ class WebSQLiteStore {
           updatedAt: now,
         },
         {
-          id: 'sub-pipe-angles',
+          id: 'sub-pipe-others',
           storeId: 'store-1',
           categoryId: plumbingId,
-          name: 'Angles & Elbows',
-          description: 'Angles, elbows, tees & directional fittings',
+          name: 'Others',
+          description: 'Other accessories section',
           displayOrder: 3,
           active: 1,
           createdAt: now,

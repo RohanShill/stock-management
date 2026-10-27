@@ -244,6 +244,32 @@ export default function ProductsScreen() {
   };
 
   /**
+   * Delete a Sub-Tab dynamically via the 'x' button
+   */
+  const handleDeleteSubTab = async (subcatId: string) => {
+    try {
+      const storeId = store?.id || 'store-1';
+      await MatrixRepository.deleteSubTab(storeId, subcatId, deviceId);
+      const remaining = subcategories.filter((s) => s.id !== subcatId);
+      setSubcategories(remaining);
+
+      if (activeSubcategoryId === subcatId) {
+        const nextSub = remaining[0]?.id || '';
+        setActiveSubcategoryId(nextSub);
+        if (nextSub) {
+          await loadMatrix(selectedCategoryId, nextSub);
+        } else {
+          setMatrixData({ brands: [], sizes: [], cells: {} });
+        }
+      }
+      showToast('Section removed', 'info');
+    } catch (e) {
+      console.error('Error removing section:', e);
+      showToast('Could not remove section', 'error');
+    }
+  };
+
+  /**
    * Add a Brand Column
    */
   const handleAddBrand = async (brandName: string) => {
@@ -589,6 +615,7 @@ export default function ProductsScreen() {
         activeSubcategoryId={activeSubcategoryId}
         onSelectSubcategory={handleSelectSubTab}
         onAddSubTab={handleAddSubTab}
+        onDeleteSubTab={handleDeleteSubTab}
         isDarkMode={isDarkMode}
         activeColors={activeColors}
       />

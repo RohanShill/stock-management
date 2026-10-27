@@ -532,7 +532,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                     { color: activeColors.textMuted },
                   ]}
                 >
-                  Jaise: 2 1/2", 3", Elbow 1", Tee 3/4" etc.
+                  Jaise: 1/2", 3/4", 1", 1 1/4", 2" etc.
                 </Text>
               </View>
             </View>

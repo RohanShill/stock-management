@@ -64,12 +64,86 @@ export class MatrixRepository {
     deviceId: string
   ): Promise<Subcategory[]> {
     const db = await getDatabase();
-    const rows = await db.getAllAsync<any>(
-      `SELECT * FROM subcategories WHERE categoryId = ? AND storeId = ? AND deletedAt IS NULL ORDER BY displayOrder ASC, createdAt ASC;`,
+    const now = new Date().toISOString();
+
+    // Clean up any old dummy subcategories like 'Albow', 'Elbow', 'Angles', 'Angles & Elbows'
+    await db.runAsync(
+      `UPDATE subcategories SET deletedAt = ?, active = 0 WHERE storeId = ? AND (
+        LOWER(name) LIKE '%albow%' OR 
+        LOWER(name) LIKE '%elbow%' OR 
+        LOWER(name) LIKE '%angles%'
+      );`,
+      [now, storeId]
+    );
+
+    // Clean up any products or variants with 'elbow' / 'albow'
+    await db.runAsync(
+      `UPDATE product_variants SET deletedAt = ? WHERE storeId = ? AND (
+        LOWER(size) LIKE '%albow%' OR 
+        LOWER(size) LIKE '%elbow%' OR 
+        LOWER(name) LIKE '%albow%' OR 
+        LOWER(name) LIKE '%elbow%'
+      );`,
+      [now, storeId]
+    );
+
+    await db.runAsync(
+      `UPDATE products SET deletedAt = ? WHERE storeId = ? AND (
+        LOWER(name) LIKE '%albow%' OR 
+        LOWER(name) LIKE '%elbow%'
+      );`,
+      [now, storeId]
+    );
+
+    let rows = await db.getAllAsync<any>(
+      `SELECT * FROM subcategories 
+       WHERE categoryId = ? 
+         AND storeId = ? 
+         AND deletedAt IS NULL 
+         AND LOWER(name) NOT LIKE '%albow%' 
+         AND LOWER(name) NOT LIKE '%elbow%' 
+         AND LOWER(name) NOT LIKE '%angles%'
+       ORDER BY displayOrder ASC, createdAt ASC;`,
       [categoryId, storeId]
     );
 
-    const now = new Date().toISOString();
+    const isPipeCategory = categoryName.toLowerCase().includes('pipe');
+
+    // If it's a Pipe category, make sure 'Pipe Fittings' and 'Others' exist alongside 'Pipes'
+    if (isPipeCategory && rows && rows.length > 0) {
+      const hasFittings = rows.some((r) => r.name.toLowerCase().includes('fitting'));
+      const hasOthers = rows.some((r) => r.name.toLowerCase().includes('other'));
+
+      if (!hasFittings) {
+        const id = uuidv4();
+        await db.runAsync(
+          `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
+           VALUES (?, ?, ?, 'Pipe Fittings', 'Pipe Fittings section', 2, 1, ?, ?);`,
+          [id, storeId, categoryId, now, now]
+        );
+      }
+      if (!hasOthers) {
+        const id = uuidv4();
+        await db.runAsync(
+          `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
+           VALUES (?, ?, ?, 'Others', 'Other accessories section', 3, 1, ?, ?);`,
+          [id, storeId, categoryId, now, now]
+        );
+      }
+
+      // Re-query rows
+      rows = await db.getAllAsync<any>(
+        `SELECT * FROM subcategories 
+         WHERE categoryId = ? 
+           AND storeId = ? 
+           AND deletedAt IS NULL 
+           AND LOWER(name) NOT LIKE '%albow%' 
+           AND LOWER(name) NOT LIKE '%elbow%' 
+           AND LOWER(name) NOT LIKE '%angles%'
+         ORDER BY displayOrder ASC, createdAt ASC;`,
+        [categoryId, storeId]
+      );
+    }
 
     if (rows && rows.length > 0) {
       return rows.map((r) => ({
@@ -80,7 +154,6 @@ export class MatrixRepository {
     }
 
     // No subcategories exist yet, auto-create defaults
-    const isPipeCategory = categoryName.toLowerCase().includes('pipe');
     const defaultTabs = isPipeCategory
       ? ['Pipes', 'Pipe Fittings', 'Others']
       : ['General', 'Fittings & Accessories', 'Others'];
@@ -116,9 +189,7 @@ export class MatrixRepository {
     if (isPipeCategory && createdTabs.length > 0) {
       const pipesTab = createdTabs[0];
       await this.seedSketchPipesData(storeId, categoryId, pipesTab.id, deviceId);
-
-      const fittingsTab = createdTabs[1];
-      await this.seedSampleFittingsData(storeId, categoryId, fittingsTab.id, deviceId);
+      // Pipe Fittings and Others start clean so client can add their own items
     }
 
     return createdTabs;
@@ -269,6 +340,25 @@ export class MatrixRepository {
       [new Date().toISOString(), storeId]
     );
 
+    // Clean up any old dummy 'elbow' or 'albow' items from DB
+    await db.runAsync(
+      `UPDATE product_variants SET deletedAt = ? WHERE storeId = ? AND (
+        LOWER(size) LIKE '%albow%' OR 
+        LOWER(size) LIKE '%elbow%' OR 
+        LOWER(name) LIKE '%albow%' OR 
+        LOWER(name) LIKE '%elbow%'
+      );`,
+      [new Date().toISOString(), storeId]
+    );
+
+    await db.runAsync(
+      `UPDATE products SET deletedAt = ? WHERE storeId = ? AND (
+        LOWER(name) LIKE '%albow%' OR 
+        LOWER(name) LIKE '%elbow%'
+      );`,
+      [new Date().toISOString(), storeId]
+    );
+
     const brandSet = new Set<string>();
     const sizeSet = new Set<string>();
     const cells: Record<string, MatrixCellData> = {};
@@ -280,8 +370,19 @@ export class MatrixRepository {
       if (!rawBrand || rawBrand.toLowerCase() === 'general') {
         continue;
       }
+
+      // User requirement: "albow ho v hta do hard coded ha"
+      const rawSize = (v.size || v.name || 'Standard').trim();
+      if (
+        rawSize.toLowerCase().includes('albow') ||
+        rawSize.toLowerCase().includes('elbow') ||
+        (prod?.name && (prod.name.toLowerCase().includes('albow') || prod.name.toLowerCase().includes('elbow')))
+      ) {
+        continue;
+      }
+
       const brand = rawBrand;
-      const size = (v.size || v.name || 'Standard').trim();
+      const size = rawSize;
 
       brandSet.add(brand);
       sizeSet.add(size);
@@ -494,5 +595,22 @@ export class MatrixRepository {
 
     await SyncQueueRepository.enqueue(storeId, deviceId, 'subcategory', id, 'create', record as unknown as Record<string, unknown>);
     return record;
+  }
+
+  /**
+   * Deletes a sub-tab (subcategory) from database
+   */
+  static async deleteSubTab(
+    storeId: string,
+    subcategoryId: string,
+    deviceId: string
+  ): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+    await db.runAsync(
+      `UPDATE subcategories SET deletedAt = ?, active = 0 WHERE id = ? AND storeId = ?;`,
+      [now, subcategoryId, storeId]
+    );
+    await SyncQueueRepository.enqueue(storeId, deviceId, 'subcategory', subcategoryId, 'delete', { deletedAt: now, active: false });
   }
 }

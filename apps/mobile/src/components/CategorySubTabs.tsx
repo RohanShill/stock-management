@@ -18,6 +18,7 @@ interface CategorySubTabsProps {
   activeSubcategoryId: string;
   onSelectSubcategory: (subcatId: string) => void;
   onAddSubTab: (name: string) => Promise<void>;
+  onDeleteSubTab?: (subcatId: string) => Promise<void> | void;
   isDarkMode: boolean;
   activeColors: any;
 }
@@ -27,6 +28,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
   activeSubcategoryId,
   onSelectSubcategory,
   onAddSubTab,
+  onDeleteSubTab,
   isDarkMode,
   activeColors,
 }) => {
@@ -95,6 +97,19 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
               >
                 {sub.name}
               </Text>
+              {onDeleteSubTab && subcategories.length > 1 && (
+                <TouchableOpacity
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={() => onDeleteSubTab(sub.id)}
+                  style={{ marginLeft: 6 }}
+                >
+                  <MaterialCommunityIcons
+                    name="close"
+                    size={12}
+                    color={isActive ? '#FFFFFF' : activeColors.textMuted}
+                  />
+                </TouchableOpacity>
+              )}
             </TouchableOpacity>
           );
         })}
