@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Modal,
   TextInput,
   Alert,
+  PanResponder,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MatrixCellData, MatrixGridData } from '../database/repositories/matrixRepository.js';
@@ -20,12 +21,13 @@ interface ProductMatrixGridProps {
   onAddBrand: (brandName: string) => Promise<void>;
   onAddSize: (sizeName: string) => Promise<void>;
   onDeleteBrand?: (brand: string) => Promise<void> | void;
+  onReorderSizes?: (newSizes: string[]) => Promise<void> | void;
   isDarkMode: boolean;
   activeColors: any;
   emptyLabel?: string;
 }
 
-const ROW_HEADER_WIDTH = 110;
+const ROW_HEADER_WIDTH = 125;
 const COLUMN_WIDTH = 95;
 const CELL_HEIGHT = 56;
 const HEADER_HEIGHT = 48;
@@ -37,11 +39,85 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
   onAddBrand,
   onAddSize,
   onDeleteBrand,
+  onReorderSizes,
   isDarkMode,
   activeColors,
   emptyLabel = 'Pipes',
 }) => {
   const { brands, sizes, cells } = data;
+
+  const [currentSizes, setCurrentSizes] = useState<string[]>(sizes);
+  const [reorderMode, setReorderMode] = useState(false);
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    setCurrentSizes(sizes);
+  }, [sizes]);
+
+  const currentSizesRef = useRef(sizes);
+  currentSizesRef.current = currentSizes;
+
+  const moveSize = (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= currentSizes.length || fromIndex === toIndex) return;
+    const next = [...currentSizes];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    setCurrentSizes(next);
+    if (onReorderSizes) {
+      onReorderSizes(next);
+    }
+  };
+
+  const draggingRef = useRef<{
+    index: number;
+    accumulatedDy: number;
+  }>({ index: -1, accumulatedDy: 0 });
+
+  const createPanResponder = (startIndex: number) =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 3,
+      onPanResponderGrant: () => {
+        setDraggingIndex(startIndex);
+        draggingRef.current = { index: startIndex, accumulatedDy: 0 };
+      },
+      onPanResponderMove: (_, gesture) => {
+        const threshold = CELL_HEIGHT * 0.65;
+        const curIdx = draggingRef.current.index;
+        const relativeDy = gesture.dy - draggingRef.current.accumulatedDy;
+
+        if (relativeDy > threshold && curIdx < currentSizesRef.current.length - 1) {
+          const nextIdx = curIdx + 1;
+          const updated = [...currentSizesRef.current];
+          const [moved] = updated.splice(curIdx, 1);
+          updated.splice(nextIdx, 0, moved);
+          currentSizesRef.current = updated;
+          setCurrentSizes(updated);
+          draggingRef.current.index = nextIdx;
+          draggingRef.current.accumulatedDy += CELL_HEIGHT;
+          setDraggingIndex(nextIdx);
+        } else if (relativeDy < -threshold && curIdx > 0) {
+          const nextIdx = curIdx - 1;
+          const updated = [...currentSizesRef.current];
+          const [moved] = updated.splice(curIdx, 1);
+          updated.splice(nextIdx, 0, moved);
+          currentSizesRef.current = updated;
+          setCurrentSizes(updated);
+          draggingRef.current.index = nextIdx;
+          draggingRef.current.accumulatedDy -= CELL_HEIGHT;
+          setDraggingIndex(nextIdx);
+        }
+      },
+      onPanResponderRelease: () => {
+        setDraggingIndex(null);
+        if (onReorderSizes) {
+          onReorderSizes(currentSizesRef.current);
+        }
+      },
+      onPanResponderTerminate: () => {
+        setDraggingIndex(null);
+      },
+    });
 
   const [addBrandVisible, setAddBrandVisible] = useState(false);
   const [newBrandName, setNewBrandName] = useState('');
@@ -118,14 +194,36 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                 },
               ]}
             >
-              <Text
-                style={[
-                  styles.headerTitle,
-                  { color: activeColors.textPrimary },
-                ]}
-              >
-                Size / Item
-              </Text>
+              <View style={styles.cornerCellInner}>
+                <Text
+                  style={[
+                    styles.headerTitle,
+                    { color: activeColors.textPrimary },
+                  ]}
+                  numberOfLines={1}
+                >
+                  Size / Item
+                </Text>
+                {currentSizes.length > 1 && (
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => setReorderMode((prev) => !prev)}
+                    style={[
+                      styles.reorderToggleBtn,
+                      reorderMode && {
+                        backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.25)' : '#EEF2FF',
+                      },
+                    ]}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <MaterialCommunityIcons
+                      name={reorderMode ? 'check' : 'swap-vertical'}
+                      size={15}
+                      color={reorderMode ? activeColors.primary : activeColors.textMuted}
+                    />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
 
             {/* Brand Columns */}
@@ -206,7 +304,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
           </View>
 
           {/* Table Body (Sizes as Rows) */}
-          {sizes.length === 0 ? (
+          {currentSizes.length === 0 ? (
             <View style={styles.emptyTableBanner}>
               <MaterialCommunityIcons name="table-plus" size={32} color={activeColors.primary} />
               <Text style={[styles.emptyTableTitle, { color: activeColors.textPrimary }]}>
@@ -228,32 +326,101 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
           ) : (
             <ScrollView
               showsVerticalScrollIndicator={false}
+              scrollEnabled={draggingIndex === null}
               style={{ maxHeight: 380 }}
             >
-              {sizes.map((size) => (
-                <View key={size} style={styles.dataRow}>
-                {/* Left Frozen Column: Size Label */}
-                <View
-                  style={[
-                    styles.rowHeaderCell,
-                    {
-                      backgroundColor: isDarkMode
-                        ? activeColors.surfaceElevated
-                        : activeColors.surfaceSubtle,
-                      borderColor: activeColors.border,
-                    },
-                  ]}
-                >
-                  <Text
+              {currentSizes.map((size, index) => {
+                const isDraggingThis = draggingIndex === index;
+                return (
+                  <View
+                    key={size}
                     style={[
-                      styles.rowHeaderText,
-                      { color: activeColors.textPrimary },
+                      styles.dataRow,
+                      isDraggingThis && [
+                        styles.draggingRow,
+                        {
+                          backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
+                          borderColor: activeColors.primary,
+                        },
+                      ],
                     ]}
-                    numberOfLines={2}
                   >
-                    {size}
-                  </Text>
-                </View>
+                    {/* Left Frozen Column: Size Label + Drag Handle */}
+                    <View
+                      style={[
+                        styles.rowHeaderCell,
+                        {
+                          backgroundColor: isDraggingThis
+                            ? (isDarkMode ? '#334155' : '#DBEAFE')
+                            : isDarkMode
+                            ? activeColors.surfaceElevated
+                            : activeColors.surfaceSubtle,
+                          borderColor: isDraggingThis ? activeColors.primary : activeColors.border,
+                        },
+                      ]}
+                    >
+                      <View style={styles.rowHeaderContent}>
+                        {/* Drag Handle Icon with PanResponder */}
+                        <View
+                          {...createPanResponder(index).panHandlers}
+                          style={styles.dragHandle}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <MaterialCommunityIcons
+                            name="drag-vertical"
+                            size={16}
+                            color={isDraggingThis ? activeColors.primary : activeColors.textMuted}
+                          />
+                        </View>
+
+                        <Text
+                          style={[
+                            styles.rowHeaderText,
+                            {
+                              color: isDraggingThis ? activeColors.primary : activeColors.textPrimary,
+                              fontWeight: isDraggingThis ? '700' : '600',
+                              flex: 1,
+                            },
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {size}
+                        </Text>
+
+                        {/* Quick Reorder Arrow Buttons when Reorder Mode is active */}
+                        {reorderMode && (
+                          <View style={styles.reorderArrowsCol}>
+                            <TouchableOpacity
+                              disabled={index === 0}
+                              onPress={() => moveSize(index, index - 1)}
+                              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                              style={[styles.arrowNudgeBtn, index === 0 && { opacity: 0.25 }]}
+                            >
+                              <MaterialCommunityIcons
+                                name="chevron-up"
+                                size={14}
+                                color={activeColors.primary}
+                              />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              disabled={index === currentSizes.length - 1}
+                              onPress={() => moveSize(index, index + 1)}
+                              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                              style={[
+                                styles.arrowNudgeBtn,
+                                index === currentSizes.length - 1 && { opacity: 0.25 },
+                              ]}
+                            >
+                              <MaterialCommunityIcons
+                                name="chevron-down"
+                                size={14}
+                                color={activeColors.primary}
+                              />
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    </View>
 
                 {/* Brand Cells for this Size */}
                 {brands.map((brand) => {
@@ -334,7 +501,8 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                   ]}
                 />
               </View>
-            ))}
+            );
+          })}
 
             {/* Bottom Row: "+ Add Size / Item" Button */}
             <View style={styles.dataRow}>
@@ -677,10 +845,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRightWidth: 1.5,
     borderBottomWidth: 1.5,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
+  },
+  cornerCellInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 4,
+  },
+  reorderToggleBtn: {
+    padding: 4,
+    borderRadius: 6,
   },
   headerTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.2,
   },
@@ -721,12 +900,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRightWidth: 1.5,
     borderBottomWidth: 1,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
+  },
+  rowHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+  },
+  dragHandle: {
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   rowHeaderText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
     textAlign: 'center',
+  },
+  reorderArrowsCol: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 2,
+  },
+  arrowNudgeBtn: {
+    padding: 1,
+  },
+  draggingRow: {
+    zIndex: 999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 8,
   },
   cell: {
     width: COLUMN_WIDTH,

@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Portal, Dialog, Searchbar } from 'react-native-paper';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Category, Subcategory } from '@hardware-store/shared';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
@@ -238,6 +238,53 @@ export default function ProductsScreen() {
   }, []);
 
   /**
+   * Keep screen in sync when switching tabs (e.g. if a section or category was deleted in Settings)
+   */
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      const syncOnFocus = async () => {
+        try {
+          const storeId = store?.id || 'store-1';
+          const freshCats = await ProductRepository.getCategories(storeId);
+          if (!isMounted) return;
+          setCategories(freshCats);
+
+          if (selectedCategoryId) {
+            const cat = freshCats.find((c) => c.id === selectedCategoryId);
+            const currentSubtabs = await MatrixRepository.ensureDefaultSubTabs(
+              storeId,
+              selectedCategoryId,
+              cat?.name || 'Pipes',
+              deviceId
+            );
+            if (!isMounted) return;
+            setSubcategories(currentSubtabs);
+
+            // If active section was deleted in settings, switch to first remaining
+            if (activeSubcategoryId && !currentSubtabs.some((s) => s.id === activeSubcategoryId)) {
+              const nextSub = currentSubtabs[0]?.id || '';
+              setActiveSubcategoryId(nextSub);
+              if (nextSub) {
+                await loadMatrix(selectedCategoryId, nextSub);
+              } else {
+                setMatrixData({ brands: [], sizes: [], cells: {} });
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Focus sync error in products screen:', e);
+        }
+      };
+
+      syncOnFocus();
+      return () => {
+        isMounted = false;
+      };
+    }, [store?.id, selectedCategoryId, activeSubcategoryId, deviceId, loadMatrix])
+  );
+
+  /**
    * Handle sub-tab selection (e.g. switching between Pipes, Pipe Fittings, Others)
    */
   const handleSelectSubTab = async (subcatId: string) => {
@@ -356,6 +403,31 @@ export default function ProductsScreen() {
     } catch (e) {
       console.error('Error adding size:', e);
       showToast('Could not add size', 'error');
+    }
+  };
+
+  /**
+   * Reorder sizes/items via drag or nudge
+   */
+  const handleReorderSizes = async (newSizes: string[]) => {
+    try {
+      setMatrixData((prev) => ({
+        ...prev,
+        sizes: newSizes,
+      }));
+
+      const storeId = store?.id || 'store-1';
+      if (selectedCategoryId && activeSubcategoryId) {
+        await MatrixRepository.saveSizeOrder(
+          storeId,
+          selectedCategoryId,
+          activeSubcategoryId,
+          newSizes
+        );
+      }
+    } catch (e) {
+      console.error('Error saving size order:', e);
+      showToast('Could not save size order', 'error');
     }
   };
 
@@ -712,6 +784,7 @@ export default function ProductsScreen() {
             onAddBrand={handleAddBrand}
             onAddSize={handleAddSize}
             onDeleteBrand={handleDeleteBrand}
+            onReorderSizes={handleReorderSizes}
             isDarkMode={isDarkMode}
             activeColors={activeColors}
             emptyLabel={activeCategory?.name || 'Items'}

@@ -181,13 +181,19 @@ export class MatrixRepository {
       [categoryId, storeId]
     );
 
-    // If it's a Pipe category, make sure 'Pipes', 'Pipe Fittings' and 'Others' exist
-    if (isPipeCategory) {
-      const hasPipes = rows && rows.some((r) => r.name.toLowerCase() === 'pipes');
-      const hasFittings = rows && rows.some((r) => r.name.toLowerCase().includes('fitting'));
-      const hasOthers = rows && rows.some((r) => r.name.toLowerCase().includes('other'));
+    // Query all subcategories that ever existed for this category (active or deleted)
+    const allEverSubcats = await db.getAllAsync<any>(
+      `SELECT LOWER(name) as name, deletedAt FROM subcategories WHERE categoryId = ? AND storeId = ?;`,
+      [categoryId, storeId]
+    );
 
-      if (!hasPipes) {
+    // If it's a Pipe category, make sure default tabs exist ONLY IF they were never created before
+    if (isPipeCategory) {
+      const everHadPipes = allEverSubcats && allEverSubcats.some((r) => r.name === 'pipes');
+      const everHadFittings = allEverSubcats && allEverSubcats.some((r) => r.name.includes('fitting'));
+      const everHadOthers = allEverSubcats && allEverSubcats.some((r) => r.name.includes('other'));
+
+      if (!everHadPipes) {
         const id = uuidv4();
         await db.runAsync(
           `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
@@ -195,7 +201,7 @@ export class MatrixRepository {
           [id, storeId, categoryId, 'Pipes', 'Pipes section', 1, now, now]
         );
       }
-      if (!hasFittings) {
+      if (!everHadFittings) {
         const id = uuidv4();
         await db.runAsync(
           `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
@@ -203,7 +209,7 @@ export class MatrixRepository {
           [id, storeId, categoryId, 'Pipe Fittings', 'Pipe Fittings section', 2, now, now]
         );
       }
-      if (!hasOthers) {
+      if (!everHadOthers) {
         const id = uuidv4();
         await db.runAsync(
           `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
@@ -243,53 +249,57 @@ export class MatrixRepository {
       }));
     }
 
-    // No subcategories exist yet, auto-create defaults specifically for THIS category
-    const defaultTabs = isPipeCategory
-      ? ['Pipes', 'Pipe Fittings', 'Others']
-      : isBathCategory
-      ? ['Bath Fittings', 'Taps & Showers', 'Others']
-      : [categoryName, 'Accessories', 'Others'];
+    // Only auto-create defaults if category has NEVER had any subcategories at all (brand new category)
+    if (!allEverSubcats || allEverSubcats.length === 0) {
+      const defaultTabs = isPipeCategory
+        ? ['Pipes', 'Pipe Fittings', 'Others']
+        : isBathCategory
+        ? ['Bath Fittings', 'Taps & Showers', 'Others']
+        : [categoryName, 'Accessories', 'Others'];
 
-    const createdTabs: Subcategory[] = [];
+      const createdTabs: Subcategory[] = [];
 
-    for (let i = 0; i < defaultTabs.length; i++) {
-      const tabName = defaultTabs[i];
-      const id = uuidv4();
-      const record: Subcategory = {
-        id,
-        storeId,
-        categoryId,
-        name: tabName,
-        description: `${tabName} section under ${categoryName}`,
-        displayOrder: i + 1,
-        active: true,
-        createdAt: now,
-        updatedAt: now,
-      };
+      for (let i = 0; i < defaultTabs.length; i++) {
+        const tabName = defaultTabs[i];
+        const id = uuidv4();
+        const record: Subcategory = {
+          id,
+          storeId,
+          categoryId,
+          name: tabName,
+          description: `${tabName} section under ${categoryName}`,
+          displayOrder: i + 1,
+          active: true,
+          createdAt: now,
+          updatedAt: now,
+        };
 
-      await db.runAsync(
-        `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);`,
-        [id, storeId, categoryId, record.name, record.description ?? null, record.displayOrder, now, now]
-      );
+        await db.runAsync(
+          `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);`,
+          [id, storeId, categoryId, record.name, record.description ?? null, record.displayOrder, now, now]
+        );
 
-      await SyncQueueRepository.enqueue(storeId, deviceId, 'subcategory', id, 'create', record as unknown as Record<string, unknown>);
-      createdTabs.push(record);
-    }
-
-    // Seed sketch items for "Pipes" tab ONLY if the entire category has no products at all yet
-    if (isPipeCategory && createdTabs.length > 0) {
-      const existingProds = await db.getAllAsync<any>(
-        `SELECT id FROM products WHERE categoryId = ? AND storeId = ? AND deletedAt IS NULL;`,
-        [categoryId, storeId]
-      );
-      if (!existingProds || existingProds.length === 0) {
-        const pipesTab = createdTabs[0];
-        await this.seedSketchPipesData(storeId, categoryId, pipesTab.id, deviceId);
+        await SyncQueueRepository.enqueue(storeId, deviceId, 'subcategory', id, 'create', record as unknown as Record<string, unknown>);
+        createdTabs.push(record);
       }
+
+      // Seed sketch items for "Pipes" tab ONLY if the entire category has no products at all yet
+      if (isPipeCategory && createdTabs.length > 0) {
+        const existingProds = await db.getAllAsync<any>(
+          `SELECT id FROM products WHERE categoryId = ? AND storeId = ? AND deletedAt IS NULL;`,
+          [categoryId, storeId]
+        );
+        if (!existingProds || existingProds.length === 0) {
+          const pipesTab = createdTabs[0];
+          await this.seedSketchPipesData(storeId, categoryId, pipesTab.id, deviceId);
+        }
+      }
+
+      return createdTabs;
     }
 
-    return createdTabs;
+    return [];
   }
 
   /**
@@ -539,8 +549,40 @@ export class MatrixRepository {
 
     // Brands preserved in unique array (strictly non-general)
     const brands = Array.from(brandSet).filter((b) => b.toLowerCase() !== 'general');
-    // Sort sizes naturally
-    const sizes = this.sortSizes(Array.from(sizeSet));
+
+    // Check if subcategory has custom sizeOrder
+    let customSizeOrder: string[] | null = null;
+    if (subcategoryId) {
+      try {
+        const subRow = await db.getFirstAsync<{ customValues?: string }>(
+          `SELECT customValues FROM subcategories WHERE id = ? AND storeId = ?;`,
+          [subcategoryId, storeId]
+        );
+        if (subRow?.customValues) {
+          const parsed = JSON.parse(subRow.customValues);
+          if (Array.isArray(parsed?.sizeOrder)) {
+            customSizeOrder = parsed.sizeOrder;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    let sizes: string[];
+    if (customSizeOrder && customSizeOrder.length > 0) {
+      const orderMap = new Map<string, number>();
+      customSizeOrder.forEach((s, idx) => orderMap.set(s.trim().toLowerCase(), idx));
+      const allSizes = Array.from(sizeSet);
+      sizes = allSizes.sort((a, b) => {
+        const idxA = orderMap.has(a.trim().toLowerCase()) ? orderMap.get(a.trim().toLowerCase())! : 999999;
+        const idxB = orderMap.has(b.trim().toLowerCase()) ? orderMap.get(b.trim().toLowerCase())! : 999999;
+        if (idxA !== idxB) return idxA - idxB;
+        return a.localeCompare(b);
+      });
+    } else {
+      sizes = this.sortSizes(Array.from(sizeSet));
+    }
 
     return { brands, sizes, cells };
   }
@@ -777,7 +819,7 @@ export class MatrixRepository {
   }
 
   /**
-   * Deletes a sub-tab (subcategory) from database
+   * Deletes a sub-tab (subcategory) from database and cascades to its products
    */
   static async deleteSubTab(
     storeId: string,
@@ -786,10 +828,50 @@ export class MatrixRepository {
   ): Promise<void> {
     const db = await getDatabase();
     const now = new Date().toISOString();
+    // 1. Soft-delete the subcategory
     await db.runAsync(
       `UPDATE subcategories SET deletedAt = ?, active = 0 WHERE id = ? AND storeId = ?;`,
       [now, subcategoryId, storeId]
     );
+    // 2. Soft-delete all products belonging to this subcategory
+    await db.runAsync(
+      `UPDATE products SET deletedAt = ?, active = 0 WHERE storeId = ? AND subcategoryId = ?;`,
+      [now, storeId, subcategoryId]
+    );
+    // 3. Enqueue sync
     await SyncQueueRepository.enqueue(storeId, deviceId, 'subcategory', subcategoryId, 'delete', { deletedAt: now, active: false });
+  }
+
+  /**
+   * Saves custom size order for a category/subcategory
+   */
+  static async saveSizeOrder(
+    storeId: string,
+    categoryId: string,
+    subcategoryId: string,
+    newSizes: string[]
+  ): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+
+    // 1. Update subcategories customValues with sizeOrder JSON
+    const customJson = JSON.stringify({ sizeOrder: newSizes });
+    await db.runAsync(
+      `UPDATE subcategories SET customValues = ?, updatedAt = ? WHERE id = ? AND storeId = ?;`,
+      [customJson, now, subcategoryId, storeId]
+    );
+
+    // 2. Update displayOrder on product_variants for each size
+    for (let i = 0; i < newSizes.length; i++) {
+      const sizeName = newSizes[i];
+      await db.runAsync(
+        `UPDATE product_variants 
+         SET displayOrder = ?, updatedAt = ?
+         WHERE storeId = ? 
+           AND size = ? 
+           AND productId IN (SELECT id FROM products WHERE categoryId = ? AND subcategoryId = ?);`,
+        [i + 1, now, storeId, sizeName, categoryId, subcategoryId]
+      );
+    }
   }
 }

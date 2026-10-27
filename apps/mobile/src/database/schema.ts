@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS subcategories (
   name TEXT NOT NULL,
   description TEXT,
   displayOrder INTEGER DEFAULT 0,
+  customValues TEXT, -- JSON key-value pairs (e.g. sizeOrder)
   active INTEGER DEFAULT 1,
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL,
@@ -117,6 +118,7 @@ CREATE TABLE IF NOT EXISTS product_variants (
   rackLocation TEXT,
   preferredSupplierId TEXT,
   customValues TEXT, -- JSON key-value pairs
+  displayOrder INTEGER DEFAULT 0,
   active INTEGER DEFAULT 1,
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL,

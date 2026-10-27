@@ -205,4 +205,89 @@ describe('MatrixRepository Utilities', () => {
     expect(data.sizes).not.toContain('4L');
     expect(data.sizes).not.toContain('10L');
   });
+
+  it('does not resurrect an explicitly deleted section in ensureDefaultSubTabs', async () => {
+    const mockDb = {
+      getAllAsync: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('SELECT LOWER(name) as name, deletedAt FROM subcategories')) {
+          // Pipes was active, Others was deleted
+          return Promise.resolve([
+            { name: 'pipes', deletedAt: null },
+            { name: 'others', deletedAt: '2026-10-27T00:00:00Z' },
+          ]);
+        }
+        if (sql.includes('FROM subcategories')) {
+          // Active rows (only Pipes)
+          return Promise.resolve([
+            { id: 'sub-p1', name: 'Pipes', displayOrder: 1, active: 1 },
+          ]);
+        }
+        return Promise.resolve([]);
+      }),
+      runAsync: vi.fn().mockResolvedValue({ changes: 1 }),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+
+    const tabs = await MatrixRepository.ensureDefaultSubTabs('store-1', 'cat-pipes', 'Pipes', 'dev-1');
+    const names = tabs.map((t) => t.name);
+    // Pipes remains, Pipe Fittings was never created so it was added, but Others was deleted so NOT re-created!
+    expect(names).toContain('Pipes');
+    expect(names).not.toContain('Others');
+  });
+
+  it('cascades deleteSubTab to both subcategories and products', async () => {
+    const executedSql: string[] = [];
+    const mockDb = {
+      runAsync: vi.fn().mockImplementation((sql: string) => {
+        executedSql.push(sql);
+        return Promise.resolve({ changes: 1 });
+      }),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+
+    await MatrixRepository.deleteSubTab('store-1', 'sub-123', 'dev-1');
+    expect(executedSql.some((s) => s.includes('UPDATE subcategories SET deletedAt = ?, active = 0'))).toBe(true);
+    expect(executedSql.some((s) => s.includes('UPDATE products SET deletedAt = ?, active = 0'))).toBe(true);
+  });
+
+  it('preserves custom size order in getMatrixData when saved', async () => {
+    const customOrder = ['2"', '1"', '1/2"'];
+    const mockDb = {
+      getAllAsync: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('FROM products')) {
+          return Promise.resolve([
+            { id: 'p1', brand: 'Supreme', name: 'Supreme Pipe' },
+          ]);
+        }
+        if (sql.includes('FROM product_variants')) {
+          return Promise.resolve([
+            { id: 'v1', productId: 'p1', size: '1/2"', currentStock: 10 },
+            { id: 'v2', productId: 'p1', size: '1"', currentStock: 20 },
+            { id: 'v3', productId: 'p1', size: '2"', currentStock: 30 },
+          ]);
+        }
+        return Promise.resolve([]);
+      }),
+      getFirstAsync: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('SELECT customValues FROM subcategories')) {
+          return Promise.resolve({
+            customValues: JSON.stringify({ sizeOrder: customOrder }),
+          });
+        }
+        return Promise.resolve(null);
+      }),
+      runAsync: vi.fn().mockResolvedValue({}),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+
+    const data = await MatrixRepository.getMatrixData('store-1', 'cat-1', 'sub-1');
+    // Expect custom dragged order: 2", then 1", then 1/2"
+    expect(data.sizes).toEqual(['2"', '1"', '1/2"']);
+  });
 });
