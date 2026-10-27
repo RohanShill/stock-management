@@ -647,7 +647,7 @@ export class MatrixRepository {
 
       if (!existingVar) {
         const varId = uuidv4();
-        const sku = `${cleanBrand.toUpperCase().slice(0, 3)}-${cleanSize.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now().toString().slice(-4)}`;
+        const sku = `${cleanBrand.toUpperCase().slice(0, 3)}-${cleanSize.replace(/[^a-zA-Z0-9]/g, '')}-${uuidv4().slice(0, 8).toUpperCase()}`;
         await db.runAsync(
           `INSERT INTO product_variants (id, storeId, productId, name, sku, size, purchasePricePaise, sellingPricePaise, minStockLevel, openingStock, currentStock, active, createdAt, updatedAt)
            VALUES (?, ?, ?, ?, ?, ?, 0, 0, 5, 0, 0, 1, ?, ?);`,
@@ -730,7 +730,7 @@ export class MatrixRepository {
 
       if (!existingVar) {
         const varId = uuidv4();
-        const sku = `${cleanBrand.toUpperCase().slice(0, 3)}-${cleanSize.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now().toString().slice(-4)}`;
+        const sku = `${cleanBrand.toUpperCase().slice(0, 3)}-${cleanSize.replace(/[^a-zA-Z0-9]/g, '')}-${uuidv4().slice(0, 8).toUpperCase()}`;
         await db.runAsync(
           `INSERT INTO product_variants (id, storeId, productId, name, sku, size, purchasePricePaise, sellingPricePaise, minStockLevel, openingStock, currentStock, active, createdAt, updatedAt)
            VALUES (?, ?, ?, ?, ?, ?, 0, 0, 5, 0, 0, 1, ?, ?);`,
