@@ -4,7 +4,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   return {
     ...config,
     name: 'Manju Hardware Store',
-    slug: 'manju-hardware-store',
+    slug: 'manju-store-management',
     version: '1.0.0',
     orientation: 'portrait',
     icon: './assets/icon.png',
