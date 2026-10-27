@@ -25,24 +25,28 @@ export class MatrixRepository {
    */
   static sortSizes(sizes: string[]): string[] {
     const parseSizeValue = (s: string): number => {
-      const clean = s.replace(/"/g, '').trim();
-      // Handle mixed fractions like "1 1/4" or "1-1/2"
-      if (clean.includes(' ') || clean.includes('-')) {
-        const parts = clean.split(/[\s-]+/);
-        const whole = parseFloat(parts[0]) || 0;
-        if (parts[1] && parts[1].includes('/')) {
-          const [num, den] = parts[1].split('/').map(Number);
-          return whole + (den ? num / den : 0);
-        }
-        return whole;
+      const normalized = s.trim().toLowerCase();
+      // Match mixed fraction: e.g. "1 1/2", "2 1/4", "1-1/4"
+      const mixedMatch = normalized.match(/(\d+)\s*[\s-]\s*(\d+)\/(\d+)/);
+      if (mixedMatch) {
+        const whole = parseFloat(mixedMatch[1]) || 0;
+        const num = parseFloat(mixedMatch[2]) || 0;
+        const den = parseFloat(mixedMatch[3]) || 1;
+        return whole + num / den;
       }
-      // Handle simple fractions like "1/2" or "3/4"
-      if (clean.includes('/')) {
-        const [num, den] = clean.split('/').map(Number);
-        return den ? num / den : 0;
+      // Match simple fraction: e.g. "1/2", "3/4"
+      const fracMatch = normalized.match(/(\d+)\/(\d+)/);
+      if (fracMatch) {
+        const num = parseFloat(fracMatch[1]) || 0;
+        const den = parseFloat(fracMatch[2]) || 1;
+        return num / den;
       }
-      const num = parseFloat(clean);
-      return isNaN(num) ? 999999 : num;
+      // Match decimal or integer: e.g. "25mm", "2.5", "10"
+      const numMatch = normalized.match(/(\d+(?:\.\d+)?)/);
+      if (numMatch) {
+        return parseFloat(numMatch[1]);
+      }
+      return 999999;
     };
 
     return [...sizes].sort((a, b) => {

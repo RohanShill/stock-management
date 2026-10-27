@@ -8,6 +8,7 @@ import {
   Modal,
   TextInput,
   Platform,
+  Alert,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Subcategory } from '@hardware-store/shared';
@@ -39,10 +40,15 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
   const themeShadows = getThemeShadows(isDarkMode);
 
   const handleCreate = async () => {
-    if (!newTabName.trim() || submitting) return;
+    const clean = newTabName.trim();
+    if (!clean || submitting) return;
+    if (subcategories.some((s) => s.name.toLowerCase() === clean.toLowerCase())) {
+      Alert.alert('Section Exists', `Section "${clean}" pehle se maujood hai.`);
+      return;
+    }
     try {
       setSubmitting(true);
-      await onAddSubTab(newTabName.trim());
+      await onAddSubTab(clean);
       setNewTabName('');
       setModalVisible(false);
     } catch (e) {

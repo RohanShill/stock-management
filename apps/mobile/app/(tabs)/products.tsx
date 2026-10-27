@@ -91,7 +91,12 @@ export default function ProductsScreen() {
   /**
    * Loads matrix data for the active category & subcategory
    */
-  const loadMatrix = useCallback(async (catId: string, subcatId: string) => {
+  const loadMatrix = useCallback(async (
+    catId: string,
+    subcatId: string,
+    keepSize?: string,
+    keepBrand?: string
+  ) => {
     if (!catId || !subcatId) {
       setLoading(false);
       return;
@@ -102,8 +107,19 @@ export default function ProductsScreen() {
       const data = await MatrixRepository.getMatrixData(storeId, catId, subcatId);
       setMatrixData(data);
 
-      // Auto-select first cell if none selected
-      if (data.sizes.length > 0 && data.brands.length > 0) {
+      const targetSize = keepSize || selectedSize;
+      const targetBrand = keepBrand || selectedBrand;
+      const currentKey = targetSize && targetBrand
+        ? `${targetSize}___${targetBrand.toLowerCase()}`
+        : null;
+
+      // Preserve active cell selection if it exists in the data
+      if (currentKey && data.cells[currentKey] !== undefined) {
+        setSelectedCellKey(currentKey);
+        setSelectedSize(targetSize);
+        setSelectedBrand(targetBrand);
+        setSelectedCell(data.cells[currentKey] || null);
+      } else if (data.sizes.length > 0 && data.brands.length > 0) {
         const firstSize = data.sizes[0];
         const firstBrand = data.brands[0];
         const key = `${firstSize}___${firstBrand.toLowerCase()}`;
@@ -123,7 +139,7 @@ export default function ProductsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [store?.id, showToast]);
+  }, [store?.id, selectedSize, selectedBrand, showToast]);
 
   /**
    * Loads sub-tabs (Pipes, Pipe Fittings, Others) and matrix data for a category
@@ -439,8 +455,27 @@ export default function ProductsScreen() {
         deviceId
       );
 
+      // Save custom price if updated by user
+      if (actionPriceRs && !isNaN(parseFloat(actionPriceRs)) && parseFloat(actionPriceRs) > 0) {
+        const paise = Math.round(parseFloat(actionPriceRs) * 100);
+        const { getDatabase } = await import('../../src/database/db.js');
+        const db = await getDatabase();
+        const now = new Date().toISOString();
+        if (actionModalMode === 'sell') {
+          await db.runAsync(
+            `UPDATE product_variants SET sellingPricePaise = ?, updatedAt = ? WHERE id = ?;`,
+            [paise, now, variantId]
+          );
+        } else {
+          await db.runAsync(
+            `UPDATE product_variants SET purchasePricePaise = ?, updatedAt = ? WHERE id = ?;`,
+            [paise, now, variantId]
+          );
+        }
+      }
+
       setActionModalMode(null);
-      await loadMatrix(selectedCategoryId, activeSubcategoryId);
+      await loadMatrix(selectedCategoryId, activeSubcategoryId, selectedSize, selectedBrand);
       showToast(
         actionModalMode === 'sell'
           ? `Sold ${numQty} pc successfully!`
@@ -489,6 +524,14 @@ export default function ProductsScreen() {
     // Filter matching brands or sizes
     const matchedSizes = matrixData.sizes.filter((s) => s.toLowerCase().includes(query));
     const matchedBrands = matrixData.brands.filter((b) => b.toLowerCase().includes(query));
+
+    if (matchedSizes.length === 0 && matchedBrands.length === 0) {
+      return {
+        brands: matrixData.brands,
+        sizes: [],
+        cells: matrixData.cells,
+      };
+    }
 
     return {
       brands: matchedBrands.length > 0 ? matchedBrands : matrixData.brands,

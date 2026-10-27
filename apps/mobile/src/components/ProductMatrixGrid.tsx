@@ -54,10 +54,15 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
   const themeShadows = getThemeShadows(isDarkMode);
 
   const handleAddBrand = async () => {
-    if (!newBrandName.trim() || submittingBrand) return;
+    const clean = newBrandName.trim();
+    if (!clean || submittingBrand) return;
+    if (brands.some((b) => b.toLowerCase() === clean.toLowerCase())) {
+      Alert.alert('Brand Exists', `Brand "${clean}" pehle se table me maujood hai.`);
+      return;
+    }
     try {
       setSubmittingBrand(true);
-      await onAddBrand(newBrandName.trim());
+      await onAddBrand(clean);
       setNewBrandName('');
       setAddBrandVisible(false);
     } catch (e) {
@@ -68,10 +73,15 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
   };
 
   const handleAddSize = async () => {
-    if (!newSizeName.trim() || submittingSize) return;
+    const clean = newSizeName.trim();
+    if (!clean || submittingSize) return;
+    if (sizes.some((s) => s.toLowerCase() === clean.toLowerCase())) {
+      Alert.alert('Size Exists', `Size "${clean}" pehle se table me maujood hai.`);
+      return;
+    }
     try {
       setSubmittingSize(true);
-      await onAddSize(newSizeName.trim());
+      await onAddSize(clean);
       setNewSizeName('');
       setAddSizeVisible(false);
     } catch (e) {
