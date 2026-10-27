@@ -92,7 +92,10 @@ export default function ProductsScreen() {
    * Loads matrix data for the active category & subcategory
    */
   const loadMatrix = useCallback(async (catId: string, subcatId: string) => {
-    if (!catId || !subcatId) return;
+    if (!catId || !subcatId) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const storeId = store?.id || 'store-1';
@@ -120,18 +123,23 @@ export default function ProductsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [store, showToast]);
+  }, [store?.id, showToast]);
 
   /**
    * Loads sub-tabs (Pipes, Pipe Fittings, Others) and matrix data for a category
    */
-  const switchCategory = useCallback(async (catId: string, preferredSubcatId?: string) => {
+  const switchCategory = useCallback(async (
+    catId: string,
+    catList?: Category[],
+    preferredSubcatId?: string
+  ) => {
     try {
       setLoading(true);
       setSelectedCategoryId(catId);
 
       const storeId = store?.id || 'store-1';
-      const cat = categories.find((c) => c.id === catId);
+      const list = catList || categories;
+      const cat = list.find((c) => c.id === catId);
       const catName = cat?.name || 'Pipes';
 
       // Ensures default sub-tabs (Pipes, Pipe Fittings, Others) exist
@@ -159,46 +167,50 @@ export default function ProductsScreen() {
       console.error('Error switching category:', e);
       setLoading(false);
     }
-  }, [store, categories, deviceId, loadMatrix]);
+  }, [store?.id, categories, deviceId, loadMatrix]);
 
   /**
-   * Initial Data Load: Load Categories
+   * Initial Data Load: Run once on mount
    */
-  const initData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const storeId = store?.id || 'store-1';
-      let cats = await ProductRepository.getCategories(storeId);
-
-      // If no categories exist, create default "Pipes" category
-      if (!cats || cats.length === 0) {
-        const newCat = await ProductRepository.createCategory(
-          { name: 'Pipes', description: 'Pipes, fittings and accessories' },
-          storeId,
-          deviceId
-        );
-        cats = [newCat];
-      }
-
-      setCategories(cats);
-
-      const targetCatId = routerParams.categoryId && cats.some((c) => c.id === routerParams.categoryId)
-        ? routerParams.categoryId
-        : cats[0]?.id || '';
-
-      if (targetCatId) {
-        await switchCategory(targetCatId);
-      }
-    } catch (e) {
-      console.error('Error initializing products screen:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [store, deviceId, routerParams.categoryId, switchCategory]);
-
   useEffect(() => {
-    initData();
-  }, [initData]);
+    let isMounted = true;
+    const init = async () => {
+      try {
+        setLoading(true);
+        const storeId = store?.id || 'store-1';
+        let cats = await ProductRepository.getCategories(storeId);
+
+        // If no categories exist, create default "Pipes" category
+        if (!cats || cats.length === 0) {
+          const newCat = await ProductRepository.createCategory(
+            { name: 'Pipes', description: 'Pipes, fittings and accessories' },
+            storeId,
+            deviceId
+          );
+          cats = [newCat];
+        }
+
+        if (!isMounted) return;
+        setCategories(cats);
+
+        // Prioritize "Pipes" category on launch
+        const pipesCat = cats.find((c) => c.name.toLowerCase().includes('pipe'));
+        const targetCat = pipesCat || cats[0];
+
+        if (targetCat) {
+          await switchCategory(targetCat.id, cats);
+        }
+      } catch (e) {
+        console.error('Error initializing products screen:', e);
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    init();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   /**
    * Handle sub-tab selection (e.g. switching between Pipes, Pipe Fittings, Others)
@@ -585,11 +597,7 @@ export default function ProductsScreen() {
       </View>
 
       {/* 4. Main Matrix Table View */}
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 20 }}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={{ flex: 1 }}>
         {loading ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator size="large" color={activeColors.primary} />
@@ -609,7 +617,7 @@ export default function ProductsScreen() {
             emptyLabel={activeCategory?.name || 'Items'}
           />
         )}
-      </ScrollView>
+      </View>
 
       {/* 5. Bottom Action Bar: [ stock ] (Green) & [ sell ] (Red) */}
       <MatrixActionBar

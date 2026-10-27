@@ -167,13 +167,30 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
           </View>
 
           {/* Table Body (Sizes as Rows) */}
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled={true}
-            style={{ maxHeight: 420 }}
-          >
-            {sizes.map((size) => (
-              <View key={size} style={styles.dataRow}>
+          {sizes.length === 0 ? (
+            <View style={styles.emptyTableBanner}>
+              <MaterialCommunityIcons name="table-plus" size={32} color={activeColors.primary} />
+              <Text style={[styles.emptyTableTitle, { color: activeColors.textPrimary }]}>
+                Koi item nahi mila
+              </Text>
+              <Text style={[styles.emptyTableSubtitle, { color: activeColors.textMuted }]}>
+                Upar "add brands +" ya niche "Add Size +" daba kar start karein
+              </Text>
+              <TouchableOpacity
+                onPress={() => setAddSizeVisible(true)}
+                style={[styles.emptyAddBtn, { backgroundColor: activeColors.primary }]}
+              >
+                <MaterialCommunityIcons name="plus" size={16} color="#FFFFFF" />
+                <Text style={styles.emptyAddBtnText}>Add Size / Item</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={{ maxHeight: 380 }}
+            >
+              {sizes.map((size) => (
+                <View key={size} style={styles.dataRow}>
                 {/* Left Frozen Column: Size Label */}
                 <View
                   style={[
@@ -337,6 +354,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
               />
             </View>
           </ScrollView>
+          )}
         </View>
       </ScrollView>
 
@@ -575,6 +593,37 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.xl,
     borderWidth: 1.5,
     overflow: 'hidden',
+    flex: 1,
+  },
+  emptyTableBanner: {
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 320,
+  },
+  emptyTableTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  emptyTableSubtitle: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  emptyAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: borderRadius.md,
+  },
+  emptyAddBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   headerRow: {
     flexDirection: 'row',
