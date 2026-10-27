@@ -266,6 +266,27 @@ export default function ProductsScreen() {
   };
 
   /**
+   * Delete a Brand Column
+   */
+  const handleDeleteBrand = async (brandName: string) => {
+    try {
+      const storeId = store?.id || 'store-1';
+      await MatrixRepository.deleteBrand(
+        storeId,
+        selectedCategoryId,
+        activeSubcategoryId,
+        brandName,
+        deviceId
+      );
+      await loadMatrix(selectedCategoryId, activeSubcategoryId);
+      showToast(`Brand "${brandName}" removed`, 'info');
+    } catch (e) {
+      console.error('Error removing brand:', e);
+      showToast('Could not remove brand', 'error');
+    }
+  };
+
+  /**
    * Add a Size Row
    */
   const handleAddSize = async (sizeName: string) => {
@@ -612,6 +633,7 @@ export default function ProductsScreen() {
             onSelectCell={handleSelectCell}
             onAddBrand={handleAddBrand}
             onAddSize={handleAddSize}
+            onDeleteBrand={handleDeleteBrand}
             isDarkMode={isDarkMode}
             activeColors={activeColors}
             emptyLabel={activeCategory?.name || 'Items'}

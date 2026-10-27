@@ -18,6 +18,7 @@ interface ProductMatrixGridProps {
   onSelectCell: (cellKey: string, cell: MatrixCellData | null, size: string, brand: string) => void;
   onAddBrand: (brandName: string) => Promise<void>;
   onAddSize: (sizeName: string) => Promise<void>;
+  onDeleteBrand?: (brand: string) => Promise<void> | void;
   isDarkMode: boolean;
   activeColors: any;
   emptyLabel?: string;
@@ -34,6 +35,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
   onSelectCell,
   onAddBrand,
   onAddSize,
+  onDeleteBrand,
   isDarkMode,
   activeColors,
   emptyLabel = 'Pipes',
@@ -138,6 +140,19 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                 >
                   {brand.toLowerCase()}
                 </Text>
+                {onDeleteBrand && (
+                  <TouchableOpacity
+                    onPress={() => onDeleteBrand(brand)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{ position: 'absolute', top: 3, right: 3 }}
+                  >
+                    <MaterialCommunityIcons
+                      name="close"
+                      size={12}
+                      color={activeColors.textMuted}
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
             ))}
 

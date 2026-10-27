@@ -263,13 +263,24 @@ export class MatrixRepository {
     const prodMap = new Map<string, any>();
     productRows.forEach((p) => prodMap.set(p.id, p));
 
+    // Clean up any old 'general' products from DB so they never appear
+    await db.runAsync(
+      `UPDATE products SET deletedAt = ? WHERE storeId = ? AND (LOWER(brand) = 'general' OR brand IS NULL OR TRIM(brand) = '');`,
+      [new Date().toISOString(), storeId]
+    );
+
     const brandSet = new Set<string>();
     const sizeSet = new Set<string>();
     const cells: Record<string, MatrixCellData> = {};
 
     for (const v of variantRows) {
       const prod = prodMap.get(v.productId);
-      const brand = (prod?.brand || 'General').trim();
+      const rawBrand = (prod?.brand || '').trim();
+      // User requirement: "general ho hta do bas jo brand client chahega wo add krega"
+      if (!rawBrand || rawBrand.toLowerCase() === 'general') {
+        continue;
+      }
+      const brand = rawBrand;
       const size = (v.size || v.name || 'Standard').trim();
 
       brandSet.add(brand);
@@ -287,8 +298,8 @@ export class MatrixRepository {
       };
     }
 
-    // Brands preserved in unique array
-    const brands = Array.from(brandSet);
+    // Brands preserved in unique array (strictly non-general)
+    const brands = Array.from(brandSet).filter((b) => b.toLowerCase() !== 'general');
     // Sort sizes naturally
     const sizes = this.sortSizes(Array.from(sizeSet));
 
@@ -363,7 +374,13 @@ export class MatrixRepository {
     const now = new Date().toISOString();
     const cleanSize = sizeName.trim();
 
-    const brandsToApply = existingBrands.length > 0 ? existingBrands : ['General'];
+    const brandsToApply = existingBrands.filter(
+      (b) => b && b.trim().toLowerCase() !== 'general' && b.trim() !== ''
+    );
+
+    if (brandsToApply.length === 0) {
+      return;
+    }
 
     for (const brand of brandsToApply) {
       const cleanBrand = brand.trim();
@@ -399,6 +416,42 @@ export class MatrixRepository {
         );
       }
     }
+  }
+
+  /**
+   * Deletes a brand from matrix
+   */
+  static async deleteBrand(
+    storeId: string,
+    categoryId: string,
+    subcategoryId: string,
+    brandName: string,
+    deviceId: string
+  ): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+    await db.runAsync(
+      `UPDATE products SET deletedAt = ?, active = 0 WHERE storeId = ? AND categoryId = ? AND subcategoryId = ? AND LOWER(brand) = ?;`,
+      [now, storeId, categoryId, subcategoryId, brandName.trim().toLowerCase()]
+    );
+  }
+
+  /**
+   * Deletes a size from matrix
+   */
+  static async deleteSize(
+    storeId: string,
+    categoryId: string,
+    subcategoryId: string,
+    sizeName: string,
+    deviceId: string
+  ): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+    await db.runAsync(
+      `UPDATE product_variants SET deletedAt = ?, active = 0 WHERE storeId = ? AND size = ? AND productId IN (SELECT id FROM products WHERE categoryId = ? AND subcategoryId = ?);`,
+      [now, sizeName.trim(), categoryId, subcategoryId]
+    );
   }
 
   /**
