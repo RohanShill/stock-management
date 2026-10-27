@@ -66,12 +66,12 @@ const RestockItemForm: React.FC<RestockItemFormProps> = React.memo(({
   activeColors,
 }) => {
   const [currentMode, setCurrentMode] = useState<'add' | 'sell'>(mode);
-  const [qty, setQty] = useState('10');
+  const [qty, setQty] = useState('');
   const [note, setNote] = useState('');
 
   useEffect(() => {
     setCurrentMode(mode);
-    setQty('10');
+    setQty('');
     setNote('');
   }, [item, mode]);
 
@@ -114,39 +114,10 @@ const RestockItemForm: React.FC<RestockItemFormProps> = React.memo(({
         </Text>
       </View>
 
-      {/* Presets Chips */}
-      <Text style={[styles.inputLabel, { color: activeColors.textSecondary, marginTop: spacing.md }]}>
-        {currentMode === 'sell' ? 'QUANTITY SOLD' : 'SELECT QUANTITY TO ADD'}
-      </Text>
-      <View style={styles.chipsContainer}>
-        {['5', '10', '20', '50', '100'].map((preset) => (
-          <Chip
-            key={preset}
-            selected={qty === preset}
-            onPress={() => setQty(preset)}
-            style={[
-              styles.qtyChip,
-              qty === preset &&
-                (currentMode === 'sell' ? styles.qtyChipSellActive : styles.qtyChipActive),
-            ]}
-            textStyle={[
-              styles.qtyChipText,
-              qty === preset &&
-                (currentMode === 'sell'
-                  ? styles.qtyChipSellTextActive
-                  : styles.qtyChipTextActive),
-            ]}
-            showSelectedOverlay={false}
-          >
-            {currentMode === 'sell' ? `-${preset}` : `+${preset}`}
-          </Chip>
-        ))}
-      </View>
-
       {/* Custom numeric input */}
-      <View style={{ marginTop: spacing.sm }}>
+      <View style={{ marginTop: spacing.md }}>
         <Text style={[styles.inputLabel, { color: activeColors.textSecondary }]}>
-          QUANTITY ({item.unit.toUpperCase()}) *
+          {currentMode === 'sell' ? 'QUANTITY TO SELL' : 'QUANTITY TO ADD'} ({item.unit.toUpperCase()}) *
         </Text>
         <RNTextInput
           value={qty}
@@ -167,7 +138,7 @@ const RestockItemForm: React.FC<RestockItemFormProps> = React.memo(({
             },
           ]}
           placeholderTextColor={activeColors.textMuted}
-          placeholder="e.g. 10"
+          placeholder="0"
         />
       </View>
 

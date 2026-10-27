@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Subcategory } from '@hardware-store/shared';
+import { useAppStore } from '../store/useAppStore.js';
 import { borderRadius, spacing, getThemeShadows } from '../theme/tokens.js';
 
 interface CategorySubTabsProps {
@@ -39,11 +40,13 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
 
   const themeShadows = getThemeShadows(isDarkMode);
 
+  const { showToast } = useAppStore();
+
   const handleCreate = async () => {
     const clean = newTabName.trim();
     if (!clean || submitting) return;
     if (subcategories.some((s) => s.name.toLowerCase() === clean.toLowerCase())) {
-      Alert.alert('Section Exists', `Section "${clean}" already exists.`);
+      showToast(`Section "${clean}" already exists.`, 'warning');
       return;
     }
     try {
@@ -298,43 +301,49 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: 20,
+    zIndex: 999999,
   },
   modalCard: {
     width: '100%',
-    maxWidth: 400,
-    borderRadius: borderRadius.xl,
-    padding: 20,
+    maxWidth: 380,
+    borderRadius: 24,
+    padding: 24,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 25,
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 18,
   },
   modalIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
   },
   modalSubtitle: {
     fontSize: 12,
     marginTop: 2,
   },
   input: {
-    borderWidth: 1,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderWidth: 1.5,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     fontSize: 15,
     marginBottom: 20,
   },
@@ -344,8 +353,8 @@ const styles = StyleSheet.create({
   },
   btnCancel: {
     flex: 1,
-    paddingVertical: 11,
-    borderRadius: borderRadius.lg,
+    height: 46,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -355,9 +364,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   btnConfirm: {
-    flex: 1.4,
-    paddingVertical: 11,
-    borderRadius: borderRadius.lg,
+    flex: 1.3,
+    height: 46,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -147,34 +147,29 @@ export default function SettingsScreen() {
   };
 
   const handleDeleteSubcategory = (sub: Subcategory) => {
-    Alert.alert(
-      'Delete Section',
-      `Are you sure you want to delete section "${sub.name}"? Items in this section will be removed from the table.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const storeId = store?.id || 'store-1';
-              // Optimistically update UI so the chip disappears instantly
-              setCategorySubcategories((prev) => ({
-                ...prev,
-                [sub.categoryId]: (prev[sub.categoryId] || []).filter((s) => s.id !== sub.id),
-              }));
-              await MatrixRepository.deleteSubTab(storeId, sub.id, deviceId);
-              showToast(`Section "${sub.name}" deleted.`, 'success');
-              await loadData();
-            } catch (err: any) {
-              console.error('Error deleting section:', err);
-              showToast(err?.message || 'Could not delete section.', 'error');
-              await loadData();
-            }
-          },
-        },
-      ]
-    );
+    showConfirm({
+      title: 'Delete Section',
+      message: `Are you sure you want to delete section "${sub.name}"? Items in this section will be removed from the table.`,
+      confirmText: 'Delete',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          const storeId = store?.id || 'store-1';
+          // Optimistically update UI so the chip disappears instantly
+          setCategorySubcategories((prev) => ({
+            ...prev,
+            [sub.categoryId]: (prev[sub.categoryId] || []).filter((s) => s.id !== sub.id),
+          }));
+          await MatrixRepository.deleteSubTab(storeId, sub.id, deviceId);
+          showToast(`Section "${sub.name}" deleted.`, 'success');
+          await loadData();
+        } catch (err: any) {
+          console.error('Error deleting section:', err);
+          showToast(err?.message || 'Could not delete section.', 'error');
+          await loadData();
+        }
+      },
+    });
   };
 
   // Export Stock as PDF

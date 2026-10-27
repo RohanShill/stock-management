@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MatrixCellData, MatrixGridData } from '../database/repositories/matrixRepository.js';
+import { useAppStore } from '../store/useAppStore.js';
 import { borderRadius, getThemeShadows } from '../theme/tokens.js';
 
 interface ProductMatrixGridProps {
@@ -48,7 +49,10 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
 
   const [currentSizes, setCurrentSizes] = useState<string[]>(sizes);
   const [reorderMode, setReorderMode] = useState(false);
+  const [reorderModalVisible, setReorderModalVisible] = useState(false);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+
+  const { showConfirm, showToast } = useAppStore();
 
   useEffect(() => {
     setCurrentSizes(sizes);
@@ -133,7 +137,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
     const clean = newBrandName.trim();
     if (!clean || submittingBrand) return;
     if (brands.some((b) => b.toLowerCase() === clean.toLowerCase())) {
-      Alert.alert('Brand Exists', `Brand "${clean}" is already present in the table.`);
+      showToast(`Brand "${clean}" is already present in the table.`, 'warning');
       return;
     }
     try {
@@ -152,7 +156,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
     const clean = newSizeName.trim();
     if (!clean || submittingSize) return;
     if (sizes.some((s) => s.toLowerCase() === clean.toLowerCase())) {
-      Alert.alert('Size Exists', `Size "${clean}" is already present in the table.`);
+      showToast(`Size "${clean}" is already present in the table.`, 'warning');
       return;
     }
     try {
@@ -207,19 +211,19 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                 {currentSizes.length > 1 && (
                   <TouchableOpacity
                     activeOpacity={0.7}
-                    onPress={() => setReorderMode((prev) => !prev)}
+                    onPress={() => setReorderModalVisible(true)}
                     style={[
                       styles.reorderToggleBtn,
-                      reorderMode && {
+                      {
                         backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.25)' : '#EEF2FF',
                       },
                     ]}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     <MaterialCommunityIcons
-                      name={reorderMode ? 'check' : 'swap-vertical'}
+                      name="swap-vertical"
                       size={15}
-                      color={reorderMode ? activeColors.primary : activeColors.textMuted}
+                      color={activeColors.primary}
                     />
                   </TouchableOpacity>
                 )}
@@ -252,18 +256,13 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                 {onDeleteBrand && (
                   <TouchableOpacity
                     onPress={() => {
-                      Alert.alert(
-                        'Remove Brand Column',
-                        `Are you sure you want to remove the "${brand}" brand column from the table?`,
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Remove',
-                            style: 'destructive',
-                            onPress: () => onDeleteBrand(brand),
-                          },
-                        ]
-                      );
+                      showConfirm({
+                        title: 'Remove Brand Column',
+                        message: `Are you sure you want to remove the "${brand}" brand column from the table?`,
+                        confirmText: 'Remove',
+                        isDestructive: true,
+                        onConfirm: () => onDeleteBrand(brand),
+                      });
                     }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     style={{ position: 'absolute', top: 3, right: 3 }}
@@ -792,6 +791,140 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* Modal: Reorder Sizes */}
+      <Modal
+        visible={reorderModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReorderModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: activeColors.surface,
+                borderColor: activeColors.border,
+              },
+              themeShadows.card,
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <View
+                style={[
+                  styles.modalIconWrap,
+                  { backgroundColor: activeColors.primaryLight },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="swap-vertical"
+                  size={24}
+                  color={activeColors.primary}
+                />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text
+                  style={[
+                    styles.modalTitle,
+                    { color: activeColors.textPrimary },
+                  ]}
+                >
+                  Reorder Sizes / Items
+                </Text>
+                <Text
+                  style={[
+                    styles.modalSubtitle,
+                    { color: activeColors.textMuted },
+                  ]}
+                >
+                  Tap arrows to rearrange items in table
+                </Text>
+              </View>
+            </View>
+
+            <ScrollView style={{ maxHeight: 300, marginBottom: 18 }} showsVerticalScrollIndicator={false}>
+              {currentSizes.map((size, idx) => {
+                const isFirst = idx === 0;
+                const isLast = idx === currentSizes.length - 1;
+                return (
+                  <View
+                    key={size}
+                    style={[
+                      styles.reorderItemRow,
+                      {
+                        backgroundColor: isDarkMode ? activeColors.surfaceElevated : activeColors.surfaceSubtle,
+                        borderColor: activeColors.border,
+                      },
+                    ]}
+                  >
+                    <View style={styles.reorderIdxBadge}>
+                      <Text style={[styles.reorderIdxText, { color: activeColors.textMuted }]}>
+                        #{idx + 1}
+                      </Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.reorderSizeName,
+                        { color: activeColors.textPrimary },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {size}
+                    </Text>
+                    <View style={styles.reorderBtns}>
+                      <TouchableOpacity
+                        disabled={isFirst}
+                        onPress={() => moveSize(idx, idx - 1)}
+                        style={[
+                          styles.reorderActionBtn,
+                          {
+                            backgroundColor: isDarkMode ? '#334155' : '#E2E8F0',
+                            opacity: isFirst ? 0.3 : 1,
+                          },
+                        ]}
+                      >
+                        <MaterialCommunityIcons
+                          name="arrow-up"
+                          size={18}
+                          color={activeColors.textPrimary}
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        disabled={isLast}
+                        onPress={() => moveSize(idx, idx + 1)}
+                        style={[
+                          styles.reorderActionBtn,
+                          {
+                            backgroundColor: isDarkMode ? '#334155' : '#E2E8F0',
+                            opacity: isLast ? 0.3 : 1,
+                          },
+                        ]}
+                      >
+                        <MaterialCommunityIcons
+                          name="arrow-down"
+                          size={18}
+                          color={activeColors.textPrimary}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              onPress={() => setReorderModalVisible(false)}
+              style={[
+                styles.btnDoneReorder,
+                { backgroundColor: activeColors.primary },
+              ]}
+            >
+              <Text style={styles.btnConfirmText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -974,43 +1107,49 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: 20,
+    zIndex: 999999,
   },
   modalCard: {
     width: '100%',
-    maxWidth: 400,
-    borderRadius: borderRadius.xl,
-    padding: 20,
+    maxWidth: 380,
+    borderRadius: 24,
+    padding: 24,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 25,
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 18,
   },
   modalIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
   },
   modalSubtitle: {
     fontSize: 12,
     marginTop: 2,
   },
   input: {
-    borderWidth: 1,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderWidth: 1.5,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     fontSize: 15,
     marginBottom: 20,
   },
@@ -1020,8 +1159,8 @@ const styles = StyleSheet.create({
   },
   btnCancel: {
     flex: 1,
-    paddingVertical: 11,
-    borderRadius: borderRadius.lg,
+    height: 46,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1031,9 +1170,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   btnConfirm: {
-    flex: 1.4,
-    paddingVertical: 11,
-    borderRadius: borderRadius.lg,
+    flex: 1.3,
+    height: 46,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1041,5 +1180,43 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
+  },
+  reorderItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  reorderIdxBadge: {
+    width: 28,
+  },
+  reorderIdxText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  reorderSizeName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  reorderBtns: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  reorderActionBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnDoneReorder: {
+    height: 46,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
