@@ -363,6 +363,15 @@ export class MatrixRepository {
     const sizeSet = new Set<string>();
     const cells: Record<string, MatrixCellData> = {};
 
+    // 1. First collect all existing brands from active products in this section
+    for (const p of productRows) {
+      const rawBrand = (p.brand || '').trim();
+      if (rawBrand && rawBrand.toLowerCase() !== 'general') {
+        brandSet.add(rawBrand);
+      }
+    }
+
+    // 2. Map cells and sizes from active variants
     for (const v of variantRows) {
       const prod = prodMap.get(v.productId);
       const rawBrand = (prod?.brand || '').trim();
@@ -421,6 +430,7 @@ export class MatrixRepository {
     const db = await getDatabase();
     const now = new Date().toISOString();
     const cleanBrand = brandName.trim();
+    if (!cleanBrand || cleanBrand.toLowerCase() === 'general') return;
 
     // Check if product already exists for this brand under this category/subcat
     let prod = await db.getFirstAsync<any>(
@@ -440,9 +450,25 @@ export class MatrixRepository {
       prodId = prod.id;
     }
 
-    // Create variants for all existing sizes with 0 initial stock
-    for (const size of existingSizes) {
+    let sizesToApply = [...existingSizes];
+    // If UI passed empty sizes, check if sizes already exist in this subcategory in DB
+    if (sizesToApply.length === 0) {
+      const dbSizes = await db.getAllAsync<any>(
+        `SELECT DISTINCT pv.size 
+         FROM product_variants pv 
+         JOIN products p ON pv.productId = p.id 
+         WHERE p.storeId = ? AND p.categoryId = ? AND p.subcategoryId = ? AND pv.deletedAt IS NULL AND p.deletedAt IS NULL;`,
+        [storeId, categoryId, subcategoryId]
+      );
+      if (dbSizes && dbSizes.length > 0) {
+        sizesToApply = dbSizes.map((s) => s.size).filter(Boolean);
+      }
+    }
+
+    // Create variants for all sizes with 0 initial stock
+    for (const size of sizesToApply) {
       const cleanSize = size.trim();
+      if (!cleanSize) continue;
       const existingVar = await db.getFirstAsync<any>(
         `SELECT id FROM product_variants WHERE productId = ? AND size = ? AND deletedAt IS NULL;`,
         [prodId, cleanSize]
@@ -474,13 +500,37 @@ export class MatrixRepository {
     const db = await getDatabase();
     const now = new Date().toISOString();
     const cleanSize = sizeName.trim();
+    if (!cleanSize) return;
 
-    const brandsToApply = existingBrands.filter(
+    let brandsToApply = existingBrands.filter(
       (b) => b && b.trim().toLowerCase() !== 'general' && b.trim() !== ''
     );
 
+    // 1. If not passed from UI, check if any brands already exist in this subcategory in DB
     if (brandsToApply.length === 0) {
-      return;
+      const subProds = await db.getAllAsync<any>(
+        `SELECT DISTINCT brand FROM products WHERE storeId = ? AND categoryId = ? AND subcategoryId = ? AND deletedAt IS NULL AND LOWER(brand) != 'general' AND brand IS NOT NULL AND TRIM(brand) != '';`,
+        [storeId, categoryId, subcategoryId]
+      );
+      if (subProds && subProds.length > 0) {
+        brandsToApply = subProds.map((p) => p.brand.trim());
+      }
+    }
+
+    // 2. If still empty, check brands in the parent category (e.g. from Pipes tab like Supreme, AKG, Plast)
+    if (brandsToApply.length === 0) {
+      const catProds = await db.getAllAsync<any>(
+        `SELECT DISTINCT brand FROM products WHERE storeId = ? AND categoryId = ? AND deletedAt IS NULL AND LOWER(brand) != 'general' AND brand IS NOT NULL AND TRIM(brand) != '';`,
+        [storeId, categoryId]
+      );
+      if (catProds && catProds.length > 0) {
+        brandsToApply = catProds.map((p) => p.brand.trim());
+      }
+    }
+
+    // 3. If completely new store with 0 brands anywhere in category, fallback to 'Supreme'
+    if (brandsToApply.length === 0) {
+      brandsToApply = ['Supreme'];
     }
 
     for (const brand of brandsToApply) {

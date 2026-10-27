@@ -615,7 +615,6 @@ export default function ProductsScreen() {
         activeSubcategoryId={activeSubcategoryId}
         onSelectSubcategory={handleSelectSubTab}
         onAddSubTab={handleAddSubTab}
-        onDeleteSubTab={handleDeleteSubTab}
         isDarkMode={isDarkMode}
         activeColors={activeColors}
       />

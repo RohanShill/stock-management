@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Modal,
   TextInput,
+  Alert,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MatrixCellData, MatrixGridData } from '../database/repositories/matrixRepository.js';
@@ -142,7 +143,20 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                 </Text>
                 {onDeleteBrand && (
                   <TouchableOpacity
-                    onPress={() => onDeleteBrand(brand)}
+                    onPress={() => {
+                      Alert.alert(
+                        'Remove Brand Column',
+                        `Kya aap "${brand}" brand column ko table se remove karna chahte hain?`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Remove',
+                            style: 'destructive',
+                            onPress: () => onDeleteBrand(brand),
+                          },
+                        ]
+                      );
+                    }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     style={{ position: 'absolute', top: 3, right: 3 }}
                   >
@@ -186,10 +200,12 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
             <View style={styles.emptyTableBanner}>
               <MaterialCommunityIcons name="table-plus" size={32} color={activeColors.primary} />
               <Text style={[styles.emptyTableTitle, { color: activeColors.textPrimary }]}>
-                Koi item nahi mila
+                {brands.length > 0 ? `Brand "${brands.join(', ')}" added!` : 'Koi item nahi mila'}
               </Text>
               <Text style={[styles.emptyTableSubtitle, { color: activeColors.textMuted }]}>
-                Upar "add brands +" ya niche "Add Size +" daba kar start karein
+                {brands.length > 0
+                  ? 'Ab niche "Add Size +" daba kar sizes add karein'
+                  : 'Upar "add brands +" ya niche "Add Size +" daba kar start karein'}
               </Text>
               <TouchableOpacity
                 onPress={() => setAddSizeVisible(true)}

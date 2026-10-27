@@ -97,19 +97,6 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
               >
                 {sub.name}
               </Text>
-              {onDeleteSubTab && subcategories.length > 1 && (
-                <TouchableOpacity
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  onPress={() => onDeleteSubTab(sub.id)}
-                  style={{ marginLeft: 6 }}
-                >
-                  <MaterialCommunityIcons
-                    name="close"
-                    size={12}
-                    color={isActive ? '#FFFFFF' : activeColors.textMuted}
-                  />
-                </TouchableOpacity>
-              )}
             </TouchableOpacity>
           );
         })}

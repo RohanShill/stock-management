@@ -20,10 +20,11 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Category } from '@hardware-store/shared';
+import { Category, Subcategory } from '@hardware-store/shared';
 import { useAppStore } from '../../src/store/useAppStore.js';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
 import { CategoryRepository } from '../../src/database/repositories/categoryRepository.js';
+import { MatrixRepository } from '../../src/database/repositories/matrixRepository.js';
 import { lightColors, darkColors, spacing, borderRadius, shadows } from '../../src/theme/tokens.js';
 
 export default function SettingsScreen() {
@@ -39,6 +40,7 @@ export default function SettingsScreen() {
   const activeColors = isDarkMode ? darkColors : lightColors;
 
   const [categories, setCategories] = useState<Category[]>([]);
+  const [categorySubcategories, setCategorySubcategories] = useState<Record<string, Subcategory[]>>({});
   const [loading, setLoading] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
 
@@ -53,6 +55,18 @@ export default function SettingsScreen() {
       const storeId = store?.id || 'store-1';
       const cats = await ProductRepository.getCategories(storeId);
       setCategories(cats);
+
+      const subcatMap: Record<string, Subcategory[]> = {};
+      for (const cat of cats) {
+        const subs = await ProductRepository.getSubcategories(cat.id, storeId);
+        subcatMap[cat.id] = (subs || []).filter(
+          (s) =>
+            !s.name.toLowerCase().includes('elbow') &&
+            !s.name.toLowerCase().includes('albow') &&
+            !s.name.toLowerCase().includes('angle')
+        );
+      }
+      setCategorySubcategories(subcatMap);
     } catch (err) {
       console.error('Error loading settings categories:', err);
     } finally {
@@ -126,6 +140,25 @@ export default function SettingsScreen() {
           await loadData();
         } catch (err) {
           showToast('Could not delete category.', 'error');
+        }
+      },
+    });
+  };
+
+  const handleDeleteSubcategory = (sub: Subcategory) => {
+    showConfirm({
+      title: 'Delete Section',
+      message: `Kya aap section "${sub.name}" ko delete karna chahte hain? Is section ke items table se hat jayenge.`,
+      confirmText: 'Delete',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          const storeId = store?.id || 'store-1';
+          await MatrixRepository.deleteSubTab(storeId, sub.id, deviceId);
+          showToast(`Section "${sub.name}" deleted.`, 'success');
+          await loadData();
+        } catch (err) {
+          showToast('Could not delete section.', 'error');
         }
       },
     });
@@ -611,6 +644,45 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               </View>
             </View>
+
+            {/* Sub-tabs / Sections under this Category */}
+            {categorySubcategories[cat.id] && categorySubcategories[cat.id].length > 0 && (
+              <View style={styles.subcatsContainer}>
+                <Text style={[styles.subcatsLabel, { color: activeColors.textMuted }]}>
+                  Sections / Tabs:
+                </Text>
+                <View style={styles.subcatsChipsRow}>
+                  {categorySubcategories[cat.id].map((sub) => (
+                    <View
+                      key={sub.id}
+                      style={[
+                        styles.subcatChip,
+                        {
+                          backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#F8FAFC',
+                          borderColor: activeColors.border,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.subcatChipText, { color: activeColors.textPrimary }]}>
+                        {sub.name}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => handleDeleteSubcategory(sub)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={styles.subcatDeleteBtn}
+                      >
+                        <MaterialCommunityIcons
+                          name="trash-can-outline"
+                          size={14}
+                          color="#EF4444"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
             {idx !== categories.length - 1 && (
               <Divider
                 style={[
@@ -967,5 +1039,38 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  subcatsContainer: {
+    paddingLeft: spacing.lg + 28,
+    paddingRight: spacing.md,
+    paddingBottom: spacing.sm,
+    gap: 6,
+  },
+  subcatsLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  subcatsChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  subcatChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    gap: 6,
+  },
+  subcatChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  subcatDeleteBtn: {
+    padding: 2,
   },
 });
