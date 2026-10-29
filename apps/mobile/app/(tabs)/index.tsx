@@ -138,7 +138,7 @@ const RestockItemForm: React.FC<RestockItemFormProps> = React.memo(({
             },
           ]}
           placeholderTextColor={activeColors.textMuted}
-          placeholder="0"
+          placeholder="Enter quantity"
         />
       </View>
 
@@ -262,6 +262,7 @@ export default function HomeScreen() {
   const [restockMode, setRestockMode] = useState<'add' | 'sell'>('add');
   const [selectedRestockItem, setSelectedRestockItem] = useState<RestockItem | null>(null);
   const [itemSearchQuery, setItemSearchQuery] = useState('');
+  const [homeSearchQuery, setHomeSearchQuery] = useState('');
   const [updatingStock, setUpdatingStock] = useState(false);
   const [stockSuccess, setStockSuccess] = useState<StockSuccessInfo | null>(null);
 
@@ -435,21 +436,30 @@ export default function HomeScreen() {
     }
   };
 
-  const formattedDate = new Intl.DateTimeFormat('en-IN', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date());
+  const handleOpenActionForItem = (item: RestockItem, mode: 'add' | 'sell') => {
+    setSelectedRestockItem(item);
+    setRestockMode(mode);
+    setRestockModalVisible(true);
+  };
 
-  const filteredItemsForSearch = itemSearchQuery.trim()
-    ? allSelectableItems.filter(
-        (i) =>
-          i.productName.toLowerCase().includes(itemSearchQuery.toLowerCase()) ||
-          (i.brand && i.brand.toLowerCase().includes(itemSearchQuery.toLowerCase())) ||
-          i.variantName.toLowerCase().includes(itemSearchQuery.toLowerCase())
-      )
-    : allSelectableItems.slice(0, 10);
+  const homeSearchResults = React.useMemo(() => {
+    const query = homeSearchQuery.trim().toLowerCase();
+    if (!query) return [];
+    const terms = query.split(/\s+/).filter(Boolean);
+    return allSelectableItems.filter((item) => {
+      const searchTarget = `${item.productName} ${item.variantName} ${item.brand || ''} ${item.categoryName || ''} ${item.rackLocation || ''}`.toLowerCase();
+      return terms.every((term) => searchTarget.includes(term));
+    });
+  }, [allSelectableItems, homeSearchQuery]);
+
+  const filteredItemsForSearch = React.useMemo(() => {
+    if (!itemSearchQuery.trim()) return allSelectableItems.slice(0, 15);
+    const terms = itemSearchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return allSelectableItems.filter((i) => {
+      const target = `${i.productName} ${i.variantName} ${i.brand || ''} ${i.categoryName || ''}`.toLowerCase();
+      return terms.every((t) => target.includes(t));
+    });
+  }, [allSelectableItems, itemSearchQuery]);
 
   return (
     <ScrollView
@@ -462,7 +472,7 @@ export default function HomeScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={activeColors.primary} />
       }
     >
-      {/* 1. Clean Welcome Header with Official Store Logo */}
+      {/* 1. Clean Header with Store Logo & Instant Search Bar */}
       <Surface
         style={[
           styles.headerCard,
@@ -472,7 +482,7 @@ export default function HomeScreen() {
           },
         ]}
       >
-        <View style={styles.headerLeftContainer}>
+        <View style={styles.headerTopRow}>
           <View
             style={[
               styles.logoWrapper,
@@ -495,15 +505,206 @@ export default function HomeScreen() {
             >
               Manju Hardware Store
             </Text>
-            <View style={styles.headerDateRow}>
-              <View style={styles.onlineDot} />
-              <Text style={[styles.headerDate, { color: activeColors.textSecondary }]}>
-                {formattedDate}
-              </Text>
-            </View>
+            <Text
+              style={[styles.storeSubtitle, { color: activeColors.textSecondary }]}
+              numberOfLines={1}
+            >
+              Stock In & Sell System
+            </Text>
+          </View>
+        </View>
+
+        {/* Search Bar directly under Store Name */}
+        <View style={styles.headerSearchWrap}>
+          <View
+            style={[
+              styles.headerSearchBox,
+              {
+                backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9',
+                borderColor: isDarkMode ? '#334155' : '#E2E8F0',
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="magnify"
+              size={20}
+              color={activeColors.primary}
+              style={styles.searchIcon}
+            />
+            <RNTextInput
+              value={homeSearchQuery}
+              onChangeText={setHomeSearchQuery}
+              placeholder="Search product, size or brand to stock/sell..."
+              placeholderTextColor={activeColors.textMuted}
+              style={[styles.headerSearchInput, { color: activeColors.textPrimary }]}
+              autoCorrect={false}
+              autoCapitalize="none"
+              returnKeyType="search"
+            />
+            {homeSearchQuery.trim().length > 0 && (
+              <TouchableOpacity
+                onPress={() => setHomeSearchQuery('')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={styles.searchClearBtn}
+              >
+                <MaterialCommunityIcons
+                  name="close-circle"
+                  size={18}
+                  color={activeColors.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Surface>
+
+      {/* When searching, show Instant Search Results with Stock/Sell actions */}
+      {homeSearchQuery.trim().length > 0 ? (
+        <View style={styles.searchResultsContainer}>
+          <View style={styles.searchResultsHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <MaterialCommunityIcons name="magnify" size={18} color={activeColors.primary} />
+              <Text style={[styles.searchResultsTitle, { color: activeColors.textPrimary }]}>
+                Search Results ({homeSearchResults.length})
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setHomeSearchQuery('')}
+              style={styles.clearSearchBtn}
+            >
+              <Text style={[styles.clearSearchText, { color: activeColors.primary }]}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+
+          {homeSearchResults.length === 0 ? (
+            <Surface
+              style={[
+                styles.emptySearchCard,
+                {
+                  backgroundColor: activeColors.surface,
+                  borderColor: activeColors.border,
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="cube-off-outline"
+                size={44}
+                color={activeColors.textMuted}
+              />
+              <Text style={[styles.emptySearchTitle, { color: activeColors.textPrimary }]}>
+                No matching products found
+              </Text>
+              <Text style={[styles.emptySearchSub, { color: activeColors.textSecondary }]}>
+                No items matched "{homeSearchQuery}". Try searching by size (e.g. 1/2) or brand (e.g. AKG).
+              </Text>
+              <TouchableOpacity
+                onPress={() => setHomeSearchQuery('')}
+                style={[styles.emptyClearBtn, { backgroundColor: activeColors.primary }]}
+              >
+                <Text style={styles.emptyClearBtnText}>Clear Search</Text>
+              </TouchableOpacity>
+            </Surface>
+          ) : (
+            <View style={styles.searchList}>
+              {homeSearchResults.map((item) => (
+                <Surface
+                  key={item.variantId}
+                  style={[
+                    styles.searchItemCard,
+                    {
+                      backgroundColor: activeColors.surface,
+                      borderColor: activeColors.border,
+                    },
+                  ]}
+                >
+                  <View style={styles.searchItemHeaderRow}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text
+                        style={[styles.searchItemName, { color: activeColors.textPrimary }]}
+                        numberOfLines={1}
+                      >
+                        {item.productName}
+                      </Text>
+                      <View style={styles.searchItemMetaRow}>
+                        <View style={[styles.searchSizeBadge, { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' }]}>
+                          <Text style={[styles.searchSizeText, { color: activeColors.textPrimary }]}>
+                            {item.variantName}
+                          </Text>
+                        </View>
+                        {item.brand ? (
+                          <View style={[styles.searchBrandBadge, { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' }]}>
+                            <Text style={[styles.searchBrandText, { color: activeColors.textSecondary }]}>
+                              {item.brand}
+                            </Text>
+                          </View>
+                        ) : null}
+                        {item.categoryName ? (
+                          <Text style={[styles.searchCategoryText, { color: activeColors.textMuted }]}>
+                            • {item.categoryName}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.searchStockPill,
+                        item.currentStock <= 0
+                          ? styles.stockPillOut
+                          : item.currentStock <= item.minStockLevel
+                          ? styles.stockPillLow
+                          : styles.stockPillOk,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.searchStockPillText,
+                          item.currentStock <= 0
+                            ? styles.stockTextOut
+                            : item.currentStock <= item.minStockLevel
+                            ? styles.stockTextLow
+                            : styles.stockTextOk,
+                        ]}
+                      >
+                        {item.currentStock <= 0 ? 'Out of Stock' : `${item.currentStock} ${item.unit}`}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.searchActionsRow}>
+                    {item.rackLocation ? (
+                      <Text style={[styles.searchRackText, { color: activeColors.textMuted }]}>
+                        📍 {item.rackLocation}
+                      </Text>
+                    ) : <View />}
+
+                    <View style={styles.searchButtonsWrap}>
+                      <TouchableOpacity
+                        style={styles.actionStockInBtn}
+                        onPress={() => handleOpenActionForItem(item, 'add')}
+                        activeOpacity={0.8}
+                      >
+                        <MaterialCommunityIcons name="plus" size={15} color="#FFFFFF" />
+                        <Text style={styles.actionBtnLabel}>+ Stock</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.actionSellBtn}
+                        onPress={() => handleOpenActionForItem(item, 'sell')}
+                        activeOpacity={0.8}
+                      >
+                        <MaterialCommunityIcons name="cart-outline" size={15} color="#FFFFFF" />
+                        <Text style={styles.actionBtnLabel}>Sell</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </Surface>
+              ))}
+            </View>
+          )}
+        </View>
+      ) : (
+        <>
 
       {/* 2. Quick Actions (3 Action Buttons) */}
       <View style={styles.quickActionsRow}>
@@ -817,6 +1018,8 @@ export default function HomeScreen() {
           </Text>
         </Surface>
       )}
+      </>
+      )}
 
       {/* Quick Add Stock Dialog */}
       <Portal>
@@ -970,39 +1173,30 @@ const styles = StyleSheet.create({
   // 1. Header Card
   headerCard: {
     borderRadius: borderRadius.xl,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    padding: 16,
     borderWidth: 1,
     ...shadows.card,
   },
-  headerLeftContainer: {
+  headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    flex: 1,
+    gap: 12,
   },
   logoWrapper: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
+    width: 48,
+    height: 48,
+    borderRadius: 12,
     borderWidth: 1,
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
   logoImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 10,
+    borderRadius: 8,
   },
   headerTextCol: {
     flex: 1,
@@ -1012,21 +1206,201 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.3,
   },
-  headerDateRow: {
+  storeSubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  headerSearchWrap: {
+    marginTop: 12,
+  },
+  headerSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    height: 46,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  headerSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    paddingVertical: 0,
+  },
+  searchClearBtn: {
+    padding: 4,
+  },
+
+  // Search Results
+  searchResultsContainer: {
+    marginTop: spacing.lg,
+  },
+  searchResultsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  searchResultsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  clearSearchBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  clearSearchText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  searchList: {
+    gap: spacing.sm,
+  },
+  searchItemCard: {
+    borderRadius: borderRadius.lg,
+    padding: 14,
+    borderWidth: 1,
+    ...shadows.card,
+  },
+  searchItemHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  searchItemName: {
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  searchItemMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 2,
+    marginTop: 5,
+    flexWrap: 'wrap',
   },
-  onlineDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#10B981',
+  searchSizeBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
-  headerDate: {
-    fontSize: 13,
+  searchSizeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  searchBrandBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  searchBrandText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  searchCategoryText: {
+    fontSize: 12,
     fontWeight: '500',
+  },
+  searchStockPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  searchStockPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  stockPillOk: {
+    backgroundColor: '#DCFCE7',
+  },
+  stockTextOk: {
+    color: '#16A34A',
+  },
+  stockPillLow: {
+    backgroundColor: '#FEF3C7',
+  },
+  stockTextLow: {
+    color: '#D97706',
+  },
+  stockPillOut: {
+    backgroundColor: '#FEE2E2',
+  },
+  stockTextOut: {
+    color: '#DC2626',
+  },
+  searchActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(150, 150, 150, 0.1)',
+  },
+  searchRackText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  searchButtonsWrap: {
+    flexDirection: 'row',
+    gap: 8,
+    marginLeft: 'auto',
+  },
+  actionStockInBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#059669',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: borderRadius.md,
+  },
+  actionSellBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: borderRadius.md,
+  },
+  actionBtnLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  emptySearchCard: {
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    alignItems: 'center',
+    borderWidth: 1,
+    ...shadows.card,
+    marginTop: spacing.sm,
+  },
+  emptySearchTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: spacing.md,
+  },
+  emptySearchSub: {
+    fontSize: 13,
+    marginTop: 6,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
+  },
+  emptyClearBtn: {
+    marginTop: spacing.lg,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: borderRadius.md,
+  },
+  emptyClearBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
 
   // 2. Quick Action Buttons (Optimized for Mobile Screens)
