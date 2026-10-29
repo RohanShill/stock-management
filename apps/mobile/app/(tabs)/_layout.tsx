@@ -58,7 +58,7 @@ export default function TabLayout() {
             <MaterialCommunityIcons
               name={focused ? 'home' : 'home-outline'}
               size={focused ? 26 : 24}
-              color={color}
+              color={typeof color === 'string' ? color : undefined}
             />
           ),
         }}
@@ -72,7 +72,7 @@ export default function TabLayout() {
             <MaterialCommunityIcons
               name={focused ? 'package-variant' : 'package-variant-closed'}
               size={focused ? 26 : 24}
-              color={color}
+              color={typeof color === 'string' ? color : undefined}
             />
           ),
         }}
@@ -102,7 +102,7 @@ export default function TabLayout() {
             <MaterialCommunityIcons
               name={focused ? 'history' : 'history'}
               size={focused ? 26 : 24}
-              color={color}
+              color={typeof color === 'string' ? color : undefined}
             />
           ),
         }}
@@ -116,7 +116,7 @@ export default function TabLayout() {
             <MaterialCommunityIcons
               name={focused ? 'cog' : 'cog-outline'}
               size={focused ? 26 : 24}
-              color={color}
+              color={typeof color === 'string' ? color : undefined}
             />
           ),
         }}

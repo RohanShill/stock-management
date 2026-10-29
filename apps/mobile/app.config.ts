@@ -10,12 +10,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     icon: './assets/icon.png',
     userInterfaceStyle: 'automatic',
     scheme: 'manjuhardware',
-    newArchEnabled: true,
-    splash: {
-      image: './assets/splash.png',
-      resizeMode: 'contain',
-      backgroundColor: '#1E293B',
-    },
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.manjuhardware.store',

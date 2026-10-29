@@ -70,7 +70,9 @@ export function DemoBanner({ onResetComplete }: DemoBannerProps) {
         visible={confirmVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => !resetting && setConfirmVisible(false)}
+        onRequestClose={() => {
+          if (!resetting) setConfirmVisible(false);
+        }}
       >
         <View style={styles.modalOverlay}>
           <Surface style={styles.modalContent} elevation={5}>
