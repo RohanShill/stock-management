@@ -167,7 +167,7 @@ const HistoryCard = React.memo<HistoryCardProps>(({ item, isDarkMode, activeColo
         </View>
 
         <View style={styles.timeRow}>
-          <MaterialCommunityIcons name="clock-outline" size={12} color={activeColors.textMuted} />
+          <MaterialCommunityIcons name="calendar-outline" size={12} color={activeColors.textMuted} />
           <Text style={[styles.timeText, { color: activeColors.textMuted }]}>
             {formatTimestamp(item.createdAt)}
           </Text>
@@ -502,40 +502,12 @@ export default function HistoryScreen() {
   const formatTimestamp = useCallback((isoDate: string) => {
     try {
       const d = new Date(isoDate);
-      const now = new Date();
-      const isToday =
-        d.getDate() === now.getDate() &&
-        d.getMonth() === now.getMonth() &&
-        d.getFullYear() === now.getFullYear();
-
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const isYesterday =
-        d.getDate() === yesterday.getDate() &&
-        d.getMonth() === yesterday.getMonth() &&
-        d.getFullYear() === yesterday.getFullYear();
-
-      const timeStr = d.toLocaleTimeString('en-IN', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      });
-
-      if (isToday) {
-        return `Today, ${timeStr}`;
-      }
-      if (isYesterday) {
-        return `Yesterday, ${timeStr}`;
-      }
-
-      const isCurrentYear = d.getFullYear() === now.getFullYear();
-      const dateStr = d.toLocaleDateString('en-IN', {
+      if (isNaN(d.getTime())) return isoDate;
+      return d.toLocaleDateString('en-IN', {
         day: 'numeric',
         month: 'short',
-        ...(isCurrentYear ? {} : { year: 'numeric' }),
+        year: 'numeric',
       });
-
-      return `${dateStr}, ${timeStr}`;
     } catch {
       return isoDate;
     }
