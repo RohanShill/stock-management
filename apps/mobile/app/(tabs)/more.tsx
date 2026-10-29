@@ -241,7 +241,7 @@ export default function SettingsScreen() {
         <html>
         <head>
           <meta charset="utf-8">
-          <title>Manju Hardware Store - Stock Inventory Report</title>
+          <title>MANJU STORES - Stock Inventory Report</title>
           <style>
             @page { size: A4; margin: 15mm; }
             * { box-sizing: border-box; }
@@ -360,7 +360,7 @@ export default function SettingsScreen() {
         <body>
           <div class="header">
             <div>
-              <h1 class="store-name">Manju Hardware Store</h1>
+              <h1 class="store-name">MANJU STORES</h1>
               <p class="store-sub">Complete Stock Inventory & Catalogue Report</p>
             </div>
             <div class="report-meta">
@@ -406,7 +406,7 @@ export default function SettingsScreen() {
           </table>
 
           <div class="footer">
-            Manju Hardware Store • Official Stock Record • Offline Database
+            MANJU STORES • Official Stock Record • Offline Database
           </div>
         </body>
         </html>
@@ -549,7 +549,7 @@ export default function SettingsScreen() {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.headerTitle, { color: activeColors.textPrimary }]}>
-            Manju Hardware Store
+            MANJU STORES
           </Text>
           <Text style={[styles.headerSub, { color: activeColors.textSecondary }]}>
             Store Settings & Operations
@@ -841,7 +841,7 @@ export default function SettingsScreen() {
         ]}
       >
         <Text style={[styles.aboutTitle, { color: activeColors.textPrimary }]}>
-          Manju Hardware Store Management
+          MANJU STORES
         </Text>
         <Text style={[styles.aboutVersion, { color: activeColors.textSecondary }]}>
           Version 1.0.0

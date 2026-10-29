@@ -109,7 +109,7 @@ class WebSQLiteStore {
           }
 
           if (this.tables.stores[0]) {
-            this.tables.stores[0].name = 'Manju Hardware Store';
+            this.tables.stores[0].name = 'MANJU STORES';
             this.tables.stores[0].email = 'store@manjustore.in';
           }
 
@@ -227,7 +227,7 @@ class WebSQLiteStore {
     if (this.tables.stores.length === 0) {
       this.tables.stores.push({
         id: 'store-1',
-        name: 'Manju Store Management',
+        name: 'MANJU STORES',
         ownerName: 'Manju Devi',
         phone: '9876543210',
         email: 'store@manjustore.in',

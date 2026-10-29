@@ -649,7 +649,7 @@ export default function ProductsScreen() {
               ]}
               numberOfLines={1}
             >
-              Manju Hardware Store
+              MANJU STORES
             </Text>
           </View>
 

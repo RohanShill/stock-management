@@ -503,13 +503,7 @@ export default function HomeScreen() {
               style={[styles.storeName, { color: activeColors.textPrimary }]}
               numberOfLines={1}
             >
-              Manju Hardware Store
-            </Text>
-            <Text
-              style={[styles.storeSubtitle, { color: activeColors.textSecondary }]}
-              numberOfLines={1}
-            >
-              Stock In & Sell System
+              MANJU STORES
             </Text>
           </View>
         </View>
@@ -1200,16 +1194,12 @@ const styles = StyleSheet.create({
   },
   headerTextCol: {
     flex: 1,
+    justifyContent: 'center',
   },
   storeName: {
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: -0.3,
-  },
-  storeSubtitle: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: 2,
   },
   headerSearchWrap: {
     marginTop: 12,

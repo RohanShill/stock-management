@@ -63,7 +63,7 @@ export default function LoginScreen() {
           </View>
         </View>
         <Card.Title
-          title="Manju Hardware Store"
+          title="MANJU STORES"
           subtitle="Stock Management & Billing"
           titleStyle={styles.title}
           subtitleStyle={styles.subtitle}

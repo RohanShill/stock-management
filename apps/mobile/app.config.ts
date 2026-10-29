@@ -3,7 +3,7 @@ import { ExpoConfig, ConfigContext } from 'expo/config';
 export default ({ config }: ConfigContext): ExpoConfig => {
   return {
     ...config,
-    name: 'Manju Hardware Store',
+    name: 'MANJU STORES',
     slug: 'manju-store-management',
     version: '1.0.0',
     orientation: 'portrait',
