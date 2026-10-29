@@ -20,6 +20,11 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
     "UPDATE products SET baseUnit = 'l' WHERE baseUnit = 'liter';",
     "UPDATE products SET baseUnit = 'piece' WHERE baseUnit = 'pcs';",
     "CREATE INDEX IF NOT EXISTS idx_movements_store_created ON stock_movements(storeId, createdAt DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_variants_product ON product_variants(productId, deletedAt, active);",
+    "CREATE INDEX IF NOT EXISTS idx_variants_store ON product_variants(storeId, deletedAt, active);",
+    "CREATE INDEX IF NOT EXISTS idx_variants_size ON product_variants(productId, size);",
+    "CREATE INDEX IF NOT EXISTS idx_products_brand ON products(storeId, categoryId, subcategoryId, brand);",
+    "CREATE INDEX IF NOT EXISTS idx_products_deleted ON products(storeId, deletedAt, active);",
   ];
 
   for (const query of safeAlterQueries) {
@@ -95,9 +100,12 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   const dbFileName = 'manju_hardware_store.db';
   dbInstance = await SQLite.openDatabaseAsync(dbFileName);
 
-  // Enable WAL mode and foreign keys for high performance and integrity
+  // Enable WAL mode, fast synchronous writes, in-memory temp tables, and page cache
   await dbInstance.execAsync('PRAGMA journal_mode = WAL;');
   await dbInstance.execAsync('PRAGMA foreign_keys = ON;');
+  await dbInstance.execAsync('PRAGMA synchronous = NORMAL;');
+  await dbInstance.execAsync('PRAGMA cache_size = -64000;');
+  await dbInstance.execAsync('PRAGMA temp_store = MEMORY;');
 
   // Run initial schema migration
   await dbInstance.execAsync(SQL_CREATE_TABLES);

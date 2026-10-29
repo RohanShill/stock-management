@@ -73,93 +73,7 @@ export class MatrixRepository {
     const isPipeCategory = categoryName.toLowerCase().includes('pipe');
     const isBathCategory = categoryName.toLowerCase().includes('bath');
 
-    // 1. Store-wide cleanup of old dummy paint demo subcategories
-    await db.runAsync(
-      `UPDATE subcategories SET deletedAt = ?, active = 0 WHERE storeId = ? AND (
-        LOWER(name) LIKE '%albow%' OR 
-        LOWER(name) LIKE '%elbow%' OR 
-        LOWER(name) LIKE '%angles%' OR
-        LOWER(name) LIKE '%emulsion%' OR
-        LOWER(name) LIKE '%distemper%' OR
-        LOWER(name) LIKE '%primer%' OR
-        LOWER(name) LIKE '%solvent%' OR
-        LOWER(name) LIKE '%waterproof%' OR
-        LOWER(name) LIKE '%putty%' OR
-        LOWER(name) = 'general' OR
-        id LIKE 'demo-sub-%'
-      );`,
-      [now, storeId]
-    );
-
-    // 2. Store-wide cleanup of old dummy paint products & variants
-    await db.runAsync(
-      `UPDATE product_variants SET deletedAt = ?, active = 0 WHERE storeId = ? AND (
-        LOWER(size) LIKE '%albow%' OR 
-        LOWER(size) LIKE '%elbow%' OR 
-        LOWER(name) LIKE '%albow%' OR 
-        LOWER(name) LIKE '%elbow%' OR
-        id LIKE 'demo-var-%'
-      );`,
-      [now, storeId]
-    );
-
-    await db.runAsync(
-      `UPDATE products SET deletedAt = ?, active = 0 WHERE storeId = ? AND (
-        LOWER(name) LIKE '%albow%' OR 
-        LOWER(name) LIKE '%elbow%' OR
-        LOWER(name) LIKE '%emulsion%' OR
-        LOWER(name) LIKE '%distemper%' OR
-        LOWER(name) LIKE '%primer%' OR
-        LOWER(name) LIKE '%solvent%' OR
-        LOWER(name) LIKE '%waterproof%' OR
-        LOWER(name) LIKE '%wall putty%' OR
-        LOWER(name) LIKE '%putty%' OR
-        LOWER(brand) LIKE '%asian paint%' OR
-        LOWER(brand) LIKE '%berger%' OR
-        LOWER(brand) LIKE '%dr. fixit%' OR
-        LOWER(brand) LIKE '%birla white%' OR
-        LOWER(brand) = 'general' OR
-        id LIKE 'demo-%' OR
-        id LIKE 'prod-demo%'
-      );`,
-      [now, storeId]
-    );
-
-    // 3. Category isolation: If NOT pipe category (e.g. Bath fittings), remove any mistakenly attached pipe subcategories or products
-    if (!isPipeCategory) {
-      await db.runAsync(
-        `UPDATE subcategories SET deletedAt = ?, active = 0 WHERE storeId = ? AND categoryId = ? AND (
-          LOWER(name) = 'pipes' OR 
-          LOWER(name) = 'pipe fittings' OR 
-          (LOWER(name) LIKE '%pipe%' AND LOWER(name) NOT LIKE '%bath%')
-        );`,
-        [now, storeId, categoryId]
-      );
-
-      await db.runAsync(
-        `UPDATE products SET deletedAt = ?, active = 0 WHERE storeId = ? AND categoryId = ? AND (
-          LOWER(name) LIKE '%pipe%' OR 
-          LOWER(brand) = 'supreme' OR
-          LOWER(brand) = 'akg' OR
-          LOWER(brand) = 'plast'
-        );`,
-        [now, storeId, categoryId]
-      );
-    }
-
-    // 4. If pipe category, remove any bath fittings subcategories that might be under it
-    if (isPipeCategory) {
-      await db.runAsync(
-        `UPDATE subcategories SET deletedAt = ?, active = 0 WHERE storeId = ? AND categoryId = ? AND (
-          LOWER(name) LIKE '%bath%' OR 
-          LOWER(name) LIKE '%tap%' OR 
-          LOWER(name) LIKE '%shower%'
-        );`,
-        [now, storeId, categoryId]
-      );
-    }
-
-    // 5. Query active subcategories belonging strictly to this category
+    // 1. Query active subcategories belonging strictly to this category
     let rows = await db.getAllAsync<any>(
       `SELECT * FROM subcategories 
        WHERE categoryId = ? 
@@ -455,31 +369,6 @@ export class MatrixRepository {
 
     const prodMap = new Map<string, any>();
     productRows.forEach((p) => prodMap.set(p.id, p));
-
-    // Clean up any old 'general' products from DB so they never appear
-    await db.runAsync(
-      `UPDATE products SET deletedAt = ? WHERE storeId = ? AND (LOWER(brand) = 'general' OR brand IS NULL OR TRIM(brand) = '');`,
-      [new Date().toISOString(), storeId]
-    );
-
-    // Clean up any old dummy 'elbow' or 'albow' items from DB
-    await db.runAsync(
-      `UPDATE product_variants SET deletedAt = ? WHERE storeId = ? AND (
-        LOWER(size) LIKE '%albow%' OR 
-        LOWER(size) LIKE '%elbow%' OR 
-        LOWER(name) LIKE '%albow%' OR 
-        LOWER(name) LIKE '%elbow%'
-      );`,
-      [new Date().toISOString(), storeId]
-    );
-
-    await db.runAsync(
-      `UPDATE products SET deletedAt = ? WHERE storeId = ? AND (
-        LOWER(name) LIKE '%albow%' OR 
-        LOWER(name) LIKE '%elbow%'
-      );`,
-      [new Date().toISOString(), storeId]
-    );
 
     const brandSet = new Set<string>();
     const sizeSet = new Set<string>();

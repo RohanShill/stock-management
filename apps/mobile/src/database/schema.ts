@@ -98,6 +98,8 @@ CREATE TABLE IF NOT EXISTS products (
 );
 CREATE INDEX IF NOT EXISTS idx_products_search ON products(name, brand);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(storeId, categoryId, subcategoryId);
+CREATE INDEX IF NOT EXISTS idx_products_brand ON products(storeId, categoryId, subcategoryId, brand);
+CREATE INDEX IF NOT EXISTS idx_products_deleted ON products(storeId, deletedAt, active);
 
 CREATE TABLE IF NOT EXISTS product_variants (
   id TEXT PRIMARY KEY,
@@ -127,6 +129,9 @@ CREATE TABLE IF NOT EXISTS product_variants (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_variants_sku ON product_variants(storeId, sku);
 CREATE INDEX IF NOT EXISTS idx_variants_barcode ON product_variants(barcode);
+CREATE INDEX IF NOT EXISTS idx_variants_product ON product_variants(productId, deletedAt, active);
+CREATE INDEX IF NOT EXISTS idx_variants_store ON product_variants(storeId, deletedAt, active);
+CREATE INDEX IF NOT EXISTS idx_variants_size ON product_variants(productId, size);
 
 -- Auditable Immutable Stock Movements
 CREATE TABLE IF NOT EXISTS stock_movements (
@@ -146,6 +151,7 @@ CREATE TABLE IF NOT EXISTS stock_movements (
   createdAt TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_movements_variant ON stock_movements(variantId, createdAt);
+CREATE INDEX IF NOT EXISTS idx_movements_store_created ON stock_movements(storeId, createdAt DESC);
 
 -- Pipe Segments (Method B: physical remnants)
 CREATE TABLE IF NOT EXISTS pipe_segments (

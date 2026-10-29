@@ -231,6 +231,117 @@ const RestockItemForm: React.FC<RestockItemFormProps> = React.memo(({
   );
 });
 
+interface SearchResultItemProps {
+  item: RestockItem;
+  isDarkMode: boolean;
+  activeColors: any;
+  onAction: (item: RestockItem, mode: 'add' | 'sell') => void;
+}
+
+const SearchResultItem = React.memo<SearchResultItemProps>(({
+  item,
+  isDarkMode,
+  activeColors,
+  onAction,
+}) => {
+  const isOut = item.currentStock <= 0;
+  const isLow = !isOut && item.currentStock <= item.minStockLevel;
+
+  return (
+    <Surface
+      style={[
+        styles.searchItemCard,
+        {
+          backgroundColor: activeColors.surface,
+          borderColor: activeColors.border,
+        },
+      ]}
+    >
+      <View style={styles.searchItemHeaderRow}>
+        <View style={{ flex: 1, marginRight: 8 }}>
+          <Text
+            style={[styles.searchItemName, { color: activeColors.textPrimary }]}
+            numberOfLines={1}
+          >
+            {item.productName}
+          </Text>
+          <View style={styles.searchItemMetaRow}>
+            <View style={[styles.searchSizeBadge, { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' }]}>
+              <Text style={[styles.searchSizeText, { color: activeColors.textPrimary }]}>
+                {item.variantName}
+              </Text>
+            </View>
+            {item.brand ? (
+              <View style={[styles.searchBrandBadge, { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' }]}>
+                <Text style={[styles.searchBrandText, { color: activeColors.textSecondary }]}>
+                  {item.brand}
+                </Text>
+              </View>
+            ) : null}
+            {item.categoryName ? (
+              <Text style={[styles.searchCategoryText, { color: activeColors.textMuted }]}>
+                • {item.categoryName}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+
+        <View
+          style={[
+            styles.searchStockPill,
+            isOut
+              ? styles.stockPillOut
+              : isLow
+              ? styles.stockPillLow
+              : styles.stockPillOk,
+          ]}
+        >
+          <Text
+            style={[
+              styles.searchStockPillText,
+              isOut
+                ? styles.stockTextOut
+                : isLow
+                ? styles.stockTextLow
+                : styles.stockTextOk,
+            ]}
+          >
+            {isOut ? 'Out of Stock' : `${item.currentStock} ${item.unit}`}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.searchActionsRow}>
+        {item.rackLocation ? (
+          <Text style={[styles.searchRackText, { color: activeColors.textMuted }]}>
+            📍 {item.rackLocation}
+          </Text>
+        ) : <View />}
+
+        <View style={styles.searchButtonsWrap}>
+          <TouchableOpacity
+            style={styles.actionStockInBtn}
+            onPress={() => onAction(item, 'add')}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons name="plus" size={15} color="#FFFFFF" />
+            <Text style={styles.actionBtnLabel}>+ Stock</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionSellBtn}
+            onPress={() => onAction(item, 'sell')}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons name="cart-outline" size={15} color="#FFFFFF" />
+            <Text style={styles.actionBtnLabel}>Sell</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Surface>
+  );
+});
+
 export default function HomeScreen() {
   const router = useRouter();
   const { store, deviceId, isDarkMode, showToast } = useAppStore();
@@ -343,10 +454,6 @@ export default function HomeScreen() {
     }
   }, [store]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
   useFocusEffect(
     useCallback(() => {
       loadData();
@@ -359,26 +466,26 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  const handleOpenRestockForItem = (item: RestockItem) => {
+  const handleOpenRestockForItem = useCallback((item: RestockItem) => {
     setSelectedRestockItem(item);
     setRestockMode('add');
     setItemSearchQuery('');
     setRestockModalVisible(true);
-  };
+  }, []);
 
-  const handleOpenGeneralAddStock = () => {
+  const handleOpenGeneralAddStock = useCallback(() => {
     setSelectedRestockItem(null);
     setRestockMode('add');
     setItemSearchQuery('');
     setRestockModalVisible(true);
-  };
+  }, []);
 
-  const handleOpenGeneralSellStock = () => {
+  const handleOpenGeneralSellStock = useCallback(() => {
     setSelectedRestockItem(null);
     setRestockMode('sell');
     setItemSearchQuery('');
     setRestockModalVisible(true);
-  };
+  }, []);
 
   const handleConfirmStockOperation = async (
     item: RestockItem,
@@ -436,11 +543,11 @@ export default function HomeScreen() {
     }
   };
 
-  const handleOpenActionForItem = (item: RestockItem, mode: 'add' | 'sell') => {
+  const handleOpenActionForItem = useCallback((item: RestockItem, mode: 'add' | 'sell') => {
     setSelectedRestockItem(item);
     setRestockMode(mode);
     setRestockModalVisible(true);
-  };
+  }, []);
 
   const homeSearchResults = React.useMemo(() => {
     const query = homeSearchQuery.trim().toLowerCase();
@@ -601,98 +708,13 @@ export default function HomeScreen() {
           ) : (
             <View style={styles.searchList}>
               {homeSearchResults.map((item) => (
-                <Surface
+                <SearchResultItem
                   key={item.variantId}
-                  style={[
-                    styles.searchItemCard,
-                    {
-                      backgroundColor: activeColors.surface,
-                      borderColor: activeColors.border,
-                    },
-                  ]}
-                >
-                  <View style={styles.searchItemHeaderRow}>
-                    <View style={{ flex: 1, marginRight: 8 }}>
-                      <Text
-                        style={[styles.searchItemName, { color: activeColors.textPrimary }]}
-                        numberOfLines={1}
-                      >
-                        {item.productName}
-                      </Text>
-                      <View style={styles.searchItemMetaRow}>
-                        <View style={[styles.searchSizeBadge, { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' }]}>
-                          <Text style={[styles.searchSizeText, { color: activeColors.textPrimary }]}>
-                            {item.variantName}
-                          </Text>
-                        </View>
-                        {item.brand ? (
-                          <View style={[styles.searchBrandBadge, { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' }]}>
-                            <Text style={[styles.searchBrandText, { color: activeColors.textSecondary }]}>
-                              {item.brand}
-                            </Text>
-                          </View>
-                        ) : null}
-                        {item.categoryName ? (
-                          <Text style={[styles.searchCategoryText, { color: activeColors.textMuted }]}>
-                            • {item.categoryName}
-                          </Text>
-                        ) : null}
-                      </View>
-                    </View>
-
-                    <View
-                      style={[
-                        styles.searchStockPill,
-                        item.currentStock <= 0
-                          ? styles.stockPillOut
-                          : item.currentStock <= item.minStockLevel
-                          ? styles.stockPillLow
-                          : styles.stockPillOk,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.searchStockPillText,
-                          item.currentStock <= 0
-                            ? styles.stockTextOut
-                            : item.currentStock <= item.minStockLevel
-                            ? styles.stockTextLow
-                            : styles.stockTextOk,
-                        ]}
-                      >
-                        {item.currentStock <= 0 ? 'Out of Stock' : `${item.currentStock} ${item.unit}`}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.searchActionsRow}>
-                    {item.rackLocation ? (
-                      <Text style={[styles.searchRackText, { color: activeColors.textMuted }]}>
-                        📍 {item.rackLocation}
-                      </Text>
-                    ) : <View />}
-
-                    <View style={styles.searchButtonsWrap}>
-                      <TouchableOpacity
-                        style={styles.actionStockInBtn}
-                        onPress={() => handleOpenActionForItem(item, 'add')}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialCommunityIcons name="plus" size={15} color="#FFFFFF" />
-                        <Text style={styles.actionBtnLabel}>+ Stock</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={styles.actionSellBtn}
-                        onPress={() => handleOpenActionForItem(item, 'sell')}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialCommunityIcons name="cart-outline" size={15} color="#FFFFFF" />
-                        <Text style={styles.actionBtnLabel}>Sell</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </Surface>
+                  item={item}
+                  isDarkMode={isDarkMode}
+                  activeColors={activeColors}
+                  onAction={handleOpenActionForItem}
+                />
               ))}
             </View>
           )}

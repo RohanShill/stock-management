@@ -33,7 +33,97 @@ const COLUMN_WIDTH = 95;
 const CELL_HEIGHT = 56;
 const HEADER_HEIGHT = 48;
 
-export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
+interface MatrixCellProps {
+  brand: string;
+  size: string;
+  cellKey: string;
+  cellData?: MatrixCellData;
+  isSelected: boolean;
+  isDarkMode: boolean;
+  activeColors: any;
+  onSelect: (cellKey: string, cell: MatrixCellData | null, size: string, brand: string) => void;
+}
+
+const MatrixCell = React.memo<MatrixCellProps>(({
+  brand,
+  size,
+  cellKey,
+  cellData,
+  isSelected,
+  isDarkMode,
+  activeColors,
+  onSelect,
+}) => {
+  const stock = cellData ? cellData.currentStock : 0;
+  const hasStock = stock > 0;
+  const isLow = hasStock && stock <= 5;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={() => onSelect(cellKey, cellData || null, size, brand)}
+      style={[
+        styles.cell,
+        {
+          backgroundColor: isSelected
+            ? isDarkMode
+              ? '#312E81'
+              : '#EEF2FF'
+            : activeColors.surface,
+          borderColor: isSelected
+            ? activeColors.primary
+            : activeColors.border,
+          borderWidth: isSelected ? 2 : 1,
+        },
+      ]}
+    >
+      {cellData ? (
+        <View style={styles.stockBadgeWrap}>
+          <Text
+            style={[
+              styles.stockNumber,
+              {
+                color: isSelected
+                  ? activeColors.primary
+                  : isLow
+                  ? activeColors.warning || '#D97706'
+                  : stock === 0
+                  ? activeColors.textMuted
+                  : activeColors.textPrimary,
+                fontWeight: hasStock ? '700' : '500',
+              },
+            ]}
+          >
+            {stock === 0 ? '-' : stock}
+          </Text>
+          {isLow && (
+            <View
+              style={[
+                styles.lowIndicator,
+                { backgroundColor: activeColors.warning || '#D97706' },
+              ]}
+            />
+          )}
+        </View>
+      ) : (
+        <Text style={[styles.stockNumber, { color: activeColors.textMuted }]}>
+          -
+        </Text>
+      )}
+    </TouchableOpacity>
+  );
+}, (prev, next) => {
+  return (
+    prev.isSelected === next.isSelected &&
+    prev.isDarkMode === next.isDarkMode &&
+    prev.cellData?.currentStock === next.cellData?.currentStock &&
+    prev.cellData?.variantId === next.cellData?.variantId &&
+    prev.cellKey === next.cellKey &&
+    prev.activeColors === next.activeColors
+  );
+});
+
+export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
   data,
   selectedCellKey,
   onSelectCell,
@@ -54,8 +144,11 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
 
   const { showConfirm, showToast } = useAppStore();
 
+  const panRespondersRef = useRef<Map<number, any>>(new Map());
+
   useEffect(() => {
     setCurrentSizes(sizes);
+    panRespondersRef.current.clear();
   }, [sizes]);
 
   const currentSizesRef = useRef(sizes);
@@ -67,6 +160,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
     const [moved] = next.splice(fromIndex, 1);
     next.splice(toIndex, 0, moved);
     setCurrentSizes(next);
+    panRespondersRef.current.clear();
     if (onReorderSizes) {
       onReorderSizes(next);
     }
@@ -114,14 +208,25 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
       },
       onPanResponderRelease: () => {
         setDraggingIndex(null);
+        panRespondersRef.current.clear();
         if (onReorderSizes) {
           onReorderSizes(currentSizesRef.current);
         }
       },
       onPanResponderTerminate: () => {
         setDraggingIndex(null);
+        panRespondersRef.current.clear();
       },
     });
+
+  const getPanResponder = (startIndex: number) => {
+    let pr = panRespondersRef.current.get(startIndex);
+    if (!pr) {
+      pr = createPanResponder(startIndex);
+      panRespondersRef.current.set(startIndex, pr);
+    }
+    return pr;
+  };
 
   const [addBrandVisible, setAddBrandVisible] = useState(false);
   const [newBrandName, setNewBrandName] = useState('');
@@ -361,7 +466,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                       <View style={styles.rowHeaderContent}>
                         {/* Drag Handle Icon with PanResponder */}
                         <View
-                          {...createPanResponder(index).panHandlers}
+                          {...getPanResponder(index).panHandlers}
                           style={styles.dragHandle}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
@@ -424,66 +529,18 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
                 {/* Brand Cells for this Size */}
                 {brands.map((brand) => {
                   const cellKey = `${size}___${brand.toLowerCase()}`;
-                  const cellData = cells[cellKey];
-                  const isSelected = selectedCellKey === cellKey;
-                  const stock = cellData ? cellData.currentStock : 0;
-                  const hasStock = stock > 0;
-                  const isLow = hasStock && stock <= 5;
-
                   return (
-                    <TouchableOpacity
-                      key={brand}
-                      activeOpacity={0.7}
-                      onPress={() => onSelectCell(cellKey, cellData || null, size, brand)}
-                      style={[
-                        styles.cell,
-                        {
-                          backgroundColor: isSelected
-                            ? isDarkMode
-                              ? '#312E81'
-                              : '#EEF2FF'
-                            : activeColors.surface,
-                          borderColor: isSelected
-                            ? activeColors.primary
-                            : activeColors.border,
-                          borderWidth: isSelected ? 2 : 1,
-                        },
-                      ]}
-                    >
-                      {cellData ? (
-                        <View style={styles.stockBadgeWrap}>
-                          <Text
-                            style={[
-                              styles.stockNumber,
-                              {
-                                color: isSelected
-                                  ? activeColors.primary
-                                  : isLow
-                                  ? activeColors.warning || '#D97706'
-                                  : stock === 0
-                                  ? activeColors.textMuted
-                                  : activeColors.textPrimary,
-                                fontWeight: hasStock ? '700' : '500',
-                              },
-                            ]}
-                          >
-                            {stock === 0 ? '-' : stock}
-                          </Text>
-                          {isLow && (
-                            <View
-                              style={[
-                                styles.lowIndicator,
-                                { backgroundColor: activeColors.warning || '#D97706' },
-                              ]}
-                            />
-                          )}
-                        </View>
-                      ) : (
-                        <Text style={[styles.stockNumber, { color: activeColors.textMuted }]}>
-                          -
-                        </Text>
-                      )}
-                    </TouchableOpacity>
+                    <MatrixCell
+                      key={cellKey}
+                      brand={brand}
+                      size={size}
+                      cellKey={cellKey}
+                      cellData={cells[cellKey]}
+                      isSelected={selectedCellKey === cellKey}
+                      isDarkMode={isDarkMode}
+                      activeColors={activeColors}
+                      onSelect={onSelectCell}
+                    />
                   );
                 })}
 
@@ -927,7 +984,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = ({
       </Modal>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   tableContainer: {
