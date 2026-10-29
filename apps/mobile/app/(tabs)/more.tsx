@@ -27,6 +27,7 @@ import { useAppStore } from '../../src/store/useAppStore.js';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
 import { CategoryRepository } from '../../src/database/repositories/categoryRepository.js';
 import { MatrixRepository } from '../../src/database/repositories/matrixRepository.js';
+import { InventoryRepository } from '../../src/database/repositories/inventoryRepository.js';
 import { lightColors, darkColors, spacing, borderRadius, shadows } from '../../src/theme/tokens.js';
 
 export default function SettingsScreen() {
@@ -492,6 +493,26 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleClearHistory = () => {
+    showConfirm({
+      title: 'Clear Movement History',
+      message:
+        'Are you sure you want to permanently delete all stock transaction and sales audit history? Current stock numbers in the table will not be changed.',
+      confirmText: 'Clear History',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          const storeId = store?.id || 'store-1';
+          await InventoryRepository.clearStockHistory(storeId);
+          showToast('Stock movement history cleared successfully!', 'success');
+        } catch (err: any) {
+          console.error('Error clearing history:', err);
+          showToast(err?.message || 'Could not clear history', 'error');
+        }
+      },
+    });
+  };
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: activeColors.background }]}
@@ -778,6 +799,34 @@ export default function SettingsScreen() {
             </Text>
           </View>
           <MaterialCommunityIcons name="download" size={20} color={activeColors.primary} />
+        </TouchableOpacity>
+
+        <Divider
+          style={[
+            styles.divider,
+            { backgroundColor: isDarkMode ? '#1F2937' : '#F1F5F9' },
+          ]}
+        />
+
+        {/* Clear Movement History */}
+        <TouchableOpacity style={styles.menuRow} onPress={handleClearHistory} activeOpacity={0.7}>
+          <View
+            style={[
+              styles.menuIconCircle,
+              { backgroundColor: isDarkMode ? '#450A0A' : '#FEE2E2' },
+            ]}
+          >
+            <MaterialCommunityIcons name="trash-can-outline" size={22} color="#DC2626" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuTitle, { color: '#DC2626' }]}>
+              Clear Movement History
+            </Text>
+            <Text style={[styles.menuSub, { color: activeColors.textSecondary }]}>
+              Permanently delete stock transaction and sales audit log
+            </Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={20} color={activeColors.textMuted} />
         </TouchableOpacity>
       </Surface>
 

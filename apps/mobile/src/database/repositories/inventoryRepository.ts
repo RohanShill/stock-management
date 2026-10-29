@@ -144,7 +144,7 @@ export class InventoryRepository {
 
   static async getAllStockHistory(
     storeId: string,
-    limit = 100
+    limit = 250
   ): Promise<
     Array<
       StockMovement & {
@@ -157,13 +157,58 @@ export class InventoryRepository {
     >
   > {
     const db = await getDatabase();
-    // 1. Fetch raw stock movements for store
+
+    // 1. Ultra-fast direct indexed JOIN query (instant SQLite evaluation)
+    if (typeof db.getAllAsync === 'function') {
+      try {
+        const joinedRows = await db.getAllAsync<any>(
+          `SELECT 
+             sm.id, sm.storeId, sm.variantId, sm.movementType, sm.quantityChangeBase, 
+             sm.balanceBeforeBase, sm.balanceAfterBase, sm.referenceType, sm.reason, 
+             sm.notes, sm.deviceId, sm.userId, sm.createdAt,
+             p.name AS productName,
+             p.brand AS brand,
+             p.baseUnit AS unit,
+             v.name AS variantName,
+             v.size AS size
+           FROM stock_movements sm
+           LEFT JOIN product_variants v ON sm.variantId = v.id
+           LEFT JOIN products p ON v.productId = p.id
+           WHERE sm.storeId = ?
+           ORDER BY sm.createdAt DESC
+           LIMIT ?;`,
+          [storeId, limit]
+        );
+
+        if (joinedRows && joinedRows.length > 0) {
+          return joinedRows.map((sm) => {
+            const isSale =
+              sm.movementType === 'sale' ||
+              sm.quantityChangeBase < 0 ||
+              String(sm.referenceType || '').toLowerCase().includes('sale');
+
+            return {
+              ...sm,
+              movementType: isSale ? ('sale' as const) : sm.movementType,
+              productName: sm.productName || (isSale ? 'Sold Item' : 'Inventory Item'),
+              variantName: sm.variantName || sm.size || 'Standard',
+              size: sm.size,
+              unit: sm.unit || 'pcs',
+              brand: sm.brand,
+            };
+          });
+        }
+      } catch {
+        // Fallback if JOIN is unsupported in custom test mocks or web store
+      }
+    }
+
+    // 2. Targeted fallback: fetch movements, then query ONLY the variants involved (never full tables!)
     let movements = await db.getAllAsync<StockMovement>(
       `SELECT * FROM stock_movements WHERE storeId = ? ORDER BY createdAt DESC LIMIT ?;`,
       [storeId, limit]
     );
 
-    // Fallback: If 0 movements found with storeId filter, fetch all stock movements
     if (!movements || movements.length === 0) {
       movements = await db.getAllAsync<StockMovement>(
         `SELECT * FROM stock_movements ORDER BY createdAt DESC LIMIT ?;`,
@@ -175,14 +220,26 @@ export class InventoryRepository {
       return [];
     }
 
-    // 2. Fetch variants and products for in-memory resolution (100% cross-platform)
-    const [variants, products] = await Promise.all([
-      db.getAllAsync<any>(`SELECT * FROM product_variants;`),
-      db.getAllAsync<any>(`SELECT * FROM products;`),
-    ]);
+    const variantIds = Array.from(new Set(movements.map((m) => m.variantId).filter(Boolean)));
+    const variantPlaceholders = variantIds.map(() => '?').join(',');
+    const variants = variantIds.length > 0 && typeof db.getAllAsync === 'function'
+      ? await db.getAllAsync<any>(
+          `SELECT id, productId, name, size FROM product_variants WHERE id IN (${variantPlaceholders});`,
+          variantIds
+        )
+      : [];
 
     const variantMap = new Map<string, any>();
     (variants || []).forEach((v) => variantMap.set(v.id, v));
+
+    const productIds = Array.from(new Set(variants.map((v) => v.productId).filter(Boolean)));
+    const productPlaceholders = productIds.map(() => '?').join(',');
+    const products = productIds.length > 0 && typeof db.getAllAsync === 'function'
+      ? await db.getAllAsync<any>(
+          `SELECT id, name, brand, baseUnit FROM products WHERE id IN (${productPlaceholders});`,
+          productIds
+        )
+      : [];
 
     const productMap = new Map<string, any>();
     (products || []).forEach((p) => productMap.set(p.id, p));
@@ -198,7 +255,7 @@ export class InventoryRepository {
       return {
         ...sm,
         movementType: isSale ? ('sale' as const) : sm.movementType,
-        productName: p?.name || (isSale ? 'Sold Hardware Item' : 'Hardware Item'),
+        productName: p?.name || (isSale ? 'Sold Item' : 'Inventory Item'),
         variantName: v?.name || v?.size || 'Standard',
         size: v?.size,
         unit: p?.baseUnit || 'pcs',
@@ -206,7 +263,6 @@ export class InventoryRepository {
       };
     });
 
-    // Ensure sorted by createdAt DESC
     result.sort((a, b) => {
       const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -214,6 +270,22 @@ export class InventoryRepository {
     });
 
     return result;
+  }
+
+  /**
+   * Permanently clears all stock movements for the store.
+   */
+  static async clearStockHistory(storeId: string): Promise<number> {
+    const db = await getDatabase();
+    const result = await db.runAsync(
+      `DELETE FROM stock_movements WHERE storeId = ?;`,
+      [storeId]
+    );
+    // Also clean up any unassigned store records
+    await db.runAsync(
+      `DELETE FROM stock_movements WHERE storeId IS NULL OR storeId = '' OR storeId = 'store-1';`
+    );
+    return result?.changes || 0;
   }
 
   static async getPipeSegments(variantId: string): Promise<PipeSegment[]> {

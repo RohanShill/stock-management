@@ -7,6 +7,7 @@ const { mockTables, mockDb } = vi.hoisted(() => {
     custom_field_definitions: [],
     products: [],
     product_variants: [],
+    stock_movements: [],
     sync_queue: [],
   };
 
@@ -15,6 +16,11 @@ const { mockTables, mockDb } = vi.hoisted(() => {
     withTransactionAsync: vi.fn(async (callback: () => Promise<any>) => callback()),
     runAsync: vi.fn(async (sql: string, params: any[] = []) => {
       const trimmed = sql.trim().toUpperCase();
+      if (trimmed.startsWith('DELETE FROM STOCK_MOVEMENTS')) {
+        const count = tables.stock_movements.length;
+        tables.stock_movements = [];
+        return { lastInsertRowId: 0, changes: count };
+      }
       if (trimmed.startsWith('INSERT INTO CATEGORIES')) {
         tables.categories.push({
           id: params[0],
@@ -154,6 +160,7 @@ vi.mock('../database/db.js', () => ({
 import { CategoryRepository } from '../database/repositories/categoryRepository.js';
 import { CustomFieldRepository } from '../database/repositories/customFieldRepository.js';
 import { ProductRepository } from '../database/repositories/productRepository.js';
+import { InventoryRepository } from '../database/repositories/inventoryRepository.js';
 
 describe('CategoryRepository Offline Operations', () => {
   beforeEach(() => {
@@ -413,5 +420,16 @@ describe('CustomFieldRepository Dynamic Specifications', () => {
     expect(results.length).toBe(1);
     expect(results[0].id).toBe('prod-valid');
     expect(results[0].variants.length).toBe(1);
+  });
+
+  it('clearStockHistory deletes all movements for store', async () => {
+    mockTables.stock_movements.push(
+      { id: 'sm-1', storeId: 'store-1', movementType: 'sale' },
+      { id: 'sm-2', storeId: 'store-1', movementType: 'restock' }
+    );
+    expect(mockTables.stock_movements.length).toBe(2);
+
+    await InventoryRepository.clearStockHistory('store-1');
+    expect(mockTables.stock_movements.length).toBe(0);
   });
 });

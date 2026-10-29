@@ -19,6 +19,7 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
     'ALTER TABLE customers ADD COLUMN email TEXT;',
     "UPDATE products SET baseUnit = 'l' WHERE baseUnit = 'liter';",
     "UPDATE products SET baseUnit = 'piece' WHERE baseUnit = 'pcs';",
+    "CREATE INDEX IF NOT EXISTS idx_movements_store_created ON stock_movements(storeId, createdAt DESC);",
   ];
 
   for (const query of safeAlterQueries) {
