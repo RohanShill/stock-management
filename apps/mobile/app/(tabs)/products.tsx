@@ -641,7 +641,7 @@ export default function ProductsScreen() {
             style={styles.logo}
             resizeMode="contain"
           />
-          <View style={{ flex: 1, marginLeft: 10 }}>
+          <View style={{ flex: 1, marginLeft: 10, justifyContent: 'center' }}>
             <Text
               style={[
                 styles.storeTitle,
@@ -650,14 +650,6 @@ export default function ProductsScreen() {
               numberOfLines={1}
             >
               Manju Hardware Store
-            </Text>
-            <Text
-              style={[
-                styles.categoryHeadline,
-                { color: activeColors.primary },
-              ]}
-            >
-              {activeCategory?.name?.toLowerCase() || 'pipe'}
             </Text>
           </View>
 
@@ -1153,13 +1145,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: -0.2,
-  },
-  categoryHeadline: {
-    fontSize: 13,
-    fontWeight: '800',
-    textTransform: 'lowercase',
-    marginTop: 1,
-    letterSpacing: 0.5,
   },
   addCatBtn: {
     flexDirection: 'row',
