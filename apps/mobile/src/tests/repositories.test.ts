@@ -116,6 +116,9 @@ const { mockTables, mockDb } = vi.hoisted(() => {
       if (trimmed.includes('FROM CUSTOM_FIELD_DEFINITIONS')) {
         return tables.custom_field_definitions.filter((f) => !f.deletedAt);
       }
+      if (trimmed.includes('FROM PRODUCT_VARIANTS')) {
+        return tables.product_variants.filter((v) => !v.deletedAt);
+      }
       if (trimmed.includes('FROM PRODUCTS')) {
         return tables.products.filter((p) => !p.deletedAt);
       }
@@ -340,5 +343,75 @@ describe('CustomFieldRepository Dynamic Specifications', () => {
     );
     expect(syncItem).toBeDefined();
     expect(syncItem?.operationType).toBe('delete');
+  });
+
+  it('getProductsWithVariants filters out products with deleted category or subcategory', async () => {
+    mockTables.categories.push({ id: 'cat-active', storeId: 'store-1', name: 'Pipes', active: 1 });
+    mockTables.categories.push({ id: 'cat-deleted', storeId: 'store-1', name: 'Old Cat', deletedAt: '2026-10-29', active: 0 });
+
+    mockTables.subcategories.push({ id: 'sub-active', storeId: 'store-1', categoryId: 'cat-active', name: 'Pipes', active: 1 });
+    mockTables.subcategories.push({ id: 'sub-deleted', storeId: 'store-1', categoryId: 'cat-active', name: 'Deleted Sub', deletedAt: '2026-10-29', active: 0 });
+
+    // Active product
+    mockTables.products.push({
+      id: 'prod-valid',
+      storeId: 'store-1',
+      categoryId: 'cat-active',
+      subcategoryId: 'sub-active',
+      name: 'Finolex Pipe',
+      brand: 'Finolex',
+      active: 1,
+    });
+    mockTables.product_variants.push({
+      id: 'var-valid',
+      productId: 'prod-valid',
+      name: '1/2',
+      size: '1/2',
+      currentStock: 50,
+      active: 1,
+    });
+
+    // Product under deleted category
+    mockTables.products.push({
+      id: 'prod-under-del-cat',
+      storeId: 'store-1',
+      categoryId: 'cat-deleted',
+      subcategoryId: undefined,
+      name: 'Old Paint',
+      brand: 'Berger',
+      active: 1,
+    });
+    mockTables.product_variants.push({
+      id: 'var-old',
+      productId: 'prod-under-del-cat',
+      name: '1L',
+      size: '1L',
+      currentStock: 10,
+      active: 1,
+    });
+
+    // Product under deleted subcategory
+    mockTables.products.push({
+      id: 'prod-under-del-sub',
+      storeId: 'store-1',
+      categoryId: 'cat-active',
+      subcategoryId: 'sub-deleted',
+      name: 'Deleted Section Prod',
+      brand: 'AKG',
+      active: 1,
+    });
+    mockTables.product_variants.push({
+      id: 'var-del-sub',
+      productId: 'prod-under-del-sub',
+      name: '1/2',
+      size: '1/2',
+      currentStock: 10,
+      active: 1,
+    });
+
+    const results = await ProductRepository.getProductsWithVariants('store-1');
+    expect(results.length).toBe(1);
+    expect(results[0].id).toBe('prod-valid');
+    expect(results[0].variants.length).toBe(1);
   });
 });

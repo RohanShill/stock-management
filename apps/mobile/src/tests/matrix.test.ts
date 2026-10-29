@@ -252,6 +252,7 @@ describe('MatrixRepository Utilities', () => {
     await MatrixRepository.deleteSubTab('store-1', 'sub-123', 'dev-1');
     expect(executedSql.some((s) => s.includes('UPDATE subcategories SET deletedAt = ?, active = 0'))).toBe(true);
     expect(executedSql.some((s) => s.includes('UPDATE products SET deletedAt = ?, active = 0'))).toBe(true);
+    expect(executedSql.some((s) => s.includes('UPDATE product_variants SET deletedAt = ?, active = 0'))).toBe(true);
   });
 
   it('preserves custom size order in getMatrixData when saved', async () => {

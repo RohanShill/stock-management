@@ -150,8 +150,35 @@ export class CategoryRepository {
     const counts = await this.getAffectedCounts(id, storeId);
     const now = new Date().toISOString();
 
+    // 1. Soft-delete category
     await db.runAsync(
       `UPDATE categories SET deletedAt = ?, active = 0, updatedAt = ? WHERE id = ? AND storeId = ?;`,
+      [now, now, id, storeId]
+    );
+
+    // 2. Soft-delete subcategories
+    await db.runAsync(
+      `UPDATE subcategories SET deletedAt = ?, active = 0, updatedAt = ? WHERE categoryId = ? AND storeId = ?;`,
+      [now, now, id, storeId]
+    );
+
+    // 3. Find products under this category to cascade soft-delete variants
+    const prods = await db.getAllAsync<any>(
+      `SELECT id FROM products WHERE categoryId = ? AND storeId = ?;`,
+      [id, storeId]
+    );
+    if (prods && prods.length > 0) {
+      for (const p of prods) {
+        await db.runAsync(
+          `UPDATE product_variants SET deletedAt = ?, active = 0, updatedAt = ? WHERE storeId = ? AND productId = ?;`,
+          [now, now, storeId, p.id]
+        );
+      }
+    }
+
+    // 4. Soft-delete products
+    await db.runAsync(
+      `UPDATE products SET deletedAt = ?, active = 0, updatedAt = ? WHERE categoryId = ? AND storeId = ?;`,
       [now, now, id, storeId]
     );
 

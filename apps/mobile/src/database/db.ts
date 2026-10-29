@@ -28,6 +28,62 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
       // Column already exists or already migrated; safe to ignore
     }
   }
+
+  const cleanupQueries = [
+    // 1. Soft-delete old demo / dummy products and variants
+    `UPDATE products SET deletedAt = datetime('now'), active = 0 
+     WHERE deletedAt IS NULL AND (
+       id LIKE 'demo-%' OR 
+       id LIKE 'prod-demo%' OR
+       LOWER(name) LIKE '%albow%' OR 
+       LOWER(name) LIKE '%elbow%' OR
+       LOWER(name) LIKE '%emulsion%' OR
+       LOWER(name) LIKE '%distemper%' OR
+       LOWER(name) LIKE '%primer%' OR
+       LOWER(name) LIKE '%solvent%' OR
+       LOWER(name) LIKE '%waterproof%' OR
+       LOWER(name) LIKE '%wall putty%' OR
+       LOWER(name) LIKE '%putty%' OR
+       LOWER(brand) LIKE '%asian paint%' OR
+       LOWER(brand) LIKE '%berger%' OR
+       LOWER(brand) LIKE '%dr. fixit%' OR
+       LOWER(brand) LIKE '%birla white%' OR
+       LOWER(brand) = 'general'
+     );`,
+    `UPDATE product_variants SET deletedAt = datetime('now'), active = 0 
+     WHERE deletedAt IS NULL AND (
+       id LIKE 'demo-%' OR 
+       id LIKE 'demo-var-%' OR
+       LOWER(size) LIKE '%albow%' OR 
+       LOWER(size) LIKE '%elbow%' OR 
+       LOWER(name) LIKE '%albow%' OR 
+       LOWER(name) LIKE '%elbow%'
+     );`,
+    // 2. Cascade soft-delete to variants whose parent product is soft-deleted or inactive
+    `UPDATE product_variants SET deletedAt = datetime('now'), active = 0
+     WHERE deletedAt IS NULL AND productId IN (
+       SELECT id FROM products WHERE deletedAt IS NOT NULL OR active = 0
+     );`,
+    // 3. Cascade soft-delete to products whose category or subcategory is soft-deleted or inactive
+    `UPDATE products SET deletedAt = datetime('now'), active = 0
+     WHERE deletedAt IS NULL AND (
+       categoryId IN (SELECT id FROM categories WHERE deletedAt IS NOT NULL OR active = 0) OR
+       (subcategoryId IS NOT NULL AND subcategoryId IN (SELECT id FROM subcategories WHERE deletedAt IS NOT NULL OR active = 0))
+     );`,
+    // 4. Cascade again to variants of newly soft-deleted products
+    `UPDATE product_variants SET deletedAt = datetime('now'), active = 0
+     WHERE deletedAt IS NULL AND productId IN (
+       SELECT id FROM products WHERE deletedAt IS NOT NULL OR active = 0
+     );`,
+  ];
+
+  for (const query of cleanupQueries) {
+    try {
+      await db.execAsync(query);
+    } catch {
+      // Safe to ignore if tables not ready yet
+    }
+  }
 }
 
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {

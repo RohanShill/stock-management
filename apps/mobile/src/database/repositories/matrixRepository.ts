@@ -752,9 +752,36 @@ export class MatrixRepository {
   ): Promise<void> {
     const db = await getDatabase();
     const now = new Date().toISOString();
+    const cleanBrand = brandName.trim().toLowerCase();
+
+    // 1. Cascade soft-delete variants
+    if (typeof db.getAllAsync === 'function') {
+      try {
+        const prods = await db.getAllAsync<any>(
+          `SELECT id FROM products WHERE storeId = ? AND categoryId = ? AND subcategoryId = ? AND LOWER(brand) = ?;`,
+          [storeId, categoryId, subcategoryId, cleanBrand]
+        );
+        if (prods && prods.length > 0) {
+          for (const p of prods) {
+            await db.runAsync(
+              `UPDATE product_variants SET deletedAt = ?, active = 0 WHERE storeId = ? AND productId = ?;`,
+              [now, storeId, p.id]
+            );
+          }
+        }
+      } catch {
+        // Fallback to direct subquery
+      }
+    }
+    await db.runAsync(
+      `UPDATE product_variants SET deletedAt = ?, active = 0 WHERE storeId = ? AND productId IN (SELECT id FROM products WHERE categoryId = ? AND subcategoryId = ? AND LOWER(brand) = ?);`,
+      [now, storeId, categoryId, subcategoryId, cleanBrand]
+    );
+
+    // 2. Soft-delete products
     await db.runAsync(
       `UPDATE products SET deletedAt = ?, active = 0 WHERE storeId = ? AND categoryId = ? AND subcategoryId = ? AND LOWER(brand) = ?;`,
-      [now, storeId, categoryId, subcategoryId, brandName.trim().toLowerCase()]
+      [now, storeId, categoryId, subcategoryId, cleanBrand]
     );
   }
 
@@ -770,9 +797,29 @@ export class MatrixRepository {
   ): Promise<void> {
     const db = await getDatabase();
     const now = new Date().toISOString();
+    const cleanSize = sizeName.trim();
+
+    if (typeof db.getAllAsync === 'function') {
+      try {
+        const prods = await db.getAllAsync<any>(
+          `SELECT id FROM products WHERE storeId = ? AND categoryId = ? AND subcategoryId = ?;`,
+          [storeId, categoryId, subcategoryId]
+        );
+        if (prods && prods.length > 0) {
+          for (const p of prods) {
+            await db.runAsync(
+              `UPDATE product_variants SET deletedAt = ?, active = 0 WHERE storeId = ? AND productId = ? AND size = ?;`,
+              [now, storeId, p.id, cleanSize]
+            );
+          }
+        }
+      } catch {
+        // Fallback
+      }
+    }
     await db.runAsync(
       `UPDATE product_variants SET deletedAt = ?, active = 0 WHERE storeId = ? AND size = ? AND productId IN (SELECT id FROM products WHERE categoryId = ? AND subcategoryId = ?);`,
-      [now, sizeName.trim(), categoryId, subcategoryId]
+      [now, storeId, cleanSize, categoryId, subcategoryId]
     );
   }
 
@@ -828,17 +875,44 @@ export class MatrixRepository {
   ): Promise<void> {
     const db = await getDatabase();
     const now = new Date().toISOString();
-    // 1. Soft-delete the subcategory
+
+    // 1. Cascade soft-delete variants
+    if (typeof db.getAllAsync === 'function') {
+      try {
+        const prods = await db.getAllAsync<any>(
+          `SELECT id FROM products WHERE storeId = ? AND subcategoryId = ?;`,
+          [storeId, subcategoryId]
+        );
+        if (prods && prods.length > 0) {
+          for (const p of prods) {
+            await db.runAsync(
+              `UPDATE product_variants SET deletedAt = ?, active = 0 WHERE storeId = ? AND productId = ?;`,
+              [now, storeId, p.id]
+            );
+          }
+        }
+      } catch {
+        // Fallback
+      }
+    }
     await db.runAsync(
-      `UPDATE subcategories SET deletedAt = ?, active = 0 WHERE id = ? AND storeId = ?;`,
-      [now, subcategoryId, storeId]
+      `UPDATE product_variants SET deletedAt = ?, active = 0 WHERE storeId = ? AND productId IN (SELECT id FROM products WHERE subcategoryId = ?);`,
+      [now, storeId, subcategoryId]
     );
-    // 2. Soft-delete all products belonging to this subcategory
+
+    // 2. Soft-delete products
     await db.runAsync(
       `UPDATE products SET deletedAt = ?, active = 0 WHERE storeId = ? AND subcategoryId = ?;`,
       [now, storeId, subcategoryId]
     );
-    // 3. Enqueue sync
+
+    // 3. Soft-delete subcategory
+    await db.runAsync(
+      `UPDATE subcategories SET deletedAt = ?, active = 0 WHERE id = ? AND storeId = ?;`,
+      [now, subcategoryId, storeId]
+    );
+
+    // 4. Enqueue sync
     await SyncQueueRepository.enqueue(storeId, deviceId, 'subcategory', subcategoryId, 'delete', { deletedAt: now, active: false });
   }
 

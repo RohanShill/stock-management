@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, Surface, Portal, Dialog, TextInput, Chip } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppStore } from '../../src/store/useAppStore.js';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
@@ -328,7 +328,7 @@ export default function HomeScreen() {
       });
 
       setStats({
-        totalProductsCount: products.length,
+        totalProductsCount: products.filter((p) => p.variants && p.variants.length > 0).length,
         totalVariantsCount: totalVariants,
         totalUnitsInStock: totalUnits,
         lowStockCount: lowCount,
@@ -345,6 +345,12 @@ export default function HomeScreen() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);

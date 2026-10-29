@@ -107,7 +107,22 @@ export class ProductRepository {
     subcategoryId?: string
   ): Promise<Array<Product & { variants: ProductVariant[] }>> {
     const db = await getDatabase();
-    let sql = `SELECT * FROM products WHERE storeId = ? AND deletedAt IS NULL`;
+
+    // 1. Fetch active categories and subcategories
+    const [activeCats, activeSubs] = await Promise.all([
+      db.getAllAsync<any>(
+        `SELECT id FROM categories WHERE storeId = ? AND deletedAt IS NULL AND active = 1;`,
+        [storeId]
+      ),
+      db.getAllAsync<any>(
+        `SELECT id FROM subcategories WHERE storeId = ? AND deletedAt IS NULL AND active = 1;`,
+        [storeId]
+      ),
+    ]);
+    const activeCatIds = new Set((activeCats || []).map((c: any) => c.id));
+    const activeSubIds = new Set((activeSubs || []).map((s: any) => s.id));
+
+    let sql = `SELECT * FROM products WHERE storeId = ? AND deletedAt IS NULL AND active = 1`;
     const params: any[] = [storeId];
 
     if (categoryId) {
@@ -126,19 +141,59 @@ export class ProductRepository {
     }
     sql += ` ORDER BY name ASC;`;
 
-    const productRows = await db.getAllAsync<any>(sql, params);
-    if (productRows.length === 0) return [];
+    const rawProducts = await db.getAllAsync<any>(sql, params);
+    if (!rawProducts || rawProducts.length === 0) return [];
 
-    const productIds = productRows.map((p) => p.id);
+    // Filter out products belonging to deleted categories/subcategories or dummy demo data
+    const isDummyProduct = (p: any): boolean => {
+      const pid = String(p.id || '');
+      if (pid.startsWith('demo-') || pid.startsWith('prod-demo')) return true;
+      const brand = (p.brand || '').trim().toLowerCase();
+      const name = (p.name || '').trim().toLowerCase();
+      if (!brand || brand === 'general' || brand.includes('asian paint') || brand.includes('berger') || brand.includes('dr. fixit') || brand.includes('birla white')) {
+        return true;
+      }
+      if (name.includes('albow') || name.includes('elbow') || name.includes('emulsion') || name.includes('distemper') || name.includes('primer') || name.includes('solvent') || name.includes('waterproof') || name.includes('putty')) {
+        return true;
+      }
+      return false;
+    };
+
+    const validProducts = rawProducts.filter((p: any) => {
+      if (!activeCatIds.has(p.categoryId)) return false;
+      if (p.subcategoryId && !activeSubIds.has(p.subcategoryId)) return false;
+      if (isDummyProduct(p)) return false;
+      return true;
+    });
+
+    if (validProducts.length === 0) return [];
+
+    const productIds = validProducts.map((p) => p.id);
     const placeholders = productIds.map(() => '?').join(',');
 
     const variantRows = await db.getAllAsync<any>(
-      `SELECT * FROM product_variants WHERE productId IN (${placeholders}) AND deletedAt IS NULL ORDER BY name ASC;`,
+      `SELECT * FROM product_variants 
+       WHERE productId IN (${placeholders}) 
+         AND deletedAt IS NULL 
+         AND active = 1 
+       ORDER BY displayOrder ASC, name ASC;`,
       productIds
     );
 
+    const isDummyVariant = (v: any): boolean => {
+      const vid = String(v.id || '');
+      if (vid.startsWith('demo-')) return true;
+      const size = (v.size || '').toLowerCase();
+      const name = (v.name || '').toLowerCase();
+      if (size.includes('albow') || size.includes('elbow') || name.includes('albow') || name.includes('elbow')) {
+        return true;
+      }
+      return false;
+    };
+
     const variantsByProd = new Map<string, ProductVariant[]>();
     for (const vr of variantRows) {
+      if (isDummyVariant(vr)) continue;
       const v: ProductVariant = {
         ...vr,
         active: Boolean(vr.active),
@@ -149,13 +204,15 @@ export class ProductRepository {
       variantsByProd.set(vr.productId, list);
     }
 
-    return productRows.map((p) => ({
-      ...p,
-      active: Boolean(p.active),
-      allowedUnits: JSON.parse(p.allowedUnits || '[]'),
-      customValues: p.customValues ? JSON.parse(p.customValues) : undefined,
-      variants: variantsByProd.get(p.id) || [],
-    }));
+    return validProducts
+      .map((p) => ({
+        ...p,
+        active: Boolean(p.active),
+        allowedUnits: JSON.parse(p.allowedUnits || '[]'),
+        customValues: p.customValues ? JSON.parse(p.customValues) : undefined,
+        variants: variantsByProd.get(p.id) || [],
+      }))
+      .filter((p) => p.variants && p.variants.length > 0);
   }
 
   static async createProduct(
