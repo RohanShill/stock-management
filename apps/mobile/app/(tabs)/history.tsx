@@ -9,6 +9,8 @@ import {
   Platform,
   StatusBar as RNStatusBar,
   ActivityIndicator,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -213,11 +215,17 @@ export default function HistoryScreen() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'sale' | 'restock'>('all');
 
-  // Time-based filtering (Day / Month / Year / All)
+  // Active Filters
+  const [filterType, setFilterType] = useState<'all' | 'sale' | 'restock'>('all');
   const [timeFilterMode, setTimeFilterMode] = useState<TimeFilterMode>('all');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+
+  // Filter Modal State & Draft selections
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [draftFilterType, setDraftFilterType] = useState<'all' | 'sale' | 'restock'>('all');
+  const [draftTimeFilterMode, setDraftTimeFilterMode] = useState<TimeFilterMode>('all');
+  const [draftSelectedDate, setDraftSelectedDate] = useState<Date>(new Date());
 
   const loadHistory = useCallback(async (isSilent = false) => {
     try {
@@ -247,96 +255,150 @@ export default function HistoryScreen() {
     setRefreshing(false);
   };
 
-  // Date Navigator Helpers
-  const handlePrevDate = () => {
-    setSelectedDate((prev) => {
+  // Open Filter Dialog
+  const handleOpenFilterModal = () => {
+    setDraftFilterType(filterType);
+    setDraftTimeFilterMode(timeFilterMode);
+    setDraftSelectedDate(new Date(selectedDate));
+    setFilterModalVisible(true);
+  };
+
+  // Commit and apply filters from modal
+  const handleApplyFilters = () => {
+    setFilterType(draftFilterType);
+    setTimeFilterMode(draftTimeFilterMode);
+    setSelectedDate(new Date(draftSelectedDate));
+    setFilterModalVisible(false);
+  };
+
+  // Reset all filters
+  const handleResetFiltersInModal = () => {
+    setDraftFilterType('all');
+    setDraftTimeFilterMode('all');
+    setDraftSelectedDate(new Date());
+  };
+
+  // Quick Clear from main screen
+  const handleClearAllFilters = () => {
+    setFilterType('all');
+    setTimeFilterMode('all');
+    setSelectedDate(new Date());
+  };
+
+  // Stepper inside Modal
+  const handleDraftPrevDate = () => {
+    setDraftSelectedDate((prev) => {
       const d = new Date(prev);
-      if (timeFilterMode === 'day') {
+      if (draftTimeFilterMode === 'day') {
         d.setDate(d.getDate() - 1);
-      } else if (timeFilterMode === 'month') {
+      } else if (draftTimeFilterMode === 'month') {
         d.setMonth(d.getMonth() - 1);
-      } else if (timeFilterMode === 'year') {
+      } else if (draftTimeFilterMode === 'year') {
         d.setFullYear(d.getFullYear() - 1);
       }
       return d;
     });
   };
 
-  const handleNextDate = () => {
-    setSelectedDate((prev) => {
+  const handleDraftNextDate = () => {
+    setDraftSelectedDate((prev) => {
       const d = new Date(prev);
       const now = new Date();
-      if (timeFilterMode === 'day') {
+      if (draftTimeFilterMode === 'day') {
         d.setDate(d.getDate() + 1);
-      } else if (timeFilterMode === 'month') {
+      } else if (draftTimeFilterMode === 'month') {
         d.setMonth(d.getMonth() + 1);
-      } else if (timeFilterMode === 'year') {
+      } else if (draftTimeFilterMode === 'year') {
         d.setFullYear(d.getFullYear() + 1);
       }
       return d;
     });
   };
 
-  const handleResetToCurrentDate = () => {
-    setSelectedDate(new Date());
-  };
-
-  const isNextDisabled = useMemo(() => {
+  const isDraftNextDisabled = useMemo(() => {
     const now = new Date();
-    if (timeFilterMode === 'day') {
+    if (draftTimeFilterMode === 'day') {
       return (
-        selectedDate.getDate() >= now.getDate() &&
-        selectedDate.getMonth() >= now.getMonth() &&
-        selectedDate.getFullYear() >= now.getFullYear()
+        draftSelectedDate.getDate() >= now.getDate() &&
+        draftSelectedDate.getMonth() >= now.getMonth() &&
+        draftSelectedDate.getFullYear() >= now.getFullYear()
       );
     }
-    if (timeFilterMode === 'month') {
+    if (draftTimeFilterMode === 'month') {
       return (
-        selectedDate.getMonth() >= now.getMonth() &&
-        selectedDate.getFullYear() >= now.getFullYear()
+        draftSelectedDate.getMonth() >= now.getMonth() &&
+        draftSelectedDate.getFullYear() >= now.getFullYear()
       );
     }
-    if (timeFilterMode === 'year') {
-      return selectedDate.getFullYear() >= now.getFullYear();
+    if (draftTimeFilterMode === 'year') {
+      return draftSelectedDate.getFullYear() >= now.getFullYear();
     }
     return true;
-  }, [timeFilterMode, selectedDate]);
+  }, [draftTimeFilterMode, draftSelectedDate]);
 
-  const getDateLabel = () => {
+  const getDraftDateLabel = () => {
     const now = new Date();
-    if (timeFilterMode === 'day') {
+    if (draftTimeFilterMode === 'day') {
       const isToday =
-        selectedDate.getDate() === now.getDate() &&
-        selectedDate.getMonth() === now.getMonth() &&
-        selectedDate.getFullYear() === now.getFullYear();
+        draftSelectedDate.getDate() === now.getDate() &&
+        draftSelectedDate.getMonth() === now.getMonth() &&
+        draftSelectedDate.getFullYear() === now.getFullYear();
 
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
       const isYesterday =
-        selectedDate.getDate() === yesterday.getDate() &&
-        selectedDate.getMonth() === yesterday.getMonth() &&
-        selectedDate.getFullYear() === yesterday.getFullYear();
+        draftSelectedDate.getDate() === yesterday.getDate() &&
+        draftSelectedDate.getMonth() === yesterday.getMonth() &&
+        draftSelectedDate.getFullYear() === yesterday.getFullYear();
 
-      if (isToday) return `Today (${selectedDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})`;
-      if (isYesterday) return `Yesterday (${selectedDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})`;
-      return selectedDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      if (isToday) return `Today (${draftSelectedDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})`;
+      if (isYesterday) return `Yesterday (${draftSelectedDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})`;
+      return draftSelectedDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
-    if (timeFilterMode === 'month') {
+    if (draftTimeFilterMode === 'month') {
       const isCurrentMonth =
-        selectedDate.getMonth() === now.getMonth() &&
-        selectedDate.getFullYear() === now.getFullYear();
-      const monthStr = selectedDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+        draftSelectedDate.getMonth() === now.getMonth() &&
+        draftSelectedDate.getFullYear() === now.getFullYear();
+      const monthStr = draftSelectedDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
       return isCurrentMonth ? `This Month (${monthStr})` : monthStr;
     }
 
-    if (timeFilterMode === 'year') {
-      const isCurrentYear = selectedDate.getFullYear() === now.getFullYear();
-      const yearStr = `${selectedDate.getFullYear()}`;
+    if (draftTimeFilterMode === 'year') {
+      const isCurrentYear = draftSelectedDate.getFullYear() === now.getFullYear();
+      const yearStr = `${draftSelectedDate.getFullYear()}`;
       return isCurrentYear ? `This Year (${yearStr})` : yearStr;
     }
 
     return 'All Time';
+  };
+
+  // Active filter status
+  const isAnyFilterActive = timeFilterMode !== 'all' || filterType !== 'all';
+  const activeFilterCount = (timeFilterMode !== 'all' ? 1 : 0) + (filterType !== 'all' ? 1 : 0);
+
+  const getActiveFilterSummary = () => {
+    const parts: string[] = [];
+    if (timeFilterMode === 'day') {
+      const now = new Date();
+      const isToday =
+        selectedDate.getDate() === now.getDate() &&
+        selectedDate.getMonth() === now.getMonth() &&
+        selectedDate.getFullYear() === now.getFullYear();
+      parts.push(isToday ? 'Today' : selectedDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }));
+    } else if (timeFilterMode === 'month') {
+      parts.push(selectedDate.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }));
+    } else if (timeFilterMode === 'year') {
+      parts.push(`${selectedDate.getFullYear()}`);
+    }
+
+    if (filterType === 'sale') {
+      parts.push('Sales Only');
+    } else if (filterType === 'restock') {
+      parts.push('Restocks Only');
+    }
+
+    return parts.join(' • ');
   };
 
   // Filtered Items (Time period + Type + Search)
@@ -616,224 +678,118 @@ export default function HistoryScreen() {
           </Surface>
         </View>
 
-        {/* 3. Time Period Filter Selector (Day / Month / Year / All Time) */}
-        <View style={styles.periodFilterWrap}>
-          <View style={styles.periodPillsRow}>
-            {(['all', 'day', 'month', 'year'] as TimeFilterMode[]).map((mode) => {
-              const isSelected = timeFilterMode === mode;
-              const label =
-                mode === 'all'
-                  ? 'All Time'
-                  : mode === 'day'
-                  ? 'Day'
-                  : mode === 'month'
-                  ? 'Month'
-                  : 'Year';
-
-              return (
-                <TouchableOpacity
-                  key={mode}
-                  activeOpacity={0.75}
-                  onPress={() => {
-                    setTimeFilterMode(mode);
-                    setSelectedDate(new Date());
-                  }}
-                  style={[
-                    styles.periodPill,
-                    {
-                      backgroundColor: isSelected
-                        ? activeColors.primary
-                        : isDarkMode
-                        ? activeColors.surfaceElevated
-                        : activeColors.surface,
-                      borderColor: isSelected ? activeColors.primary : activeColors.border,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.periodPillText,
-                      {
-                        color: isSelected ? '#FFFFFF' : activeColors.textSecondary,
-                        fontWeight: isSelected ? '700' : '600',
-                      },
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* Stepper Navigation bar if Day/Month/Year is selected */}
-          {timeFilterMode !== 'all' && (
-            <View
+        {/* 3. Search Bar + Single Unified Filter Trigger Button */}
+        <View style={styles.searchAndFilterSection}>
+          <View style={styles.searchAndFilterRow}>
+            <Searchbar
+              placeholder="Search product, note..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
               style={[
-                styles.dateNavRow,
+                styles.searchbar,
                 {
                   backgroundColor: activeColors.surface,
                   borderColor: activeColors.border,
                 },
               ]}
+              inputStyle={[styles.searchbarInput, { color: activeColors.textPrimary }]}
+              placeholderTextColor={activeColors.textMuted}
+              iconColor={activeColors.textSecondary}
+            />
+
+            {/* The Unified Filter Button */}
+            <TouchableOpacity
+              style={[
+                styles.filterTriggerBtn,
+                isAnyFilterActive
+                  ? {
+                      backgroundColor: activeColors.primary,
+                      borderColor: activeColors.primary,
+                    }
+                  : {
+                      backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#FFFFFF',
+                      borderColor: activeColors.border,
+                    },
+              ]}
+              onPress={handleOpenFilterModal}
+              activeOpacity={0.75}
             >
-              <TouchableOpacity
-                onPress={handlePrevDate}
+              <MaterialCommunityIcons
+                name="tune-variant"
+                size={18}
+                color={isAnyFilterActive ? '#FFFFFF' : activeColors.textPrimary}
+              />
+              <Text
                 style={[
-                  styles.dateNavArrow,
-                  { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' },
+                  styles.filterTriggerText,
+                  { color: isAnyFilterActive ? '#FFFFFF' : activeColors.textPrimary },
                 ]}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <MaterialCommunityIcons name="chevron-left" size={20} color={activeColors.textPrimary} />
-              </TouchableOpacity>
-
-              <View style={styles.dateNavCenter}>
-                <MaterialCommunityIcons
-                  name={
-                    timeFilterMode === 'day'
-                      ? 'calendar-today'
-                      : timeFilterMode === 'month'
-                      ? 'calendar-month'
-                      : 'calendar'
-                  }
-                  size={16}
-                  color={activeColors.primary}
-                  style={{ marginRight: 6 }}
-                />
-                <Text
-                  style={[styles.dateNavText, { color: activeColors.textPrimary }]}
-                  numberOfLines={1}
+                Filter
+              </Text>
+              {activeFilterCount > 0 && (
+                <View
+                  style={[
+                    styles.activeBadgeCircle,
+                    { backgroundColor: isAnyFilterActive ? '#FFFFFF' : activeColors.primary },
+                  ]}
                 >
-                  {getDateLabel()}
-                </Text>
-              </View>
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                {!isNextDisabled && (
-                  <TouchableOpacity
-                    onPress={handleResetToCurrentDate}
+                  <Text
                     style={[
-                      styles.dateResetBtn,
-                      { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF' },
+                      styles.activeBadgeText,
+                      { color: isAnyFilterActive ? activeColors.primary : '#FFFFFF' },
                     ]}
                   >
-                    <Text style={[styles.dateResetBtnText, { color: activeColors.primary }]}>
-                      {timeFilterMode === 'day' ? 'Today' : 'Current'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                <TouchableOpacity
-                  onPress={handleNextDate}
-                  disabled={isNextDisabled}
-                  style={[
-                    styles.dateNavArrow,
-                    {
-                      backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9',
-                      opacity: isNextDisabled ? 0.35 : 1,
-                    },
-                  ]}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <MaterialCommunityIcons name="chevron-right" size={20} color={activeColors.textPrimary} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </View>
-
-        {/* 4. Search and Activity Type Filters */}
-        <View style={styles.filterSection}>
-          <Searchbar
-            placeholder="Search by product, variant, or note..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            style={[
-              styles.searchbar,
-              {
-                backgroundColor: activeColors.surface,
-                borderColor: activeColors.border,
-              },
-            ]}
-            inputStyle={[styles.searchbarInput, { color: activeColors.textPrimary }]}
-            placeholderTextColor={activeColors.textMuted}
-            iconColor={activeColors.textSecondary}
-          />
-
-          <View style={styles.filterChipsRow}>
-            <TouchableOpacity
-              style={[
-                styles.filterPill,
-                filterType === 'all'
-                  ? { backgroundColor: activeColors.primary, borderColor: activeColors.primary }
-                  : { backgroundColor: activeColors.surface, borderColor: activeColors.border },
-              ]}
-              onPress={() => setFilterType('all')}
-              activeOpacity={0.75}
-            >
-              {filterType === 'all' && (
-                <MaterialCommunityIcons name="check" size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                    {activeFilterCount}
+                  </Text>
+                </View>
               )}
-              <Text
-                style={[
-                  styles.filterPillText,
-                  { color: filterType === 'all' ? '#FFFFFF' : activeColors.textSecondary },
-                  filterType === 'all' && styles.filterPillTextActive,
-                ]}
-              >
-                All ({filteredHistory.length})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.filterPill,
-                filterType === 'sale'
-                  ? { backgroundColor: '#DC2626', borderColor: '#DC2626' }
-                  : { backgroundColor: activeColors.surface, borderColor: activeColors.border },
-              ]}
-              onPress={() => setFilterType('sale')}
-              activeOpacity={0.75}
-            >
-              {filterType === 'sale' && (
-                <MaterialCommunityIcons name="check" size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-              )}
-              <Text
-                style={[
-                  styles.filterPillText,
-                  { color: filterType === 'sale' ? '#FFFFFF' : activeColors.textSecondary },
-                  filterType === 'sale' && styles.filterPillTextActive,
-                ]}
-              >
-                Sales ({stats.salesCount})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.filterPill,
-                filterType === 'restock'
-                  ? { backgroundColor: '#16A34A', borderColor: '#16A34A' }
-                  : { backgroundColor: activeColors.surface, borderColor: activeColors.border },
-              ]}
-              onPress={() => setFilterType('restock')}
-              activeOpacity={0.75}
-            >
-              {filterType === 'restock' && (
-                <MaterialCommunityIcons name="check" size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-              )}
-              <Text
-                style={[
-                  styles.filterPillText,
-                  { color: filterType === 'restock' ? '#FFFFFF' : activeColors.textSecondary },
-                  filterType === 'restock' && styles.filterPillTextActive,
-                ]}
-              >
-                Restocks ({stats.restockCount})
-              </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Active Filter Dismissable Pill if any filter applied */}
+          {isAnyFilterActive && (
+            <View style={styles.activeFilterRow}>
+              <View
+                style={[
+                  styles.activeFilterChip,
+                  {
+                    backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF',
+                    borderColor: activeColors.primary,
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="filter-check"
+                  size={14}
+                  color={activeColors.primary}
+                  style={{ marginRight: 5 }}
+                />
+                <Text
+                  style={[styles.activeFilterChipText, { color: activeColors.primary }]}
+                  numberOfLines={1}
+                >
+                  {getActiveFilterSummary()}
+                </Text>
+                <TouchableOpacity
+                  onPress={handleClearAllFilters}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{ marginLeft: 6 }}
+                >
+                  <MaterialCommunityIcons name="close-circle" size={16} color={activeColors.primary} />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                onPress={handleClearAllFilters}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={[styles.clearAllText, { color: activeColors.textMuted }]}>
+                  Reset
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </View>
     );
@@ -845,10 +801,9 @@ export default function HistoryScreen() {
     history.length,
     timeFilterMode,
     stats,
-    isNextDisabled,
     searchQuery,
-    filterType,
-    filteredHistory.length,
+    isAnyFilterActive,
+    activeFilterCount,
   ]);
 
   const renderEmpty = useMemo(() => {
@@ -878,13 +833,21 @@ export default function HistoryScreen() {
           No Movements Found
         </Text>
         <Text style={[styles.emptyDesc, { color: activeColors.textSecondary }]}>
-          {searchQuery || filterType !== 'all' || timeFilterMode !== 'all'
+          {searchQuery || isAnyFilterActive
             ? 'No transactions matched your selected filters.'
             : 'Whenever you sell items or add incoming stock, the audit trail will appear here automatically.'}
         </Text>
+        {isAnyFilterActive && (
+          <TouchableOpacity
+            style={[styles.emptyResetBtn, { backgroundColor: activeColors.primary }]}
+            onPress={handleClearAllFilters}
+          >
+            <Text style={styles.emptyResetBtnText}>Clear All Filters</Text>
+          </TouchableOpacity>
+        )}
       </Surface>
     );
-  }, [initialLoading, activeColors, searchQuery, filterType, timeFilterMode]);
+  }, [initialLoading, activeColors, searchQuery, isAnyFilterActive]);
 
   return (
     <View style={[styles.container, { backgroundColor: activeColors.background }]}>
@@ -910,6 +873,294 @@ export default function HistoryScreen() {
         windowSize={7}
         removeClippedSubviews={Platform.OS === 'android'}
       />
+
+      {/* Unified Filter Dialog / Modal */}
+      <Modal
+        visible={filterModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setFilterModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: activeColors.surface,
+                borderColor: activeColors.border,
+              },
+            ]}
+          >
+            {/* Modal Header */}
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <MaterialCommunityIcons name="tune-variant" size={20} color={activeColors.primary} />
+                <Text style={[styles.modalTitle, { color: activeColors.textPrimary }]}>
+                  Filter History
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setFilterModalVisible(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={[
+                  styles.modalCloseBtn,
+                  { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' },
+                ]}
+              >
+                <MaterialCommunityIcons name="close" size={18} color={activeColors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* 1. Time Period Section */}
+              <View style={styles.filterGroup}>
+                <Text style={[styles.filterGroupLabel, { color: activeColors.textSecondary }]}>
+                  TIME PERIOD
+                </Text>
+                <View style={styles.modalPillGrid}>
+                  {(['all', 'day', 'month', 'year'] as TimeFilterMode[]).map((mode) => {
+                    const isSelected = draftTimeFilterMode === mode;
+                    const label =
+                      mode === 'all'
+                        ? 'All Time'
+                        : mode === 'day'
+                        ? 'Day'
+                        : mode === 'month'
+                        ? 'Month'
+                        : 'Year';
+
+                    return (
+                      <TouchableOpacity
+                        key={mode}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          setDraftTimeFilterMode(mode);
+                          setDraftSelectedDate(new Date());
+                        }}
+                        style={[
+                          styles.modalPill,
+                          {
+                            backgroundColor: isSelected
+                              ? activeColors.primary
+                              : isDarkMode
+                              ? activeColors.surfaceElevated
+                              : '#F8FAFC',
+                            borderColor: isSelected ? activeColors.primary : activeColors.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.modalPillText,
+                            {
+                              color: isSelected ? '#FFFFFF' : activeColors.textPrimary,
+                              fontWeight: isSelected ? '700' : '500',
+                            },
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Sub-selector for Day / Month / Year */}
+                {draftTimeFilterMode !== 'all' && (
+                  <View
+                    style={[
+                      styles.modalStepperRow,
+                      {
+                        backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#F1F5F9',
+                        borderColor: activeColors.border,
+                      },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      onPress={handleDraftPrevDate}
+                      style={[
+                        styles.stepperArrow,
+                        { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' },
+                      ]}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <MaterialCommunityIcons name="chevron-left" size={20} color={activeColors.textPrimary} />
+                    </TouchableOpacity>
+
+                    <View style={styles.stepperCenter}>
+                      <MaterialCommunityIcons
+                        name={
+                          draftTimeFilterMode === 'day'
+                            ? 'calendar-today'
+                            : draftTimeFilterMode === 'month'
+                            ? 'calendar-month'
+                            : 'calendar'
+                        }
+                        size={15}
+                        color={activeColors.primary}
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text
+                        style={[styles.stepperText, { color: activeColors.textPrimary }]}
+                        numberOfLines={1}
+                      >
+                        {getDraftDateLabel()}
+                      </Text>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      {!isDraftNextDisabled && (
+                        <TouchableOpacity
+                          onPress={() => setDraftSelectedDate(new Date())}
+                          style={[
+                            styles.stepperResetBtn,
+                            { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.25)' : '#EEF2FF' },
+                          ]}
+                        >
+                          <Text style={[styles.stepperResetText, { color: activeColors.primary }]}>
+                            {draftTimeFilterMode === 'day' ? 'Today' : 'Current'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+
+                      <TouchableOpacity
+                        onPress={handleDraftNextDate}
+                        disabled={isDraftNextDisabled}
+                        style={[
+                          styles.stepperArrow,
+                          {
+                            backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF',
+                            opacity: isDraftNextDisabled ? 0.35 : 1,
+                          },
+                        ]}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <MaterialCommunityIcons name="chevron-right" size={20} color={activeColors.textPrimary} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+
+              {/* 2. Transaction Type Section */}
+              <View style={[styles.filterGroup, { marginTop: spacing.md }]}>
+                <Text style={[styles.filterGroupLabel, { color: activeColors.textSecondary }]}>
+                  TRANSACTION TYPE
+                </Text>
+                <View style={styles.typeButtonGroup}>
+                  <TouchableOpacity
+                    style={[
+                      styles.typeButton,
+                      draftFilterType === 'all'
+                        ? { backgroundColor: activeColors.primary, borderColor: activeColors.primary }
+                        : {
+                            backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#F8FAFC',
+                            borderColor: activeColors.border,
+                          },
+                    ]}
+                    onPress={() => setDraftFilterType('all')}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.typeButtonText,
+                        {
+                          color: draftFilterType === 'all' ? '#FFFFFF' : activeColors.textPrimary,
+                          fontWeight: draftFilterType === 'all' ? '700' : '500',
+                        },
+                      ]}
+                    >
+                      All Activity
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.typeButton,
+                      draftFilterType === 'sale'
+                        ? { backgroundColor: '#DC2626', borderColor: '#DC2626' }
+                        : {
+                            backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#F8FAFC',
+                            borderColor: activeColors.border,
+                          },
+                    ]}
+                    onPress={() => setDraftFilterType('sale')}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.typeButtonText,
+                        {
+                          color: draftFilterType === 'sale' ? '#FFFFFF' : '#DC2626',
+                          fontWeight: draftFilterType === 'sale' ? '700' : '500',
+                        },
+                      ]}
+                    >
+                      Sales (Out)
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.typeButton,
+                      draftFilterType === 'restock'
+                        ? { backgroundColor: '#16A34A', borderColor: '#16A34A' }
+                        : {
+                            backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#F8FAFC',
+                            borderColor: activeColors.border,
+                          },
+                    ]}
+                    onPress={() => setDraftFilterType('restock')}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.typeButtonText,
+                        {
+                          color: draftFilterType === 'restock' ? '#FFFFFF' : '#16A34A',
+                          fontWeight: draftFilterType === 'restock' ? '700' : '500',
+                        },
+                      ]}
+                    >
+                      Restocks (In)
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* Modal Actions Footer */}
+            <View
+              style={[
+                styles.modalActionsRow,
+                { borderTopColor: isDarkMode ? '#1F2937' : '#F1F5F9' },
+              ]}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.resetModalBtn,
+                  { borderColor: activeColors.border },
+                ]}
+                onPress={handleResetFiltersInModal}
+              >
+                <Text style={[styles.resetModalBtnText, { color: activeColors.textSecondary }]}>
+                  Reset
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.applyModalBtn,
+                  { backgroundColor: activeColors.primary },
+                ]}
+                onPress={handleApplyFilters}
+              >
+                <Text style={styles.applyModalBtnText}>Apply Filters</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1020,70 +1271,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
   },
-  periodFilterWrap: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    gap: 8,
-  },
-  periodPillsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  periodPill: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  periodPillText: {
-    fontSize: 12,
-  },
-  dateNavRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginTop: 4,
-  },
-  dateNavArrow: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dateNavCenter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-    marginHorizontal: 8,
-  },
-  dateNavText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  dateResetBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  dateResetBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  filterSection: {
+  searchAndFilterSection: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
+    gap: 8,
+  },
+  searchAndFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
   },
   searchbar: {
+    flex: 1,
     elevation: 0,
     borderWidth: 1,
     borderRadius: borderRadius.md,
@@ -1093,24 +1293,55 @@ const styles = StyleSheet.create({
     fontSize: 13,
     minHeight: 44,
   },
-  filterChipsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  filterPill: {
+  filterTriggerBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
+    gap: 6,
+    paddingHorizontal: 14,
+    height: 44,
+    borderRadius: borderRadius.md,
     borderWidth: 1,
+    justifyContent: 'center',
   },
-  filterPillText: {
+  filterTriggerText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  activeBadgeCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 2,
+  },
+  activeBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  activeFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 2,
+  },
+  activeFilterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    maxWidth: '82%',
+  },
+  activeFilterChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  clearAllText: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  filterPillTextActive: {
-    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
   listContent: {
     gap: spacing.sm,
@@ -1277,5 +1508,153 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.xs,
     lineHeight: 18,
+  },
+  emptyResetBtn: {
+    marginTop: spacing.md,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  emptyResetBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+
+  /* Modal Styles */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    maxHeight: '80%',
+    ...shadows.floating,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  filterGroup: {
+    marginTop: 4,
+  },
+  filterGroupLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+  },
+  modalPillGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  modalPill: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalPillText: {
+    fontSize: 12,
+  },
+  modalStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 10,
+  },
+  stepperArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepperCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    marginHorizontal: 6,
+  },
+  stepperText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  stepperResetBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  stepperResetText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  typeButtonGroup: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  typeButton: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  typeButtonText: {
+    fontSize: 12,
+  },
+  modalActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: spacing.lg,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+  },
+  resetModalBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  resetModalBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  applyModalBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  applyModalBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
