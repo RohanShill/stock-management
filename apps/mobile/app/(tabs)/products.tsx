@@ -637,7 +637,7 @@ export default function ProductsScreen() {
       >
         <View style={styles.storeHeaderRow}>
           <Image
-            source={require('../../assets/icon.png')}
+            source={require('../../assets/logo.png')}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -1140,6 +1140,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 8,
+    backgroundColor: '#000000',
   },
   storeTitle: {
     fontSize: 16,

@@ -11,17 +11,17 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1E293B"
+      "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.hardwarestore.manager"
+      "bundleIdentifier": "com.manjuhardware.store"
     },
     "android": {
-      "package": "com.hardwarestore.manager",
+      "package": "com.manjuhardware.store",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1E293B"
+        "backgroundColor": "#000000"
       },
       "permissions": [
         "android.permission.INTERNET",

@@ -18,7 +18,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       package: 'com.manjuhardware.store',
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
-        backgroundColor: '#1E293B',
+        backgroundColor: '#000000',
       },
       permissions: [
         'android.permission.INTERNET',

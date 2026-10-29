@@ -594,8 +594,8 @@ export default function HomeScreen() {
             style={[
               styles.logoWrapper,
               {
-                backgroundColor: '#FFFFFF',
-                borderColor: isDarkMode ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
+                backgroundColor: '#000000',
+                borderColor: isDarkMode ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)',
               },
             ]}
           >
