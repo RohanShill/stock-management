@@ -700,34 +700,15 @@ export default function HomeScreen() {
       ) : (
         <>
 
-      {/* 2. Quick Actions (3 Action Buttons) */}
+      {/* 2. Quick Actions (Rearranged: Add Stock, Sell Stock, Add Product) */}
       <View style={styles.quickActionsRow}>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.actionButtonPrimary]}
-          onPress={() =>
-            router.push({
-              pathname: '/(tabs)/products',
-              params: { action: 'add' },
-            })
-          }
-          activeOpacity={0.85}
-        >
-          <View style={styles.actionIconWrapper}>
-            <MaterialCommunityIcons name="plus" size={22} color="#FFFFFF" />
-          </View>
-          <View style={styles.actionTextContainer}>
-            <Text style={styles.actionTitlePrimary} numberOfLines={1}>Add Product</Text>
-            <Text style={styles.actionSubtitlePrimary} numberOfLines={1}>New item</Text>
-          </View>
-        </TouchableOpacity>
-
+        {/* 1. Add Stock */}
         <TouchableOpacity
           style={[
             styles.actionButton,
-            styles.actionButtonSecondary,
             {
               backgroundColor: activeColors.surface,
-              borderColor: activeColors.border,
+              borderColor: isDarkMode ? '#14532D' : '#BBF7D0',
             },
           ]}
           onPress={handleOpenGeneralAddStock}
@@ -742,19 +723,19 @@ export default function HomeScreen() {
             <MaterialCommunityIcons name="arrow-up-bold-box" size={22} color="#16A34A" />
           </View>
           <View style={styles.actionTextContainer}>
-            <Text style={[styles.actionTitleSecondary, { color: activeColors.textPrimary }]} numberOfLines={1}>
+            <Text style={[styles.actionTitleStock, { color: '#16A34A' }]} numberOfLines={1}>
               Add Stock
             </Text>
-            <Text style={[styles.actionSubtitleSecondary, { color: activeColors.textSecondary }]} numberOfLines={1}>
+            <Text style={[styles.actionSubtitle, { color: activeColors.textSecondary }]} numberOfLines={1}>
               Restock
             </Text>
           </View>
         </TouchableOpacity>
 
+        {/* 2. Sell Stock */}
         <TouchableOpacity
           style={[
             styles.actionButton,
-            styles.actionButtonSell,
             {
               backgroundColor: activeColors.surface,
               borderColor: isDarkMode ? '#7F1D1D' : '#FECDD3',
@@ -772,62 +753,57 @@ export default function HomeScreen() {
             <MaterialCommunityIcons name="arrow-down-bold-box" size={22} color="#DC2626" />
           </View>
           <View style={styles.actionTextContainer}>
-            <Text style={styles.actionTitleSell} numberOfLines={1}>Sell Stock</Text>
-            <Text style={styles.actionSubtitleSell} numberOfLines={1}>Stock out</Text>
+            <Text style={[styles.actionTitleSell, { color: '#DC2626' }]} numberOfLines={1}>
+              Sell Stock
+            </Text>
+            <Text style={[styles.actionSubtitle, { color: activeColors.textSecondary }]} numberOfLines={1}>
+              Stock out
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* 3. Add Product */}
+        <TouchableOpacity
+          style={[
+            styles.actionButton,
+            {
+              backgroundColor: activeColors.surface,
+              borderColor: isDarkMode ? '#3730A3' : '#C7D2FE',
+            },
+          ]}
+          onPress={() =>
+            router.push({
+              pathname: '/(tabs)/products',
+              params: { action: 'add' },
+            })
+          }
+          activeOpacity={0.85}
+        >
+          <View
+            style={[
+              styles.actionIconWrapper,
+              { backgroundColor: isDarkMode ? '#1E1B4B' : '#EEF2FF' },
+            ]}
+          >
+            <MaterialCommunityIcons name="plus-box" size={22} color={activeColors.primary} />
+          </View>
+          <View style={styles.actionTextContainer}>
+            <Text style={[styles.actionTitleProduct, { color: activeColors.primary }]} numberOfLines={1}>
+              Add Product
+            </Text>
+            <Text style={[styles.actionSubtitle, { color: activeColors.textSecondary }]} numberOfLines={1}>
+              New item
+            </Text>
           </View>
         </TouchableOpacity>
       </View>
 
-      {/* 3. 2x2 Quick Stats Cards */}
+      {/* 3. Stock Overview (Low Stock & Out of Stock) */}
       <View style={styles.sectionHeaderRow}>
         <Text style={[styles.sectionTitle, { color: activeColors.textPrimary }]}>Stock Overview</Text>
       </View>
 
       <View style={styles.statsGrid}>
-        {/* Total Products */}
-        <TouchableOpacity
-          style={[
-            styles.statCard,
-            {
-              backgroundColor: activeColors.surface,
-              borderColor: activeColors.border,
-            },
-          ]}
-          onPress={() => router.push('/(tabs)/products')}
-          activeOpacity={0.8}
-        >
-          <View style={styles.statCardTop}>
-            <Text style={[styles.statLabel, { color: activeColors.textSecondary }]}>Total Products</Text>
-            <MaterialCommunityIcons name="package-variant-closed" size={20} color={activeColors.primary} />
-          </View>
-          <Text style={[styles.statValue, { color: activeColors.primary }]}>
-            {stats.totalProductsCount}
-          </Text>
-          <Text style={[styles.statSub, { color: activeColors.textMuted }]}>In catalog</Text>
-        </TouchableOpacity>
-
-        {/* Total Stock Units */}
-        <TouchableOpacity
-          style={[
-            styles.statCard,
-            {
-              backgroundColor: activeColors.surface,
-              borderColor: activeColors.border,
-            },
-          ]}
-          onPress={() => router.push('/(tabs)/products')}
-          activeOpacity={0.8}
-        >
-          <View style={styles.statCardTop}>
-            <Text style={[styles.statLabel, { color: activeColors.textSecondary }]}>Stock Units</Text>
-            <MaterialCommunityIcons name="layers" size={20} color={activeColors.accent} />
-          </View>
-          <Text style={[styles.statValue, { color: activeColors.accent }]}>
-            {stats.totalUnitsInStock.toLocaleString('en-IN')}
-          </Text>
-          <Text style={[styles.statSub, { color: activeColors.textMuted }]}>Total inventory</Text>
-        </TouchableOpacity>
-
         {/* Low Stock */}
         <TouchableOpacity
           style={[
@@ -1411,21 +1387,10 @@ const styles = StyleSheet.create({
     minHeight: 104,
     ...shadows.card,
   },
-  actionButtonPrimary: {
-    backgroundColor: '#4F46E5',
-    borderColor: '#4338CA',
-  },
-  actionButtonSecondary: {
-    borderWidth: 1,
-  },
-  actionButtonSell: {
-    borderWidth: 1,
-  },
   actionIconWrapper: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
@@ -1434,37 +1399,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionTitlePrimary: {
+  actionTitleStock: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FFFFFF',
-    textAlign: 'center',
-  },
-  actionSubtitlePrimary: {
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  actionTitleSecondary: {
-    fontSize: 12,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  actionSubtitleSecondary: {
-    fontSize: 10,
-    marginTop: 2,
     textAlign: 'center',
   },
   actionTitleSell: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#DC2626',
     textAlign: 'center',
   },
-  actionSubtitleSell: {
+  actionTitleProduct: {
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  actionSubtitle: {
     fontSize: 10,
-    color: '#E11D48',
     marginTop: 2,
     textAlign: 'center',
   },
@@ -1504,7 +1455,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   statCard: {
-    width: '48.5%',
+    flex: 1,
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     borderWidth: 1,
