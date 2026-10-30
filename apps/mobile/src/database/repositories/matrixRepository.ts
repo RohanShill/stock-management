@@ -204,18 +204,9 @@ export class MatrixRepository {
     const db = await getDatabase();
 
     let sql = `SELECT * FROM products WHERE storeId = ? AND categoryId = ? AND deletedAt IS NULL AND active = 1
-      AND LOWER(name) NOT LIKE '%emulsion%'
-      AND LOWER(name) NOT LIKE '%distemper%'
-      AND LOWER(name) NOT LIKE '%primer%'
-      AND LOWER(name) NOT LIKE '%solvent%'
-      AND LOWER(name) NOT LIKE '%waterproof%'
-      AND LOWER(name) NOT LIKE '%putty%'
-      AND LOWER(brand) NOT LIKE '%asian paint%'
-      AND LOWER(brand) NOT LIKE '%berger%'
-      AND LOWER(brand) NOT LIKE '%dr. fixit%'
-      AND LOWER(brand) NOT LIKE '%birla white%'
       AND LOWER(brand) != 'general'
-      AND id NOT LIKE 'demo-%'`;
+      AND id NOT LIKE 'demo-%'
+      AND id NOT LIKE 'prod-demo%'`;
     const params: any[] = [storeId, categoryId];
 
     if (subcategoryId) {
@@ -249,14 +240,7 @@ export class MatrixRepository {
     for (const p of productRows) {
       const rawBrand = (p.brand || '').trim();
       const lowerBrand = rawBrand.toLowerCase();
-      if (
-        rawBrand &&
-        lowerBrand !== 'general' &&
-        !lowerBrand.includes('asian paint') &&
-        !lowerBrand.includes('berger') &&
-        !lowerBrand.includes('dr. fixit') &&
-        !lowerBrand.includes('birla white')
-      ) {
+      if (rawBrand && lowerBrand !== 'general') {
         brandSet.add(rawBrand);
       }
     }
@@ -267,15 +251,8 @@ export class MatrixRepository {
       const rawBrand = (prod?.brand || '').trim();
       const lowerBrand = rawBrand.toLowerCase();
 
-      // User requirement: "general ho hta do bas jo brand client chahega wo add krega"
-      if (
-        !rawBrand ||
-        lowerBrand === 'general' ||
-        lowerBrand.includes('asian paint') ||
-        lowerBrand.includes('berger') ||
-        lowerBrand.includes('dr. fixit') ||
-        lowerBrand.includes('birla white')
-      ) {
+      // Filter out dummy general placeholder
+      if (!rawBrand || lowerBrand === 'general') {
         continue;
       }
 
@@ -355,7 +332,7 @@ export class MatrixRepository {
 
     // Check if product already exists for this brand under this category/subcat
     let prod = await db.getFirstAsync<any>(
-      `SELECT * FROM products WHERE storeId = ? AND categoryId = ? AND subcategoryId = ? AND LOWER(brand) = ? AND deletedAt IS NULL;`,
+      `SELECT * FROM products WHERE storeId = ? AND categoryId = ? AND subcategoryId = ? AND LOWER(brand) = ?;`,
       [storeId, categoryId, subcategoryId, cleanBrand.toLowerCase()]
     );
 
@@ -369,6 +346,12 @@ export class MatrixRepository {
       );
     } else {
       prodId = prod.id;
+      if (prod.deletedAt) {
+        await db.runAsync(
+          `UPDATE products SET deletedAt = NULL, active = 1, updatedAt = ? WHERE id = ?;`,
+          [now, prodId]
+        );
+      }
     }
 
     let sizesToApply = [...existingSizes];
@@ -386,12 +369,28 @@ export class MatrixRepository {
       }
     }
 
-    // Create variants for all sizes with 0 initial stock
+    // Also check subcategory customValues sizeOrder if sizesToApply is still empty
+    if (sizesToApply.length === 0) {
+      try {
+        const subRow = await db.getFirstAsync<{ customValues?: string }>(
+          `SELECT customValues FROM subcategories WHERE id = ? AND storeId = ?;`,
+          [subcategoryId, storeId]
+        );
+        if (subRow?.customValues) {
+          const parsed = JSON.parse(subRow.customValues);
+          if (Array.isArray(parsed?.sizeOrder) && parsed.sizeOrder.length > 0) {
+            sizesToApply = parsed.sizeOrder.filter(Boolean);
+          }
+        }
+      } catch {}
+    }
+
+    // Create or reactivate variants for all sizes with 0 initial stock
     for (const size of sizesToApply) {
       const cleanSize = size.trim();
       if (!cleanSize) continue;
       const existingVar = await db.getFirstAsync<any>(
-        `SELECT id FROM product_variants WHERE productId = ? AND size = ? AND deletedAt IS NULL;`,
+        `SELECT id, deletedAt FROM product_variants WHERE productId = ? AND size = ?;`,
         [prodId, cleanSize]
       );
 
@@ -402,6 +401,11 @@ export class MatrixRepository {
           `INSERT INTO product_variants (id, storeId, productId, name, sku, size, purchasePricePaise, sellingPricePaise, minStockLevel, openingStock, currentStock, active, createdAt, updatedAt)
            VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 1, ?, ?);`,
           [varId, storeId, prodId, `${cleanBrand} ${cleanSize}`, sku, cleanSize, now, now]
+        );
+      } else if (existingVar.deletedAt) {
+        await db.runAsync(
+          `UPDATE product_variants SET deletedAt = NULL, active = 1, updatedAt = ? WHERE id = ?;`,
+          [now, existingVar.id]
         );
       }
     }
@@ -423,11 +427,35 @@ export class MatrixRepository {
     const cleanSize = sizeName.trim();
     if (!cleanSize) return;
 
+    // 1. Always persist this size to subcategories.customValues.sizeOrder so custom ordering is retained
+    try {
+      const subRow = await db.getFirstAsync<{ customValues?: string }>(
+        `SELECT customValues FROM subcategories WHERE id = ? AND storeId = ?;`,
+        [subcategoryId, storeId]
+      );
+      let parsed: any = {};
+      if (subRow?.customValues) {
+        try { parsed = JSON.parse(subRow.customValues); } catch {}
+      }
+      if (!Array.isArray(parsed.sizeOrder)) {
+        parsed.sizeOrder = [];
+      }
+      if (!parsed.sizeOrder.includes(cleanSize)) {
+        parsed.sizeOrder.push(cleanSize);
+        await db.runAsync(
+          `UPDATE subcategories SET customValues = ?, updatedAt = ? WHERE id = ? AND storeId = ?;`,
+          [JSON.stringify(parsed), now, subcategoryId, storeId]
+        );
+      }
+    } catch (e) {
+      console.warn('Failed to update subcategory sizeOrder:', e);
+    }
+
     let brandsToApply = existingBrands.filter(
       (b) => b && b.trim().toLowerCase() !== 'general' && b.trim() !== ''
     );
 
-    // 1. If not passed from UI, check if any brands already exist in this subcategory in DB
+    // 2. If not passed from UI, check if any brands already exist in this subcategory in DB
     if (brandsToApply.length === 0) {
       const subProds = await db.getAllAsync<any>(
         `SELECT DISTINCT brand FROM products WHERE storeId = ? AND categoryId = ? AND subcategoryId = ? AND deletedAt IS NULL AND LOWER(brand) != 'general' AND brand IS NOT NULL AND TRIM(brand) != '';`,
@@ -438,7 +466,7 @@ export class MatrixRepository {
       }
     }
 
-    // 2. If still empty, check brands in the parent category (e.g. from Pipes tab like Supreme, AKG, Plast)
+    // 3. If still empty, check brands in the parent category
     if (brandsToApply.length === 0) {
       const catProds = await db.getAllAsync<any>(
         `SELECT DISTINCT brand FROM products WHERE storeId = ? AND categoryId = ? AND deletedAt IS NULL AND LOWER(brand) != 'general' AND brand IS NOT NULL AND TRIM(brand) != '';`,
@@ -449,15 +477,15 @@ export class MatrixRepository {
       }
     }
 
-    // 3. If completely new store with 0 brands anywhere in category, fallback to 'Supreme'
+    // If completely new section with 0 brands, we do not inject fake brands. The size is saved in sizeOrder and will be applied when brand is added.
     if (brandsToApply.length === 0) {
-      brandsToApply = ['Supreme'];
+      return;
     }
 
     for (const brand of brandsToApply) {
       const cleanBrand = brand.trim();
       let prod = await db.getFirstAsync<any>(
-        `SELECT * FROM products WHERE storeId = ? AND categoryId = ? AND subcategoryId = ? AND LOWER(brand) = ? AND deletedAt IS NULL;`,
+        `SELECT * FROM products WHERE storeId = ? AND categoryId = ? AND subcategoryId = ? AND LOWER(brand) = ?;`,
         [storeId, categoryId, subcategoryId, cleanBrand.toLowerCase()]
       );
 
@@ -471,10 +499,16 @@ export class MatrixRepository {
         );
       } else {
         prodId = prod.id;
+        if (prod.deletedAt) {
+          await db.runAsync(
+            `UPDATE products SET deletedAt = NULL, active = 1, updatedAt = ? WHERE id = ?;`,
+            [now, prodId]
+          );
+        }
       }
 
       const existingVar = await db.getFirstAsync<any>(
-        `SELECT id FROM product_variants WHERE productId = ? AND size = ? AND deletedAt IS NULL;`,
+        `SELECT id, deletedAt FROM product_variants WHERE productId = ? AND size = ?;`,
         [prodId, cleanSize]
       );
 
@@ -485,6 +519,11 @@ export class MatrixRepository {
           `INSERT INTO product_variants (id, storeId, productId, name, sku, size, purchasePricePaise, sellingPricePaise, minStockLevel, openingStock, currentStock, active, createdAt, updatedAt)
            VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 1, ?, ?);`,
           [varId, storeId, prodId, `${cleanBrand} ${cleanSize}`, sku, cleanSize, now, now]
+        );
+      } else if (existingVar.deletedAt) {
+        await db.runAsync(
+          `UPDATE product_variants SET deletedAt = NULL, active = 1, updatedAt = ? WHERE id = ?;`,
+          [now, existingVar.id]
         );
       }
     }
@@ -536,6 +575,50 @@ export class MatrixRepository {
   }
 
   /**
+   * Renames a brand across all products and variants in a subcategory
+   */
+  static async renameBrand(
+    storeId: string,
+    categoryId: string,
+    subcategoryId: string,
+    oldBrand: string,
+    newBrand: string,
+    deviceId: string
+  ): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+    const cleanOld = oldBrand.trim();
+    const cleanNew = newBrand.trim();
+    if (!cleanNew || cleanOld === cleanNew) return;
+
+    // 1. Update products table
+    await db.runAsync(
+      `UPDATE products 
+       SET brand = ?, 
+           name = ? || ' Items', 
+           updatedAt = ?
+       WHERE storeId = ? 
+         AND categoryId = ? 
+         AND subcategoryId = ? 
+         AND LOWER(brand) = ?;`,
+      [cleanNew, cleanNew, now, storeId, categoryId, subcategoryId, cleanOld.toLowerCase()]
+    );
+
+    // 2. Update product_variants table names
+    await db.runAsync(
+      `UPDATE product_variants 
+       SET name = ? || ' ' || size,
+           updatedAt = ?
+       WHERE storeId = ? 
+         AND productId IN (
+           SELECT id FROM products 
+           WHERE categoryId = ? AND subcategoryId = ? AND LOWER(brand) = ?
+         );`,
+      [cleanNew, now, storeId, categoryId, subcategoryId, cleanNew.toLowerCase()]
+    );
+  }
+
+  /**
    * Deletes a size from matrix
    */
   static async deleteSize(
@@ -571,6 +654,79 @@ export class MatrixRepository {
       `UPDATE product_variants SET deletedAt = ?, active = 0 WHERE storeId = ? AND size = ? AND productId IN (SELECT id FROM products WHERE categoryId = ? AND subcategoryId = ?);`,
       [now, storeId, cleanSize, categoryId, subcategoryId]
     );
+
+    // Also clean from custom sizeOrder if present
+    try {
+      const subRow = await db.getFirstAsync<{ customValues?: string }>(
+        `SELECT customValues FROM subcategories WHERE id = ? AND storeId = ?;`,
+        [subcategoryId, storeId]
+      );
+      if (subRow?.customValues) {
+        const parsed = JSON.parse(subRow.customValues);
+        if (Array.isArray(parsed?.sizeOrder)) {
+          parsed.sizeOrder = parsed.sizeOrder.filter((s: string) => s !== cleanSize);
+          await db.runAsync(
+            `UPDATE subcategories SET customValues = ?, updatedAt = ? WHERE id = ? AND storeId = ?;`,
+            [JSON.stringify(parsed), now, subcategoryId, storeId]
+          );
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * Renames a size row across all variants in a subcategory
+   */
+  static async renameSize(
+    storeId: string,
+    categoryId: string,
+    subcategoryId: string,
+    oldSize: string,
+    newSize: string,
+    deviceId: string
+  ): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+    const cleanOld = oldSize.trim();
+    const cleanNew = newSize.trim();
+    if (!cleanNew || cleanOld === cleanNew) return;
+
+    // 1. Update product_variants table
+    await db.runAsync(
+      `UPDATE product_variants 
+       SET size = ?, 
+           name = REPLACE(name, ?, ?),
+           updatedAt = ?
+       WHERE storeId = ? 
+         AND size = ? 
+         AND productId IN (
+           SELECT id FROM products 
+           WHERE categoryId = ? AND subcategoryId = ?
+         );`,
+      [cleanNew, cleanOld, cleanNew, now, storeId, cleanOld, categoryId, subcategoryId]
+    );
+
+    // 2. Update subcategories customValues if sizeOrder was stored
+    try {
+      const subRow = await db.getFirstAsync<{ customValues?: string }>(
+        `SELECT customValues FROM subcategories WHERE id = ? AND storeId = ?;`,
+        [subcategoryId, storeId]
+      );
+      if (subRow?.customValues) {
+        const parsed = JSON.parse(subRow.customValues);
+        if (Array.isArray(parsed?.sizeOrder)) {
+          parsed.sizeOrder = parsed.sizeOrder.map((s: string) => (s === cleanOld ? cleanNew : s));
+          await db.runAsync(
+            `UPDATE subcategories SET customValues = ?, updatedAt = ? WHERE id = ? AND storeId = ?;`,
+            [JSON.stringify(parsed), now, subcategoryId, storeId]
+          );
+        }
+      }
+    } catch (e) {
+      console.warn('Error updating sizeOrder on renameSize:', e);
+    }
   }
 
   /**
@@ -695,6 +851,29 @@ export class MatrixRepository {
            AND size = ? 
            AND productId IN (SELECT id FROM products WHERE categoryId = ? AND subcategoryId = ?);`,
         [i + 1, now, storeId, sizeName, categoryId, subcategoryId]
+      );
+    }
+  }
+
+  /**
+   * Updates variant selling or purchase price in paise
+   */
+  static async updateVariantPrice(
+    variantId: string,
+    mode: 'sell' | 'purchase',
+    pricePaise: number
+  ): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+    if (mode === 'sell') {
+      await db.runAsync(
+        `UPDATE product_variants SET sellingPricePaise = ?, updatedAt = ? WHERE id = ?;`,
+        [pricePaise, now, variantId]
+      );
+    } else {
+      await db.runAsync(
+        `UPDATE product_variants SET purchasePricePaise = ?, updatedAt = ? WHERE id = ?;`,
+        [pricePaise, now, variantId]
       );
     }
   }

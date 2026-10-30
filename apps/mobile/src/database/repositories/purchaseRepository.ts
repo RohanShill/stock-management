@@ -182,10 +182,14 @@ export class PurchaseRepository {
         );
       }
 
-      // 3. If received, update stock & create movements exactly once
+      // 3. If received, update stock & create movements exactly once atomically
       if (input.status === 'received') {
         for (const sp of stockPlans) {
-          const balanceBefore = sp.variantRow.currentStock;
+          const fresh = await db.getFirstAsync<{ currentStock: number }>(
+            `SELECT currentStock FROM product_variants WHERE id = ?;`,
+            [sp.variantRow.id]
+          );
+          const balanceBefore = Number(fresh?.currentStock ?? sp.variantRow.currentStock ?? 0);
           const balanceAfter = balanceBefore + sp.baseQuantity;
 
           await db.runAsync(

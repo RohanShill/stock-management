@@ -245,7 +245,8 @@ const SearchResultItem = React.memo<SearchResultItemProps>(({
   onAction,
 }) => {
   const isOut = item.isOutOfStock;
-  const isLow = !isOut && item.minStockLevel > 0 && item.currentStock <= item.minStockLevel;
+  const threshold = item.minStockLevel > 0 ? item.minStockLevel : 5;
+  const isLow = !isOut && item.currentStock > 0 && item.currentStock <= threshold;
   const isZeroUnstocked = item.currentStock <= 0 && !isOut;
 
   return (
@@ -424,8 +425,9 @@ export default function HomeScreen() {
           const hasHistory = stock > 0 || opening > 0 || movedVariantIds.has(v.id);
           const isTracked = hasHistory || minLevel > 0;
 
+          const lowThreshold = minLevel > 0 ? minLevel : 5;
           const isOut = isTracked && stock <= 0;
-          const isLow = isTracked && minLevel > 0 && stock > 0 && stock <= minLevel;
+          const isLow = isTracked && stock > 0 && stock <= lowThreshold;
 
           const itemObj: RestockItem = {
             variantId: v.id,
@@ -436,7 +438,7 @@ export default function HomeScreen() {
             imageUrl: p.imageUrl,
             categoryName: catMap.get(p.categoryId) || 'Hardware',
             currentStock: stock,
-            minStockLevel: minLevel,
+            minStockLevel: lowThreshold,
             unit: p.baseUnit || 'pcs',
             isOutOfStock: isOut,
             rackLocation: v.rackLocation,
@@ -461,7 +463,7 @@ export default function HomeScreen() {
       });
 
       setStats({
-        totalProductsCount: products.filter((p) => p.variants && p.variants.length > 0).length,
+        totalProductsCount: products.length,
         totalVariantsCount: totalVariants,
         totalUnitsInStock: totalUnits,
         lowStockCount: lowCount,

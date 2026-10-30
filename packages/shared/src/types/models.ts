@@ -195,6 +195,7 @@ export interface Customer {
   storeId: string;
   name: string;
   phone?: string;
+  email?: string;
   address?: string;
   businessName?: string;
   gstin?: string;

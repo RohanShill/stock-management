@@ -19,6 +19,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Category, Subcategory } from '@hardware-store/shared';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
 import { InventoryRepository } from '../../src/database/repositories/inventoryRepository.js';
+import { CategoryRepository } from '../../src/database/repositories/categoryRepository.js';
 import {
   MatrixRepository,
   MatrixGridData,
@@ -30,13 +31,20 @@ import { MatrixActionBar } from '../../src/components/MatrixActionBar.js';
 import { useAppStore } from '../../src/store/useAppStore.js';
 import { lightColors, darkColors, borderRadius, getThemeShadows } from '../../src/theme/tokens.js';
 
+interface ManageItemTarget {
+  type: 'category' | 'section';
+  item: Category | Subcategory;
+}
+
 export default function ProductsScreen() {
   const router = useRouter();
   const routerParams = useLocalSearchParams<{
     categoryId?: string;
+    action?: string;
+    filter?: string;
   }>();
 
-  const { store, deviceId, isDarkMode, showToast } = useAppStore();
+  const { store, deviceId, isDarkMode, showToast, showConfirm } = useAppStore();
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web'
     ? 0
@@ -81,6 +89,15 @@ export default function ProductsScreen() {
   const [newCatName, setNewCatName] = useState('');
   const [submittingCat, setSubmittingCat] = useState(false);
 
+  // Hold to Manage Modal State (for Category & Section)
+  const [manageTarget, setManageTarget] = useState<ManageItemTarget | null>(null);
+  const [manageModalVisible, setManageModalVisible] = useState(false);
+
+  // Dedicated Rename Modal State for Category / Section
+  const [manageRenameModalVisible, setManageRenameModalVisible] = useState(false);
+  const [manageRenameInput, setManageRenameInput] = useState('');
+  const [submittingManageRename, setSubmittingManageRename] = useState(false);
+
   // Search filter
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -95,14 +112,15 @@ export default function ProductsScreen() {
     catId: string,
     subcatId?: string,
     keepSize?: string,
-    keepBrand?: string
+    keepBrand?: string,
+    silent?: boolean
   ) => {
     if (!catId) {
       setLoading(false);
       return;
     }
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const storeId = store?.id || 'store-1';
       const data = await MatrixRepository.getMatrixData(storeId, catId, subcatId || undefined);
       setMatrixData(data);
@@ -135,9 +153,9 @@ export default function ProductsScreen() {
       }
     } catch (e) {
       console.error('Error loading matrix data:', e);
-      showToast('Could not load inventory grid', 'error');
+      if (!silent) showToast('Could not load inventory grid', 'error');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [store?.id, selectedSize, selectedBrand, showToast]);
 
@@ -204,11 +222,15 @@ export default function ProductsScreen() {
         setCategories(cats || []);
 
         if (cats && cats.length > 0) {
-          const pipesCat = cats.find((c) => c.name.toLowerCase().includes('pipe'));
-          const targetCat = pipesCat || cats[0];
+          const targetCat = routerParams?.categoryId
+            ? cats.find((c) => c.id === routerParams.categoryId) || cats[0]
+            : cats.find((c) => c.name.toLowerCase().includes('pipe')) || cats[0];
           await switchCategory(targetCat.id, cats);
         } else {
           setLoading(false);
+          if (routerParams?.action === 'add') {
+            setNewCatModalVisible(true);
+          }
         }
       } catch (e) {
         console.error('Error initializing products screen:', e);
@@ -223,7 +245,7 @@ export default function ProductsScreen() {
   }, []);
 
   /**
-   * Keep screen in sync when switching tabs (e.g. if a section or category was deleted in Settings)
+   * Keep screen in sync when switching tabs (e.g. if a restock happened on Home or section changed)
    */
   useFocusEffect(
     useCallback(() => {
@@ -235,26 +257,36 @@ export default function ProductsScreen() {
           if (!isMounted) return;
           setCategories(freshCats);
 
-          if (selectedCategoryId) {
-            const cat = freshCats.find((c) => c.id === selectedCategoryId);
+          if (freshCats && freshCats.length > 0) {
+            const currentCatId = selectedCategoryId && freshCats.some((c) => c.id === selectedCategoryId)
+              ? selectedCategoryId
+              : freshCats[0].id;
+
+            if (currentCatId !== selectedCategoryId) {
+              setSelectedCategoryId(currentCatId);
+            }
+
+            const cat = freshCats.find((c) => c.id === currentCatId);
             const currentSubtabs = await MatrixRepository.ensureDefaultSubTabs(
               storeId,
-              selectedCategoryId,
+              currentCatId,
               cat?.name || '',
               deviceId
             );
             if (!isMounted) return;
             setSubcategories(currentSubtabs);
 
-            // If active section was deleted in settings, switch to first remaining
-            if (activeSubcategoryId && !currentSubtabs.some((s) => s.id === activeSubcategoryId)) {
-              const nextSub = currentSubtabs[0]?.id || '';
-              setActiveSubcategoryId(nextSub);
-              if (nextSub) {
-                await loadMatrix(selectedCategoryId, nextSub);
-              } else {
-                setMatrixData({ brands: [], sizes: [], cells: {} });
-              }
+            let targetSubId = activeSubcategoryId;
+            if (!targetSubId || !currentSubtabs.some((s) => s.id === targetSubId)) {
+              targetSubId = currentSubtabs[0]?.id || '';
+              setActiveSubcategoryId(targetSubId);
+            }
+
+            if (targetSubId) {
+              // Smooth, silent refresh of the matrix table to display real-time stock
+              await loadMatrix(currentCatId, targetSubId, undefined, undefined, true);
+            } else {
+              setMatrixData({ brands: [], sizes: [], cells: {} });
             }
           }
         } catch (e) {
@@ -330,6 +362,10 @@ export default function ProductsScreen() {
    * Add a Brand Column
    */
   const handleAddBrand = async (brandName: string) => {
+    if (!activeSubcategoryId) {
+      showToast('Please add a section first using "+ SECTION"', 'warning');
+      return;
+    }
     try {
       const storeId = store?.id || 'store-1';
       await MatrixRepository.addBrand(
@@ -370,9 +406,78 @@ export default function ProductsScreen() {
   };
 
   /**
+   * Rename a Brand Column
+   */
+  const handleRenameBrand = async (oldBrand: string, newBrand: string) => {
+    try {
+      const storeId = store?.id || 'store-1';
+      await MatrixRepository.renameBrand(
+        storeId,
+        selectedCategoryId,
+        activeSubcategoryId,
+        oldBrand,
+        newBrand,
+        deviceId
+      );
+      await loadMatrix(selectedCategoryId, activeSubcategoryId);
+      showToast(`Brand "${oldBrand}" renamed to "${newBrand}"`, 'success');
+    } catch (e) {
+      console.error('Error renaming brand:', e);
+      showToast('Could not rename brand', 'error');
+    }
+  };
+
+  /**
+   * Delete a Size Row
+   */
+  const handleDeleteSize = async (sizeName: string) => {
+    try {
+      const storeId = store?.id || 'store-1';
+      await MatrixRepository.deleteSize(
+        storeId,
+        selectedCategoryId,
+        activeSubcategoryId,
+        sizeName,
+        deviceId
+      );
+      await loadMatrix(selectedCategoryId, activeSubcategoryId);
+      showToast(`Size "${sizeName}" removed`, 'info');
+    } catch (e) {
+      console.error('Error removing size:', e);
+      showToast('Could not remove size', 'error');
+    }
+  };
+
+  /**
+   * Rename a Size Row
+   */
+  const handleRenameSize = async (oldSize: string, newSize: string) => {
+    try {
+      const storeId = store?.id || 'store-1';
+      await MatrixRepository.renameSize(
+        storeId,
+        selectedCategoryId,
+        activeSubcategoryId,
+        oldSize,
+        newSize,
+        deviceId
+      );
+      await loadMatrix(selectedCategoryId, activeSubcategoryId);
+      showToast(`Size "${oldSize}" renamed to "${newSize}"`, 'success');
+    } catch (e) {
+      console.error('Error renaming size:', e);
+      showToast('Could not rename size', 'error');
+    }
+  };
+
+  /**
    * Add a Size Row
    */
   const handleAddSize = async (sizeName: string) => {
+    if (!activeSubcategoryId) {
+      showToast('Please add a section first using "+ SECTION"', 'warning');
+      return;
+    }
     try {
       const storeId = store?.id || 'store-1';
       await MatrixRepository.addSize(
@@ -524,20 +629,11 @@ export default function ProductsScreen() {
       // Save custom price if updated by user
       if (actionPriceRs && !isNaN(parseFloat(actionPriceRs)) && parseFloat(actionPriceRs) > 0) {
         const paise = Math.round(parseFloat(actionPriceRs) * 100);
-        const { getDatabase } = await import('../../src/database/db.js');
-        const db = await getDatabase();
-        const now = new Date().toISOString();
-        if (actionModalMode === 'sell') {
-          await db.runAsync(
-            `UPDATE product_variants SET sellingPricePaise = ?, updatedAt = ? WHERE id = ?;`,
-            [paise, now, variantId]
-          );
-        } else {
-          await db.runAsync(
-            `UPDATE product_variants SET purchasePricePaise = ?, updatedAt = ? WHERE id = ?;`,
-            [paise, now, variantId]
-          );
-        }
+        await MatrixRepository.updateVariantPrice(
+          variantId,
+          actionModalMode === 'sell' ? 'sell' : 'purchase',
+          paise
+        );
       }
 
       setActionModalMode(null);
@@ -581,6 +677,252 @@ export default function ProductsScreen() {
     } finally {
       setSubmittingCat(false);
     }
+  };
+
+  /**
+   * Hold to Manage helpers & handlers (Category & Section)
+   */
+  const currentManageIndex = useMemo(() => {
+    if (!manageTarget) return -1;
+    if (manageTarget.type === 'category') {
+      return categories.findIndex((c) => c.id === manageTarget.item.id);
+    } else {
+      return subcategories.findIndex((s) => s.id === manageTarget.item.id);
+    }
+  }, [manageTarget, categories, subcategories]);
+
+  const currentManageTotal = useMemo(() => {
+    if (!manageTarget) return 0;
+    return manageTarget.type === 'category' ? categories.length : subcategories.length;
+  }, [manageTarget, categories, subcategories]);
+
+  const currentManageItemName = useMemo(() => {
+    if (!manageTarget) return '';
+    if (manageTarget.type === 'category') {
+      const found = categories.find((c) => c.id === manageTarget.item.id);
+      return found?.name || manageTarget.item.name;
+    } else {
+      const found = subcategories.find((s) => s.id === manageTarget.item.id);
+      return found?.name || manageTarget.item.name;
+    }
+  }, [manageTarget, categories, subcategories]);
+
+  const handleOpenManageModal = (type: 'category' | 'section', item: Category | Subcategory) => {
+    setManageTarget({ type, item });
+    setManageModalVisible(true);
+  };
+
+  const handleMoveLeft = async () => {
+    if (!manageTarget || currentManageIndex <= 0) return;
+    const idx = currentManageIndex;
+    const storeId = store?.id || 'store-1';
+
+    if (manageTarget.type === 'category') {
+      const nextList = [...categories];
+      const temp = nextList[idx];
+      nextList[idx] = nextList[idx - 1];
+      nextList[idx - 1] = temp;
+
+      const ordered = nextList.map((c, i) => ({ ...c, displayOrder: i }));
+      setCategories(ordered);
+
+      try {
+        await CategoryRepository.reorderCategories(
+          ordered.map((c) => ({ id: c.id, displayOrder: c.displayOrder })),
+          storeId,
+          deviceId
+        );
+      } catch (e) {
+        console.error('Failed to reorder categories:', e);
+        showToast('Could not save category order', 'error');
+      }
+    } else {
+      const nextList = [...subcategories];
+      const temp = nextList[idx];
+      nextList[idx] = nextList[idx - 1];
+      nextList[idx - 1] = temp;
+
+      const ordered = nextList.map((s, i) => ({ ...s, displayOrder: i }));
+      setSubcategories(ordered);
+
+      try {
+        await CategoryRepository.reorderSubcategories(
+          ordered.map((s) => ({ id: s.id, displayOrder: s.displayOrder })),
+          storeId,
+          deviceId
+        );
+      } catch (e) {
+        console.error('Failed to reorder sections:', e);
+        showToast('Could not save section order', 'error');
+      }
+    }
+  };
+
+  const handleMoveRight = async () => {
+    if (!manageTarget || currentManageIndex < 0 || currentManageIndex >= currentManageTotal - 1) return;
+    const idx = currentManageIndex;
+    const storeId = store?.id || 'store-1';
+
+    if (manageTarget.type === 'category') {
+      const nextList = [...categories];
+      const temp = nextList[idx];
+      nextList[idx] = nextList[idx + 1];
+      nextList[idx + 1] = temp;
+
+      const ordered = nextList.map((c, i) => ({ ...c, displayOrder: i }));
+      setCategories(ordered);
+
+      try {
+        await CategoryRepository.reorderCategories(
+          ordered.map((c) => ({ id: c.id, displayOrder: c.displayOrder })),
+          storeId,
+          deviceId
+        );
+      } catch (e) {
+        console.error('Failed to reorder categories:', e);
+        showToast('Could not save category order', 'error');
+      }
+    } else {
+      const nextList = [...subcategories];
+      const temp = nextList[idx];
+      nextList[idx] = nextList[idx + 1];
+      nextList[idx + 1] = temp;
+
+      const ordered = nextList.map((s, i) => ({ ...s, displayOrder: i }));
+      setSubcategories(ordered);
+
+      try {
+        await CategoryRepository.reorderSubcategories(
+          ordered.map((s) => ({ id: s.id, displayOrder: s.displayOrder })),
+          storeId,
+          deviceId
+        );
+      } catch (e) {
+        console.error('Failed to reorder sections:', e);
+        showToast('Could not save section order', 'error');
+      }
+    }
+  };
+
+  const handleTriggerManageRename = () => {
+    if (!manageTarget) return;
+    setManageRenameInput(currentManageItemName);
+    setManageModalVisible(false);
+    setTimeout(() => {
+      setManageRenameModalVisible(true);
+    }, 150);
+  };
+
+  const handleConfirmManageRename = async () => {
+    if (!manageTarget || submittingManageRename) return;
+    const clean = manageRenameInput.trim();
+    if (!clean) {
+      showToast('Name cannot be empty', 'warning');
+      return;
+    }
+    const { type, item } = manageTarget;
+    if (clean.toLowerCase() === item.name.toLowerCase() && clean === item.name) {
+      setManageRenameModalVisible(false);
+      return;
+    }
+
+    const storeId = store?.id || 'store-1';
+    try {
+      setSubmittingManageRename(true);
+      if (type === 'category') {
+        if (
+          categories.some(
+            (c) => c.name.toLowerCase() === clean.toLowerCase() && c.id !== item.id
+          )
+        ) {
+          showToast(`Category "${clean}" already exists.`, 'warning');
+          return;
+        }
+
+        await CategoryRepository.updateCategory(item.id, { name: clean }, storeId, deviceId);
+        setCategories((prev) =>
+          prev.map((c) => (c.id === item.id ? { ...c, name: clean } : c))
+        );
+        setManageRenameModalVisible(false);
+        showToast(`Category renamed to "${clean}"`, 'success');
+      } else {
+        if (
+          subcategories.some(
+            (s) => s.name.toLowerCase() === clean.toLowerCase() && s.id !== item.id
+          )
+        ) {
+          showToast(`Section "${clean}" already exists.`, 'warning');
+          return;
+        }
+
+        await CategoryRepository.updateSubcategory(item.id, { name: clean }, storeId, deviceId);
+        setSubcategories((prev) =>
+          prev.map((s) => (s.id === item.id ? { ...s, name: clean } : s))
+        );
+        setManageRenameModalVisible(false);
+        showToast(`Section renamed to "${clean}"`, 'success');
+      }
+    } catch (e) {
+      console.error('Failed to rename:', e);
+      showToast(`Could not rename ${type}`, 'error');
+    } finally {
+      setSubmittingManageRename(false);
+    }
+  };
+
+  const handleTriggerManageDelete = () => {
+    if (!manageTarget) return;
+    const { type, item } = manageTarget;
+    setManageModalVisible(false);
+
+    showConfirm({
+      title: type === 'category' ? 'Delete Category' : 'Delete Section',
+      message:
+        type === 'category'
+          ? `Are you sure you want to delete category "${item.name}"? All sections, products and stock entries inside this category will be removed.`
+          : `Are you sure you want to delete section "${item.name}"? All products and stock entries inside this section will be removed.`,
+      confirmText: 'Delete',
+      isDestructive: true,
+      onConfirm: async () => {
+        const storeId = store?.id || 'store-1';
+        try {
+          if (type === 'category') {
+            await CategoryRepository.archiveCategory(item.id, storeId, deviceId);
+            const remaining = categories.filter((c) => c.id !== item.id);
+            setCategories(remaining);
+
+            if (selectedCategoryId === item.id) {
+              if (remaining.length > 0) {
+                await switchCategory(remaining[0].id, remaining);
+              } else {
+                setSelectedCategoryId('');
+                setSubcategories([]);
+                setMatrixData({ brands: [], sizes: [], cells: {} });
+              }
+            }
+            showToast(`Category "${item.name}" deleted`, 'info');
+          } else {
+            await MatrixRepository.deleteSubTab(storeId, item.id, deviceId);
+            const remaining = subcategories.filter((s) => s.id !== item.id);
+            setSubcategories(remaining);
+
+            if (activeSubcategoryId === item.id) {
+              const nextSub = remaining[0]?.id || '';
+              setActiveSubcategoryId(nextSub);
+              if (nextSub) {
+                await loadMatrix(selectedCategoryId, nextSub);
+              } else {
+                setMatrixData({ brands: [], sizes: [], cells: {} });
+              }
+            }
+            showToast(`Section "${item.name}" deleted`, 'info');
+          }
+        } catch (e: any) {
+          console.error('Failed to delete item:', e);
+          showToast(e?.message || `Failed to delete ${type}`, 'error');
+        }
+      },
+    });
   };
 
   // Filtered matrix based on search query
@@ -639,32 +981,6 @@ export default function ProductsScreen() {
             </Text>
           </View>
 
-          {/* Quick Search Toggle / Input */}
-          <TouchableOpacity
-            activeOpacity={0.75}
-            onPress={() => setNewCatModalVisible(true)}
-            style={[
-              styles.addCatBtn,
-              {
-                backgroundColor: activeColors.primaryLight,
-                borderColor: activeColors.primaryBorder || activeColors.primary,
-              },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="shape-plus"
-              size={16}
-              color={activeColors.primary}
-            />
-            <Text
-              style={[
-                styles.addCatBtnText,
-                { color: activeColors.primary },
-              ]}
-            >
-              + Category
-            </Text>
-          </TouchableOpacity>
         </View>
 
         {/* Categories Bar */}
@@ -680,6 +996,8 @@ export default function ProductsScreen() {
                 key={c.id}
                 activeOpacity={0.7}
                 onPress={() => switchCategory(c.id)}
+                onLongPress={() => handleOpenManageModal('category', c)}
+                delayLongPress={350}
                 style={[
                   styles.categoryPill,
                   {
@@ -699,15 +1017,43 @@ export default function ProductsScreen() {
                     styles.categoryPillText,
                     {
                       color: isSelected ? '#FFFFFF' : activeColors.textSecondary,
-                      fontWeight: isSelected ? '700' : '600',
                     },
                   ]}
                 >
-                  {c.name}
+                  {c.name.toUpperCase()}
                 </Text>
               </TouchableOpacity>
             );
           })}
+
+          {/* "+ Category" button placed right after the categories */}
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={() => setNewCatModalVisible(true)}
+            style={[
+              styles.addCategoryPill,
+              {
+                backgroundColor: isDarkMode
+                  ? activeColors.surfaceElevated
+                  : activeColors.surface,
+                borderColor: activeColors.primaryBorder || activeColors.primary,
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="plus"
+              size={16}
+              color={activeColors.primary}
+            />
+            <Text
+              style={[
+                styles.addCategoryPillText,
+                { color: activeColors.primary },
+              ]}
+            >
+              CATEGORY
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
       </View>
 
@@ -748,6 +1094,7 @@ export default function ProductsScreen() {
             activeSubcategoryId={activeSubcategoryId}
             onSelectSubcategory={handleSelectSubTab}
             onAddSubTab={handleAddSubTab}
+            onLongPressSubcategory={(sub) => handleOpenManageModal('section', sub)}
             isDarkMode={isDarkMode}
             activeColors={activeColors}
           />
@@ -785,6 +1132,27 @@ export default function ProductsScreen() {
                   Loading Table...
                 </Text>
               </View>
+            ) : subcategories.length === 0 ? (
+              <View style={styles.emptyCategoriesWrap}>
+                <View
+                  style={[
+                    styles.emptyIconCircle,
+                    { backgroundColor: isDarkMode ? '#1E293B' : '#EEF2FF' },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="view-grid-plus-outline"
+                    size={40}
+                    color={activeColors.primary}
+                  />
+                </View>
+                <Text style={[styles.emptyCatTitle, { color: activeColors.textPrimary }]}>
+                  No Sections Yet
+                </Text>
+                <Text style={[styles.emptyCatSub, { color: activeColors.textSecondary }]}>
+                  Tap "+ SECTION" above to create your first section under {activeCategory?.name || 'this category'}.
+                </Text>
+              </View>
             ) : (
               <ProductMatrixGrid
                 data={filteredMatrix}
@@ -793,6 +1161,9 @@ export default function ProductsScreen() {
                 onAddBrand={handleAddBrand}
                 onAddSize={handleAddSize}
                 onDeleteBrand={handleDeleteBrand}
+                onRenameBrand={handleRenameBrand}
+                onDeleteSize={handleDeleteSize}
+                onRenameSize={handleRenameSize}
                 onReorderSizes={handleReorderSizes}
                 isDarkMode={isDarkMode}
                 activeColors={activeColors}
@@ -802,15 +1173,17 @@ export default function ProductsScreen() {
           </View>
 
           {/* 5. Bottom Action Bar: [ stock ] (Green) & [ sell ] (Red) */}
-          <MatrixActionBar
-            selectedCell={selectedCell}
-            selectedSize={selectedSize}
-            selectedBrand={selectedBrand}
-            onStockIn={handleOpenStockIn}
-            onSell={handleOpenSell}
-            isDarkMode={isDarkMode}
-            activeColors={activeColors}
-          />
+          {subcategories.length > 0 && (
+            <MatrixActionBar
+              selectedCell={selectedCell}
+              selectedSize={selectedSize}
+              selectedBrand={selectedBrand}
+              onStockIn={handleOpenStockIn}
+              onSell={handleOpenSell}
+              isDarkMode={isDarkMode}
+              activeColors={activeColors}
+            />
+          )}
         </>
       )}
 
@@ -1137,6 +1510,421 @@ export default function ProductsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal: Action Sheet for Category / Section Management ("Hold to Manage") */}
+      <Modal
+        visible={manageModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setManageModalVisible(false)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setManageModalVisible(false)}
+          style={styles.modalBackdrop}
+        >
+          <View
+            style={[
+              styles.actionSheetCard,
+              {
+                backgroundColor: activeColors.surface,
+                borderColor: activeColors.border,
+              },
+              themeShadows.card,
+            ]}
+            onStartShouldSetResponder={() => true}
+          >
+            {/* Sheet Header */}
+            <View style={styles.sheetHeader}>
+              <View
+                style={[
+                  styles.sheetIconCircle,
+                  { backgroundColor: activeColors.primaryLight },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name={manageTarget?.type === 'category' ? 'shape-outline' : 'folder-outline'}
+                  size={22}
+                  color={activeColors.primary}
+                />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text
+                  style={[
+                    styles.sheetTypeLabel,
+                    { color: activeColors.primary },
+                  ]}
+                >
+                  MANAGE {manageTarget?.type === 'category' ? 'CATEGORY' : 'SECTION'}
+                </Text>
+                <Text
+                  style={[
+                    styles.sheetTargetTitle,
+                    { color: activeColors.textPrimary },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {currentManageItemName.toUpperCase()}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setManageModalVisible(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={22}
+                  color={activeColors.textMuted}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Position & Order Box */}
+            <View
+              style={[
+                styles.reorderSection,
+                {
+                  backgroundColor: isDarkMode ? activeColors.surfaceElevated : activeColors.surfaceSubtle,
+                  borderColor: activeColors.border,
+                },
+              ]}
+            >
+              <View style={styles.reorderHeaderRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <MaterialCommunityIcons
+                    name="swap-horizontal"
+                    size={18}
+                    color={activeColors.primary}
+                  />
+                  <Text style={[styles.reorderTitle, { color: activeColors.textPrimary }]}>
+                    POSITION & ORDER
+                  </Text>
+                </View>
+                {currentManageTotal > 0 && (
+                  <View
+                    style={[
+                      styles.positionBadge,
+                      { backgroundColor: activeColors.primaryLight },
+                    ]}
+                  >
+                    <Text style={[styles.positionBadgeText, { color: activeColors.primary }]}>
+                      #{currentManageIndex + 1} of {currentManageTotal}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.reorderSubtitle, { color: activeColors.textMuted }]}>
+                Tap arrows to move {manageTarget?.type === 'category' ? 'category' : 'section'} left or right
+              </Text>
+
+              <View style={styles.reorderBtnRow}>
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  disabled={currentManageIndex <= 0}
+                  onPress={handleMoveLeft}
+                  style={[
+                    styles.reorderBtn,
+                    {
+                      backgroundColor: currentManageIndex <= 0
+                        ? (isDarkMode ? '#1E293B' : '#F1F5F9')
+                        : (isDarkMode ? '#334155' : '#FFFFFF'),
+                      borderColor: currentManageIndex <= 0
+                        ? 'transparent'
+                        : activeColors.border,
+                      opacity: currentManageIndex <= 0 ? 0.45 : 1,
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="arrow-left-bold"
+                    size={18}
+                    color={currentManageIndex <= 0 ? activeColors.textMuted : activeColors.primary}
+                  />
+                  <Text
+                    style={[
+                      styles.reorderBtnText,
+                      {
+                        color: currentManageIndex <= 0
+                          ? activeColors.textMuted
+                          : activeColors.textPrimary,
+                      },
+                    ]}
+                  >
+                    Move Left
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  disabled={currentManageIndex < 0 || currentManageIndex >= currentManageTotal - 1}
+                  onPress={handleMoveRight}
+                  style={[
+                    styles.reorderBtn,
+                    {
+                      backgroundColor: (currentManageIndex < 0 || currentManageIndex >= currentManageTotal - 1)
+                        ? (isDarkMode ? '#1E293B' : '#F1F5F9')
+                        : (isDarkMode ? '#334155' : '#FFFFFF'),
+                      borderColor: (currentManageIndex < 0 || currentManageIndex >= currentManageTotal - 1)
+                        ? 'transparent'
+                        : activeColors.border,
+                      opacity: (currentManageIndex < 0 || currentManageIndex >= currentManageTotal - 1) ? 0.45 : 1,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.reorderBtnText,
+                      {
+                        color: (currentManageIndex < 0 || currentManageIndex >= currentManageTotal - 1)
+                          ? activeColors.textMuted
+                          : activeColors.textPrimary,
+                      },
+                    ]}
+                  >
+                    Move Right
+                  </Text>
+                  <MaterialCommunityIcons
+                    name="arrow-right-bold"
+                    size={18}
+                    color={(currentManageIndex < 0 || currentManageIndex >= currentManageTotal - 1) ? activeColors.textMuted : activeColors.primary}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Action Items */}
+            <View style={{ gap: 10, marginBottom: 14 }}>
+              {/* 1. Rename Option */}
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={handleTriggerManageRename}
+                style={[
+                  styles.sheetActionItem,
+                  {
+                    backgroundColor: isDarkMode
+                      ? activeColors.surfaceElevated
+                      : activeColors.surfaceSubtle,
+                    borderColor: activeColors.border,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.actionIconBox,
+                    { backgroundColor: activeColors.primaryLight },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="pencil-outline"
+                    size={20}
+                    color={activeColors.primary}
+                  />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text
+                    style={[
+                      styles.sheetActionTitle,
+                      { color: activeColors.textPrimary },
+                    ]}
+                  >
+                    Rename {manageTarget?.type === 'category' ? 'Category' : 'Section'}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.sheetActionSub,
+                      { color: activeColors.textMuted },
+                    ]}
+                  >
+                    Change display name safely
+                  </Text>
+                </View>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={20}
+                  color={activeColors.textMuted}
+                />
+              </TouchableOpacity>
+
+              {/* 2. Delete Option */}
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={handleTriggerManageDelete}
+                style={[
+                  styles.sheetActionItem,
+                  {
+                    backgroundColor: isDarkMode ? '#450A0A33' : '#FEF2F2',
+                    borderColor: isDarkMode ? '#7F1D1D' : '#FEE2E2',
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.actionIconBox,
+                    { backgroundColor: isDarkMode ? '#7F1D1D' : '#FEE2E2' },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="trash-can-outline"
+                    size={20}
+                    color="#DC2626"
+                  />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={[styles.sheetActionTitle, { color: '#DC2626' }]}>
+                    Delete {manageTarget?.type === 'category' ? 'Category' : 'Section'}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.sheetActionSub,
+                      { color: isDarkMode ? '#FCA5A5' : '#991B1B' },
+                    ]}
+                  >
+                    Remove and delete all contained items
+                  </Text>
+                </View>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={20}
+                  color="#DC2626"
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Done / Close Button */}
+            <TouchableOpacity
+              onPress={() => setManageModalVisible(false)}
+              style={[
+                styles.sheetCancelBtn,
+                {
+                  backgroundColor: isDarkMode
+                    ? activeColors.surfaceElevated
+                    : activeColors.surfaceSubtle,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.sheetCancelText,
+                  { color: activeColors.textSecondary },
+                ]}
+              >
+                Done
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Modal: Rename Category or Section */}
+      <Modal
+        visible={manageRenameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setManageRenameModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: activeColors.surface,
+                borderColor: activeColors.border,
+              },
+              themeShadows.card,
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <View
+                style={[
+                  styles.modalIconWrap,
+                  { backgroundColor: activeColors.primaryLight },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="pencil-outline"
+                  size={24}
+                  color={activeColors.primary}
+                />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text
+                  style={[
+                    styles.modalTitle,
+                    { color: activeColors.textPrimary },
+                  ]}
+                >
+                  Rename {manageTarget?.type === 'category' ? 'Category' : 'Section'}
+                </Text>
+                <Text
+                  style={[
+                    styles.modalSubtitle,
+                    { color: activeColors.textMuted },
+                  ]}
+                >
+                  Current: "{currentManageItemName}"
+                </Text>
+              </View>
+            </View>
+
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: isDarkMode
+                    ? activeColors.surfaceElevated
+                    : activeColors.surfaceSubtle,
+                  borderColor: activeColors.border,
+                  color: activeColors.textPrimary,
+                },
+              ]}
+              placeholder={`Enter new ${manageTarget?.type === 'category' ? 'category' : 'section'} name`}
+              placeholderTextColor={activeColors.textMuted}
+              value={manageRenameInput}
+              onChangeText={setManageRenameInput}
+              autoFocus
+              selectTextOnFocus
+              returnKeyType="done"
+              onSubmitEditing={handleConfirmManageRename}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                onPress={() => setManageRenameModalVisible(false)}
+                style={[
+                  styles.btnCancel,
+                  { borderColor: activeColors.border },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.btnCancelText,
+                    { color: activeColors.textSecondary },
+                  ]}
+                >
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleConfirmManageRename}
+                disabled={!manageRenameInput.trim() || submittingManageRename}
+                style={[
+                  styles.btnConfirm,
+                  {
+                    backgroundColor: manageRenameInput.trim()
+                      ? activeColors.primary
+                      : activeColors.border,
+                  },
+                ]}
+              >
+                <Text style={styles.btnConfirmText}>
+                  {submittingManageRename ? 'Saving...' : 'Save Name'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1185,12 +1973,29 @@ const styles = StyleSheet.create({
   },
   categoryPill: {
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: borderRadius.full,
     borderWidth: 1,
   },
   categoryPillText: {
     fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  addCategoryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    gap: 4,
+  },
+  addCategoryPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   searchWrap: {
     paddingHorizontal: 14,
@@ -1390,6 +2195,115 @@ const styles = StyleSheet.create({
   },
   emptyCatBtnText: {
     color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  actionSheetCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sheetIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetTypeLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  sheetTargetTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  reorderSection: {
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 14,
+  },
+  reorderHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  reorderTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  positionBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  positionBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  reorderSubtitle: {
+    fontSize: 11,
+    marginBottom: 12,
+  },
+  reorderBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  reorderBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 6,
+  },
+  reorderBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  sheetActionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  actionIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetActionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  sheetActionSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  sheetCancelBtn: {
+    height: 46,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetCancelText: {
     fontSize: 14,
     fontWeight: '700',
   },

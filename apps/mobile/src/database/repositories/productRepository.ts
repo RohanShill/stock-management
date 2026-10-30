@@ -149,13 +149,7 @@ export class ProductRepository {
       const pid = String(p.id || '');
       if (pid.startsWith('demo-') || pid.startsWith('prod-demo')) return true;
       const brand = (p.brand || '').trim().toLowerCase();
-      const name = (p.name || '').trim().toLowerCase();
-      if (!brand || brand === 'general' || brand.includes('asian paint') || brand.includes('berger') || brand.includes('dr. fixit') || brand.includes('birla white')) {
-        return true;
-      }
-      if (name.includes('emulsion') || name.includes('distemper') || name.includes('primer') || name.includes('solvent') || name.includes('waterproof') || name.includes('putty')) {
-        return true;
-      }
+      if (brand === 'general') return true;
       return false;
     };
 
@@ -199,15 +193,13 @@ export class ProductRepository {
       variantsByProd.set(vr.productId, list);
     }
 
-    return validProducts
-      .map((p) => ({
-        ...p,
-        active: Boolean(p.active),
-        allowedUnits: JSON.parse(p.allowedUnits || '[]'),
-        customValues: p.customValues ? JSON.parse(p.customValues) : undefined,
-        variants: variantsByProd.get(p.id) || [],
-      }))
-      .filter((p) => p.variants && p.variants.length > 0);
+    return validProducts.map((p) => ({
+      ...p,
+      active: Boolean(p.active),
+      allowedUnits: JSON.parse(p.allowedUnits || '[]'),
+      customValues: p.customValues ? JSON.parse(p.customValues) : undefined,
+      variants: variantsByProd.get(p.id) || [],
+    }));
   }
 
   static async createProduct(
@@ -507,14 +499,14 @@ export class ProductRepository {
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
 
-      // Check for SKU conflict in local SQLite
+      // Check for SKU conflict in local SQLite (including soft-deleted to avoid UNIQUE constraint violation)
       const existingSku = await db.getFirstAsync<any>(
-        `SELECT id FROM product_variants WHERE sku = ? AND storeId = ? AND deletedAt IS NULL;`,
+        `SELECT id, deletedAt FROM product_variants WHERE sku = ? AND storeId = ?;`,
         [row.sku, storeId]
       );
 
       if (existingSku) {
-        errors.push(`Row ${i + 1}: SKU '${row.sku}' already exists. Skipped.`);
+        errors.push(`Row ${i + 1}: SKU '${row.sku}' already exists in database. Skipped.`);
         skippedCount++;
         continue;
       }

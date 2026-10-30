@@ -331,6 +331,31 @@ export class CategoryRepository {
     await this.updateSubcategory(id, { categoryId: targetCategoryId }, storeId, deviceId);
   }
 
+  static async reorderSubcategories(
+    items: Array<{ id: string; displayOrder: number }>,
+    storeId: string,
+    deviceId: string
+  ): Promise<void> {
+    const db = await getDatabase();
+    await db.withTransactionAsync(async () => {
+      for (const item of items) {
+        await db.runAsync(
+          `UPDATE subcategories SET displayOrder = ? WHERE id = ? AND storeId = ?;`,
+          [item.displayOrder, item.id, storeId]
+        );
+      }
+    });
+
+    await SyncQueueRepository.enqueue(
+      storeId,
+      deviceId,
+      'subcategory',
+      'reorder',
+      'update',
+      { items }
+    );
+  }
+
   static async archiveSubcategory(id: string, storeId: string, deviceId: string): Promise<number> {
     const db = await getDatabase();
     const prods = await db.getFirstAsync<{ count: number }>(
@@ -340,10 +365,26 @@ export class CategoryRepository {
     const count = prods?.count || 0;
     const now = new Date().toISOString();
 
-    await db.runAsync(
-      `UPDATE subcategories SET deletedAt = ?, active = 0, updatedAt = ? WHERE id = ? AND storeId = ?;`,
-      [now, now, id, storeId]
-    );
+    await db.withTransactionAsync(async () => {
+      // 1. Cascade soft-delete variants under products of this subcategory
+      await db.runAsync(
+        `UPDATE product_variants SET deletedAt = ?, active = 0, updatedAt = ? 
+         WHERE storeId = ? AND productId IN (SELECT id FROM products WHERE subcategoryId = ? AND storeId = ?);`,
+        [now, now, storeId, id, storeId]
+      );
+
+      // 2. Cascade soft-delete products under this subcategory
+      await db.runAsync(
+        `UPDATE products SET deletedAt = ?, active = 0, updatedAt = ? WHERE subcategoryId = ? AND storeId = ?;`,
+        [now, now, id, storeId]
+      );
+
+      // 3. Soft-delete subcategory
+      await db.runAsync(
+        `UPDATE subcategories SET deletedAt = ?, active = 0, updatedAt = ? WHERE id = ? AND storeId = ?;`,
+        [now, now, id, storeId]
+      );
+    });
 
     await SyncQueueRepository.enqueue(
       storeId,

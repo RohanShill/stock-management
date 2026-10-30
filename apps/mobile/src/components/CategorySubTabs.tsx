@@ -21,6 +21,7 @@ interface CategorySubTabsProps {
   onSelectSubcategory: (subcatId: string) => void;
   onAddSubTab: (name: string) => Promise<void>;
   onDeleteSubTab?: (subcatId: string) => Promise<void> | void;
+  onLongPressSubcategory?: (subcat: Subcategory) => void;
   isDarkMode: boolean;
   activeColors: any;
 }
@@ -31,6 +32,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
   onSelectSubcategory,
   onAddSubTab,
   onDeleteSubTab,
+  onLongPressSubcategory,
   isDarkMode,
   activeColors,
 }) => {
@@ -75,6 +77,8 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
               key={sub.id}
               activeOpacity={0.75}
               onPress={() => onSelectSubcategory(sub.id)}
+              onLongPress={() => onLongPressSubcategory?.(sub)}
+              delayLongPress={350}
               style={[
                 styles.tabChip,
                 {
@@ -100,11 +104,10 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                     color: isActive
                       ? '#FFFFFF'
                       : activeColors.textSecondary,
-                    fontWeight: isActive ? '700' : '600',
                   },
                 ]}
               >
-                {sub.name}
+                {sub.name.toUpperCase()}
               </Text>
             </TouchableOpacity>
           );
@@ -126,7 +129,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
         >
           <MaterialCommunityIcons
             name="plus"
-            size={18}
+            size={16}
             color={activeColors.primary}
           />
           <Text
@@ -135,7 +138,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
               { color: activeColors.primary },
             ]}
           >
-            Add Section
+            SECTION
           </Text>
         </TouchableOpacity>
       </ScrollView>
@@ -282,8 +285,9 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   tabText: {
-    fontSize: 13,
-    letterSpacing: 0.1,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   addTabChip: {
     flexDirection: 'row',
@@ -297,7 +301,8 @@ const styles = StyleSheet.create({
   },
   addTabText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   modalBackdrop: {
     flex: 1,

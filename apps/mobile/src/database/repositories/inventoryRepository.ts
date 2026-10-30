@@ -69,34 +69,26 @@ export class InventoryRepository {
       delta = -deltaQuantity;
     }
 
-    const balanceBefore = Number(variantRow.currentStock ?? 0);
-    const balanceAfter = balanceBefore + delta;
-
-    if (balanceAfter < 0) {
-      throw new Error(`Insufficient stock for ${type === 'sale' ? 'sale' : 'adjustment'} (Current: ${balanceBefore} ${baseUnit}, Requested reduction: ${Math.abs(delta)} ${baseUnit})`);
-    }
-
     const movementId = uuidv4();
-    const movement: StockMovement = {
-      id: movementId,
-      storeId,
-      variantId,
-      movementType,
-      quantityChangeBase: delta,
-      balanceBeforeBase: balanceBefore,
-      balanceAfterBase: balanceAfter,
-      referenceType,
-      reason,
-      notes,
-      deviceId,
-      userId,
-      createdAt: now,
-    };
+    let finalBalanceBefore = 0;
+    let finalBalanceAfter = 0;
 
     await db.withTransactionAsync(async () => {
+      // Re-fetch latest atomic stock balance inside transaction
+      const freshVariant = await db.getFirstAsync<{ currentStock: number }>(
+        `SELECT currentStock FROM product_variants WHERE id = ?;`,
+        [variantId]
+      );
+      finalBalanceBefore = Number(freshVariant?.currentStock ?? variantRow.currentStock ?? 0);
+      finalBalanceAfter = finalBalanceBefore + delta;
+
+      if (finalBalanceAfter < 0) {
+        throw new Error(`Insufficient stock for ${type === 'sale' ? 'sale' : 'adjustment'} (Current: ${finalBalanceBefore} ${baseUnit}, Requested reduction: ${Math.abs(delta)} ${baseUnit})`);
+      }
+
       await db.runAsync(
         `UPDATE product_variants SET currentStock = ?, updatedAt = ? WHERE id = ?;`,
-        [balanceAfter, now, variantId]
+        [finalBalanceAfter, now, variantId]
       );
 
       await db.runAsync(
@@ -108,8 +100,8 @@ export class InventoryRepository {
           variantId,
           movementType,
           delta,
-          balanceBefore,
-          balanceAfter,
+          finalBalanceBefore,
+          finalBalanceAfter,
           referenceType,
           reason,
           notes ?? null,
@@ -119,6 +111,22 @@ export class InventoryRepository {
         ]
       );
     });
+
+    const movement: StockMovement = {
+      id: movementId,
+      storeId,
+      variantId,
+      movementType,
+      quantityChangeBase: delta,
+      balanceBeforeBase: finalBalanceBefore,
+      balanceAfterBase: finalBalanceAfter,
+      referenceType,
+      reason,
+      notes,
+      deviceId,
+      userId,
+      createdAt: now,
+    };
 
     // Enqueue outbox operation
     await SyncQueueRepository.enqueue(
@@ -130,7 +138,7 @@ export class InventoryRepository {
       movement as unknown as Record<string, unknown>
     );
 
-    return { balanceAfter, movement };
+    return { balanceAfter: finalBalanceAfter, movement };
   }
 
   static async getStockLedger(variantId: string, limit = 50): Promise<StockMovement[]> {
@@ -144,7 +152,9 @@ export class InventoryRepository {
 
   static async getAllStockHistory(
     storeId: string,
-    limit = 250
+    limit = 500,
+    startDate?: string,
+    endDate?: string
   ): Promise<
     Array<
       StockMovement & {
@@ -157,6 +167,19 @@ export class InventoryRepository {
     >
   > {
     const db = await getDatabase();
+
+    let whereClause = `WHERE sm.storeId = ?`;
+    const params: any[] = [storeId];
+
+    if (startDate) {
+      whereClause += ` AND sm.createdAt >= ?`;
+      params.push(startDate);
+    }
+    if (endDate) {
+      whereClause += ` AND sm.createdAt <= ?`;
+      params.push(endDate);
+    }
+    params.push(limit);
 
     // 1. Ultra-fast direct indexed JOIN query (instant SQLite evaluation)
     if (typeof db.getAllAsync === 'function') {
@@ -174,13 +197,13 @@ export class InventoryRepository {
            FROM stock_movements sm
            LEFT JOIN product_variants v ON sm.variantId = v.id
            LEFT JOIN products p ON v.productId = p.id
-           WHERE sm.storeId = ?
+           ${whereClause}
            ORDER BY sm.createdAt DESC
            LIMIT ?;`,
-          [storeId, limit]
+          params
         );
 
-        if (joinedRows && joinedRows.length > 0) {
+        if (Array.isArray(joinedRows)) {
           return joinedRows.map((sm) => {
             const isSale =
               sm.movementType === 'sale' ||
@@ -204,12 +227,24 @@ export class InventoryRepository {
     }
 
     // 2. Targeted fallback: fetch movements, then query ONLY the variants involved (never full tables!)
+    let fallbackWhere = `WHERE storeId = ?`;
+    const fallbackParams: any[] = [storeId];
+    if (startDate) {
+      fallbackWhere += ` AND createdAt >= ?`;
+      fallbackParams.push(startDate);
+    }
+    if (endDate) {
+      fallbackWhere += ` AND createdAt <= ?`;
+      fallbackParams.push(endDate);
+    }
+    fallbackParams.push(limit);
+
     let movements = await db.getAllAsync<StockMovement>(
-      `SELECT * FROM stock_movements WHERE storeId = ? ORDER BY createdAt DESC LIMIT ?;`,
-      [storeId, limit]
+      `SELECT * FROM stock_movements ${fallbackWhere} ORDER BY createdAt DESC LIMIT ?;`,
+      fallbackParams
     );
 
-    if (!movements || movements.length === 0) {
+    if (!startDate && !endDate && (!movements || movements.length === 0)) {
       movements = await db.getAllAsync<StockMovement>(
         `SELECT * FROM stock_movements ORDER BY createdAt DESC LIMIT ?;`,
         [limit]

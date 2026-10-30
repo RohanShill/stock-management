@@ -146,17 +146,9 @@ class WebSQLiteStore {
           );
           this.tables.products = (this.tables.products || []).filter(
             (p: any) =>
-              !p.name?.toLowerCase().includes('emulsion') &&
-              !p.name?.toLowerCase().includes('distemper') &&
-              !p.name?.toLowerCase().includes('primer') &&
-              !p.name?.toLowerCase().includes('waterproof') &&
-              !p.name?.toLowerCase().includes('putty') &&
-              !p.brand?.toLowerCase().includes('asian paint') &&
-              !p.brand?.toLowerCase().includes('berger') &&
-              !p.brand?.toLowerCase().includes('dr. fixit') &&
-              !p.brand?.toLowerCase().includes('birla white') &&
               p.brand?.toLowerCase() !== 'general' &&
-              !p.id?.startsWith('demo-')
+              !p.id?.startsWith('demo-') &&
+              !p.id?.startsWith('prod-demo')
           );
 
           // Sanitize and repair stock_movements if corrupted

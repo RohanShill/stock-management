@@ -19,7 +19,8 @@
     "**/*.tsx"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "vitest.config.ts"
   ],
   "extends": "expo/tsconfig.base"
 }

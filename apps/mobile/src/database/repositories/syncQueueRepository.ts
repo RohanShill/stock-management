@@ -41,20 +41,29 @@ export class SyncQueueRepository {
       [limit]
     );
 
-    return rows.map((r) => ({
-      id: r.id,
-      storeId: r.storeId,
-      deviceId: r.deviceId,
-      entityType: r.entityType as SyncEntityType,
-      entityId: r.entityId,
-      operationType: r.operationType as SyncOperationType,
-      payload: JSON.parse(r.payload),
-      status: r.status,
-      retryCount: r.retryCount,
-      lastError: r.lastError,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-    }));
+    return rows.map((r) => {
+      let parsedPayload: any = {};
+      try {
+        parsedPayload = JSON.parse(r.payload || '{}');
+      } catch {
+        parsedPayload = {};
+      }
+
+      return {
+        id: r.id,
+        storeId: r.storeId,
+        deviceId: r.deviceId,
+        entityType: r.entityType as SyncEntityType,
+        entityId: r.entityId,
+        operationType: r.operationType as SyncOperationType,
+        payload: parsedPayload,
+        status: r.status,
+        retryCount: r.retryCount,
+        lastError: r.lastError,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+      };
+    });
   }
 
   static async markSynced(id: string): Promise<void> {

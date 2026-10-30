@@ -144,14 +144,14 @@ describe('MatrixRepository Utilities', () => {
     expect(powderTabs).toEqual([]);
   });
 
-  it('filters out paint products and brands from getMatrixData', async () => {
+  it('filters out dummy general brands and demo IDs from getMatrixData while preserving user brands', async () => {
     const mockDb = {
       getAllAsync: vi.fn().mockImplementation((sql: string) => {
         if (sql.includes('FROM products')) {
           return Promise.resolve([
             { id: 'p1', brand: 'Jaquar', name: 'Jaquar Tap' },
             { id: 'p2', brand: 'Asian Paints', name: 'Apex Weatherproof Emulsion' },
-            { id: 'p3', brand: 'Berger', name: 'Walmasta Primer' },
+            { id: 'p3', brand: 'General', name: 'General Item' },
           ]);
         }
         if (sql.includes('FROM product_variants')) {
@@ -171,11 +171,10 @@ describe('MatrixRepository Utilities', () => {
 
     const data = await MatrixRepository.getMatrixData('store-1', 'cat-bath', 'sub-bath');
     expect(data.brands).toContain('Jaquar');
-    expect(data.brands).not.toContain('Asian Paints');
-    expect(data.brands).not.toContain('Berger');
-    expect(data.sizes).toEqual(['1/2"']);
-    expect(data.sizes).not.toContain('4L');
-    expect(data.sizes).not.toContain('10L');
+    expect(data.brands).toContain('Asian Paints');
+    expect(data.brands).not.toContain('General');
+    expect(data.sizes).toContain('1/2"');
+    expect(data.sizes).toContain('4L');
   });
 
   it('does not resurrect an explicitly deleted section in ensureDefaultSubTabs', async () => {
@@ -262,5 +261,44 @@ describe('MatrixRepository Utilities', () => {
     const data = await MatrixRepository.getMatrixData('store-1', 'cat-1', 'sub-1');
     // Expect custom dragged order: 2", then 1", then 1/2"
     expect(data.sizes).toEqual(['2"', '1"', '1/2"']);
+  });
+
+  it('updates product and variants when renaming a brand', async () => {
+    const executedSql: string[] = [];
+    const mockDb = {
+      runAsync: vi.fn().mockImplementation((sql: string) => {
+        executedSql.push(sql);
+        return Promise.resolve({ changes: 1 });
+      }),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+
+    await MatrixRepository.renameBrand('store-1', 'cat-1', 'sub-1', 'akg', 'AKG Pipes', 'dev-1');
+
+    expect(executedSql.some((s) => s.includes('UPDATE products \n       SET brand = ?, \n           name = ? || \' Items\''))).toBe(true);
+    expect(executedSql.some((s) => s.includes('UPDATE product_variants \n       SET name = ? || \' \' || size'))).toBe(true);
+  });
+
+  it('updates variant size and subcategory customValues when renaming a size', async () => {
+    const executedSql: string[] = [];
+    const mockDb = {
+      getFirstAsync: vi.fn().mockResolvedValue({
+        customValues: JSON.stringify({ sizeOrder: ['1/2', 'T', '3/4'] }),
+      }),
+      runAsync: vi.fn().mockImplementation((sql: string) => {
+        executedSql.push(sql);
+        return Promise.resolve({ changes: 1 });
+      }),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+
+    await MatrixRepository.renameSize('store-1', 'cat-1', 'sub-1', 'T', 'Tee', 'dev-1');
+
+    expect(executedSql.some((s) => s.includes('UPDATE product_variants \n       SET size = ?'))).toBe(true);
+    expect(executedSql.some((s) => s.includes('UPDATE subcategories SET customValues = ?'))).toBe(true);
   });
 });

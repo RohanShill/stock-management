@@ -94,6 +94,7 @@ export class PartiesRepository {
       storeId,
       name: data.name!,
       phone: data.phone,
+      email: data.email,
       address: data.address,
       businessName: data.businessName,
       gstin: data.gstin,
@@ -104,13 +105,14 @@ export class PartiesRepository {
     };
 
     await db.runAsync(
-      `INSERT INTO customers (id, storeId, name, phone, address, businessName, gstin, notes, active, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
+      `INSERT INTO customers (id, storeId, name, phone, email, address, businessName, gstin, notes, active, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
       [
         id,
         storeId,
         customer.name,
         customer.phone ?? null,
+        customer.email ?? null,
         customer.address ?? null,
         customer.businessName ?? null,
         customer.gstin ?? null,
