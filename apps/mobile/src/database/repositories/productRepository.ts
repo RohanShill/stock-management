@@ -153,7 +153,7 @@ export class ProductRepository {
       if (!brand || brand === 'general' || brand.includes('asian paint') || brand.includes('berger') || brand.includes('dr. fixit') || brand.includes('birla white')) {
         return true;
       }
-      if (name.includes('albow') || name.includes('elbow') || name.includes('emulsion') || name.includes('distemper') || name.includes('primer') || name.includes('solvent') || name.includes('waterproof') || name.includes('putty')) {
+      if (name.includes('emulsion') || name.includes('distemper') || name.includes('primer') || name.includes('solvent') || name.includes('waterproof') || name.includes('putty')) {
         return true;
       }
       return false;
@@ -183,11 +183,6 @@ export class ProductRepository {
     const isDummyVariant = (v: any): boolean => {
       const vid = String(v.id || '');
       if (vid.startsWith('demo-')) return true;
-      const size = (v.size || '').toLowerCase();
-      const name = (v.name || '').toLowerCase();
-      if (size.includes('albow') || size.includes('elbow') || name.includes('albow') || name.includes('elbow')) {
-        return true;
-      }
       return false;
     };
 

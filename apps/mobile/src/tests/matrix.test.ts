@@ -70,7 +70,7 @@ describe('MatrixRepository Utilities', () => {
     expect(Object.keys(data.cells)).toHaveLength(0);
   });
 
-  it('filters out any elbow or albow items and general brands from variants', async () => {
+  it('allows elbow and albow items in sizes and variants while excluding general brands', async () => {
     const mockDb = {
       getAllAsync: vi.fn().mockImplementation((sql: string) => {
         if (sql.includes('FROM products')) {
@@ -97,79 +97,51 @@ describe('MatrixRepository Utilities', () => {
     const data = await MatrixRepository.getMatrixData('store-1', 'cat-1', 'sub-1');
     expect(data.brands).toContain('Supreme');
     expect(data.brands).toContain('Finolex');
-    expect(data.sizes).toEqual(['1/2"']);
-    expect(data.sizes).not.toContain('Elbow 1/2"');
+    expect(data.sizes).toContain('1/2"');
+    expect(data.sizes).toContain('Elbow 1/2"');
     expect(data.cells['1/2"___supreme'].currentStock).toBe(25);
+    expect(data.cells['Elbow 1/2"___supreme'].currentStock).toBe(10);
     expect(data.cells['1/2"___finolex'].currentStock).toBe(15);
   });
 
-  it('ensures Pipes category only gets pipe sections (Pipes, Pipe Fittings, Others)', async () => {
-    let mockSubcategories: any[] = [];
+  it('does not auto-seed default sections so fresh installations start with zero sections', async () => {
     const mockDb = {
-      getAllAsync: vi.fn().mockImplementation((sql: string) => {
-        if (sql.includes('FROM subcategories')) {
-          return Promise.resolve(mockSubcategories);
-        }
-        if (sql.includes('FROM products')) {
-          return Promise.resolve([{ id: 'existing-prod' }]);
-        }
-        return Promise.resolve([]);
-      }),
-      runAsync: vi.fn().mockImplementation((sql: string, params?: any[]) => {
-        if (sql.includes('INSERT INTO subcategories')) {
-          mockSubcategories.push({
-            id: params?.[0],
-            storeId: params?.[1],
-            categoryId: params?.[2],
-            name: params?.[3],
-            displayOrder: params?.[5],
-            active: 1,
-          });
-        }
-        return Promise.resolve({ changes: 1 });
-      }),
+      getAllAsync: vi.fn().mockResolvedValue([]),
+      runAsync: vi.fn().mockResolvedValue({ changes: 1 }),
     };
 
     const { getDatabase } = await import('../database/db.js');
     vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
 
     const tabs = await MatrixRepository.ensureDefaultSubTabs('store-1', 'cat-pipes', 'Pipes', 'dev-1');
-    const names = tabs.map((t) => t.name);
-    expect(names).toEqual(['Pipes', 'Pipe Fittings', 'Others']);
+    expect(tabs).toEqual([]);
   });
 
-  it('ensures Bath fittings category gets bath sections and no pipe or paint sections', async () => {
-    let mockSubcategories: any[] = [];
+  it('returns only active sections created for that specific category without sharing across categories', async () => {
+    const mockSubcategories = [
+      { id: 's1', categoryId: 'cat-bath', name: 'Taps', displayOrder: 1, active: 1 },
+      { id: 's2', categoryId: 'cat-bath', name: 'Showers', displayOrder: 2, active: 1 },
+    ];
     const mockDb = {
-      getAllAsync: vi.fn().mockImplementation((sql: string) => {
+      getAllAsync: vi.fn().mockImplementation((sql: string, params?: any[]) => {
         if (sql.includes('FROM subcategories')) {
-          return Promise.resolve(mockSubcategories);
+          const catId = params?.[0];
+          return Promise.resolve(mockSubcategories.filter((s) => s.categoryId === catId));
         }
         return Promise.resolve([]);
       }),
-      runAsync: vi.fn().mockImplementation((sql: string, params?: any[]) => {
-        if (sql.includes('INSERT INTO subcategories')) {
-          mockSubcategories.push({
-            id: params?.[0],
-            storeId: params?.[1],
-            categoryId: params?.[2],
-            name: params?.[3],
-            displayOrder: params?.[5],
-            active: 1,
-          });
-        }
-        return Promise.resolve({ changes: 1 });
-      }),
+      runAsync: vi.fn().mockResolvedValue({ changes: 1 }),
     };
 
     const { getDatabase } = await import('../database/db.js');
     vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
 
-    const tabs = await MatrixRepository.ensureDefaultSubTabs('store-1', 'cat-bath', 'Bath fittings', 'dev-1');
-    const names = tabs.map((t) => t.name);
-    expect(names).toEqual(['Bath Fittings', 'Taps & Showers', 'Others']);
-    expect(names).not.toContain('Pipes');
-    expect(names).not.toContain('Wall Emulsions');
+    const bathTabs = await MatrixRepository.ensureDefaultSubTabs('store-1', 'cat-bath', 'Bath fittings', 'dev-1');
+    expect(bathTabs.map((t) => t.name)).toEqual(['Taps', 'Showers']);
+
+    // Another category has no sections and gets zero sections from bath
+    const powderTabs = await MatrixRepository.ensureDefaultSubTabs('store-1', 'cat-powder', 'Powder', 'dev-1');
+    expect(powderTabs).toEqual([]);
   });
 
   it('filters out paint products and brands from getMatrixData', async () => {

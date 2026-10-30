@@ -93,18 +93,18 @@ export default function ProductsScreen() {
    */
   const loadMatrix = useCallback(async (
     catId: string,
-    subcatId: string,
+    subcatId?: string,
     keepSize?: string,
     keepBrand?: string
   ) => {
-    if (!catId || !subcatId) {
+    if (!catId) {
       setLoading(false);
       return;
     }
     try {
       setLoading(true);
       const storeId = store?.id || 'store-1';
-      const data = await MatrixRepository.getMatrixData(storeId, catId, subcatId);
+      const data = await MatrixRepository.getMatrixData(storeId, catId, subcatId || undefined);
       setMatrixData(data);
 
       const targetSize = keepSize || selectedSize;
@@ -142,7 +142,7 @@ export default function ProductsScreen() {
   }, [store?.id, selectedSize, selectedBrand, showToast]);
 
   /**
-   * Loads sub-tabs (Pipes, Pipe Fittings, Others) and matrix data for a category
+   * Loads sub-tabs (sections) and matrix data for a category
    */
   const switchCategory = useCallback(async (
     catId: string,
@@ -164,9 +164,9 @@ export default function ProductsScreen() {
       const storeId = store?.id || 'store-1';
       const list = catList || categories;
       const cat = list.find((c) => c.id === catId);
-      const catName = cat?.name || 'Pipes';
+      const catName = cat?.name || '';
 
-      // Ensures default sub-tabs exist specifically for this category
+      // Queries active sub-tabs strictly belonging to this category (no default sections injected)
       const subtabs = await MatrixRepository.ensureDefaultSubTabs(
         storeId,
         catId,
@@ -180,13 +180,7 @@ export default function ProductsScreen() {
         : subtabs[0]?.id || '';
 
       setActiveSubcategoryId(activeSub);
-
-      if (activeSub) {
-        await loadMatrix(catId, activeSub);
-      } else {
-        setMatrixData({ brands: [], sizes: [], cells: {} });
-        setLoading(false);
-      }
+      await loadMatrix(catId, activeSub);
     } catch (e: any) {
       console.error('Error switching category:', e);
       setLoading(false);
@@ -196,6 +190,7 @@ export default function ProductsScreen() {
 
   /**
    * Initial Data Load: Run once on mount
+   * Clean slate: Never auto-creates categories or sections on fresh install.
    */
   useEffect(() => {
     let isMounted = true;
@@ -203,27 +198,17 @@ export default function ProductsScreen() {
       try {
         setLoading(true);
         const storeId = store?.id || 'store-1';
-        let cats = await ProductRepository.getCategories(storeId);
-
-        // If no categories exist, create default "Pipes" category
-        if (!cats || cats.length === 0) {
-          const newCat = await ProductRepository.createCategory(
-            { name: 'Pipes', description: 'Pipes, fittings and accessories' },
-            storeId,
-            deviceId
-          );
-          cats = [newCat];
-        }
+        const cats = await ProductRepository.getCategories(storeId);
 
         if (!isMounted) return;
-        setCategories(cats);
+        setCategories(cats || []);
 
-        // Prioritize "Pipes" category on launch
-        const pipesCat = cats.find((c) => c.name.toLowerCase().includes('pipe'));
-        const targetCat = pipesCat || cats[0];
-
-        if (targetCat) {
+        if (cats && cats.length > 0) {
+          const pipesCat = cats.find((c) => c.name.toLowerCase().includes('pipe'));
+          const targetCat = pipesCat || cats[0];
           await switchCategory(targetCat.id, cats);
+        } else {
+          setLoading(false);
         }
       } catch (e) {
         console.error('Error initializing products screen:', e);
@@ -255,7 +240,7 @@ export default function ProductsScreen() {
             const currentSubtabs = await MatrixRepository.ensureDefaultSubTabs(
               storeId,
               selectedCategoryId,
-              cat?.name || 'Pipes',
+              cat?.name || '',
               deviceId
             );
             if (!isMounted) return;
@@ -584,10 +569,11 @@ export default function ProductsScreen() {
         storeId,
         deviceId
       );
-      setCategories((prev) => [...prev, created]);
+      const updatedCats = [...categories, created];
+      setCategories(updatedCats);
       setNewCatName('');
       setNewCatModalVisible(false);
-      await switchCategory(created.id);
+      await switchCategory(created.id, updatedCats);
       showToast(`Category "${created.name}" created!`, 'success');
     } catch (e) {
       console.error('Error creating category:', e);
@@ -725,75 +711,108 @@ export default function ProductsScreen() {
         </ScrollView>
       </View>
 
-      {/* 2. Sub-Tabs Bar: [ Pipes ] [ Pipe Fittings ] [ Others ] [ + Add Section ] */}
-      <CategorySubTabs
-        subcategories={subcategories}
-        activeSubcategoryId={activeSubcategoryId}
-        onSelectSubcategory={handleSelectSubTab}
-        onAddSubTab={handleAddSubTab}
-        isDarkMode={isDarkMode}
-        activeColors={activeColors}
-      />
-
-      {/* 3. Search Filter Bar (Optional quick lookup) */}
-      <View style={styles.searchWrap}>
-        <Searchbar
-          placeholder={`Search ${activeCategory?.name || 'items'} by size or brand...`}
-          onChangeText={setSearchQuery}
-          value={searchQuery}
-          style={[
-            styles.searchbar,
-            {
-              backgroundColor: isDarkMode
-                ? activeColors.surfaceElevated
-                : activeColors.surfaceSubtle,
-            },
-          ]}
-          inputStyle={{
-            fontSize: 13,
-            color: activeColors.textPrimary,
-            minHeight: 36,
-          }}
-          placeholderTextColor={activeColors.textMuted}
-          iconColor={activeColors.textSecondary}
-        />
-      </View>
-
-      {/* 4. Main Matrix Table View */}
-      <View style={{ flex: 1 }}>
-        {loading ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator size="large" color={activeColors.primary} />
-            <Text style={[styles.loadingText, { color: activeColors.textMuted }]}>
-              Loading Table...
-            </Text>
+      {categories.length === 0 ? (
+        <View style={styles.emptyCategoriesWrap}>
+          <View
+            style={[
+              styles.emptyIconCircle,
+              { backgroundColor: isDarkMode ? '#1E293B' : '#EEF2FF' },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="shape-plus"
+              size={44}
+              color={activeColors.primary}
+            />
           </View>
-        ) : (
-          <ProductMatrixGrid
-            data={filteredMatrix}
-            selectedCellKey={selectedCellKey}
-            onSelectCell={handleSelectCell}
-            onAddBrand={handleAddBrand}
-            onAddSize={handleAddSize}
-            onDeleteBrand={handleDeleteBrand}
-            onReorderSizes={handleReorderSizes}
+          <Text style={[styles.emptyCatTitle, { color: activeColors.textPrimary }]}>
+            No Categories Yet
+          </Text>
+          <Text style={[styles.emptyCatSub, { color: activeColors.textSecondary }]}>
+            First when you install the app, there are no pre-set categories. Tap "+ Category" above to add your first category.
+          </Text>
+          <TouchableOpacity
+            style={[styles.emptyCatBtn, { backgroundColor: activeColors.primary }]}
+            onPress={() => setNewCatModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <MaterialCommunityIcons name="plus" size={18} color="#FFFFFF" />
+            <Text style={styles.emptyCatBtnText}>Add First Category</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <>
+          {/* 2. Sub-Tabs Bar: [ + Add Section ] */}
+          <CategorySubTabs
+            subcategories={subcategories}
+            activeSubcategoryId={activeSubcategoryId}
+            onSelectSubcategory={handleSelectSubTab}
+            onAddSubTab={handleAddSubTab}
             isDarkMode={isDarkMode}
             activeColors={activeColors}
-            emptyLabel={activeCategory?.name || 'Items'}
           />
-        )}
-      </View>
 
-      {/* 5. Bottom Action Bar: [ stock ] (Green) & [ sell ] (Red) */}
-      <MatrixActionBar
-        selectedCell={selectedCell}
-        selectedSize={selectedSize}
-        selectedBrand={selectedBrand}
-        onStockIn={handleOpenStockIn}
-        onSell={handleOpenSell}
-        isDarkMode={isDarkMode}
-        activeColors={activeColors}
-      />
+          {/* 3. Search Filter Bar (Optional quick lookup) */}
+          <View style={styles.searchWrap}>
+            <Searchbar
+              placeholder={`Search ${activeCategory?.name || 'items'} by size or brand...`}
+              onChangeText={setSearchQuery}
+              value={searchQuery}
+              style={[
+                styles.searchbar,
+                {
+                  backgroundColor: isDarkMode
+                    ? activeColors.surfaceElevated
+                    : activeColors.surfaceSubtle,
+                },
+              ]}
+              inputStyle={{
+                fontSize: 13,
+                color: activeColors.textPrimary,
+                minHeight: 36,
+              }}
+              placeholderTextColor={activeColors.textMuted}
+              iconColor={activeColors.textSecondary}
+            />
+          </View>
+
+          {/* 4. Main Matrix Table View */}
+          <View style={{ flex: 1 }}>
+            {loading ? (
+              <View style={styles.loadingWrap}>
+                <ActivityIndicator size="large" color={activeColors.primary} />
+                <Text style={[styles.loadingText, { color: activeColors.textMuted }]}>
+                  Loading Table...
+                </Text>
+              </View>
+            ) : (
+              <ProductMatrixGrid
+                data={filteredMatrix}
+                selectedCellKey={selectedCellKey}
+                onSelectCell={handleSelectCell}
+                onAddBrand={handleAddBrand}
+                onAddSize={handleAddSize}
+                onDeleteBrand={handleDeleteBrand}
+                onReorderSizes={handleReorderSizes}
+                isDarkMode={isDarkMode}
+                activeColors={activeColors}
+                emptyLabel={activeCategory?.name || 'Items'}
+              />
+            )}
+          </View>
+
+          {/* 5. Bottom Action Bar: [ stock ] (Green) & [ sell ] (Red) */}
+          <MatrixActionBar
+            selectedCell={selectedCell}
+            selectedSize={selectedSize}
+            selectedBrand={selectedBrand}
+            onStockIn={handleOpenStockIn}
+            onSell={handleOpenSell}
+            isDarkMode={isDarkMode}
+            activeColors={activeColors}
+          />
+        </>
+      )}
 
       {/* Quick Stock / Sell Modal */}
       <Modal
@@ -1331,6 +1350,45 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   btnConfirmText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  emptyCategoriesWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyCatTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyCatSub: {
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  emptyCatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+    gap: 8,
+  },
+  emptyCatBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',

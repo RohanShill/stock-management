@@ -25,6 +25,8 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
     "CREATE INDEX IF NOT EXISTS idx_variants_size ON product_variants(productId, size);",
     "CREATE INDEX IF NOT EXISTS idx_products_brand ON products(storeId, categoryId, subcategoryId, brand);",
     "CREATE INDEX IF NOT EXISTS idx_products_deleted ON products(storeId, deletedAt, active);",
+    // Reset automatic placeholder minStockLevel = 5 down to 0 for unstocked items so they don't falsely alert Out of Stock
+    "UPDATE product_variants SET minStockLevel = 0 WHERE minStockLevel = 5 AND currentStock = 0 AND (openingStock = 0 OR openingStock IS NULL);",
   ];
 
   for (const query of safeAlterQueries) {
@@ -36,13 +38,11 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
   }
 
   const cleanupQueries = [
-    // 1. Soft-delete old demo / dummy products and variants
+    // 1. Soft-delete old demo / dummy products and variants (strictly demo IDs or paint dummy data)
     `UPDATE products SET deletedAt = datetime('now'), active = 0 
      WHERE deletedAt IS NULL AND (
        id LIKE 'demo-%' OR 
        id LIKE 'prod-demo%' OR
-       LOWER(name) LIKE '%albow%' OR 
-       LOWER(name) LIKE '%elbow%' OR
        LOWER(name) LIKE '%emulsion%' OR
        LOWER(name) LIKE '%distemper%' OR
        LOWER(name) LIKE '%primer%' OR
@@ -59,24 +59,31 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
     `UPDATE product_variants SET deletedAt = datetime('now'), active = 0 
      WHERE deletedAt IS NULL AND (
        id LIKE 'demo-%' OR 
-       id LIKE 'demo-var-%' OR
-       LOWER(size) LIKE '%albow%' OR 
-       LOWER(size) LIKE '%elbow%' OR 
-       LOWER(name) LIKE '%albow%' OR 
-       LOWER(name) LIKE '%elbow%'
+       id LIKE 'demo-var-%'
      );`,
-    // 2. Cascade soft-delete to variants whose parent product is soft-deleted or inactive
+    // 2. Restore any real user products and variants that were mistakenly soft-deleted by previous 'elbow'/'albow' filters
+    `UPDATE products SET deletedAt = NULL, active = 1
+     WHERE deletedAt IS NOT NULL 
+       AND id NOT LIKE 'demo-%' 
+       AND id NOT LIKE 'prod-demo%' 
+       AND (LOWER(name) LIKE '%albow%' OR LOWER(name) LIKE '%elbow%');`,
+    `UPDATE product_variants SET deletedAt = NULL, active = 1
+     WHERE deletedAt IS NOT NULL 
+       AND id NOT LIKE 'demo-%' 
+       AND id NOT LIKE 'demo-var-%' 
+       AND (LOWER(size) LIKE '%albow%' OR LOWER(size) LIKE '%elbow%' OR LOWER(name) LIKE '%albow%' OR LOWER(name) LIKE '%elbow%');`,
+    // 3. Cascade soft-delete to variants whose parent product is soft-deleted or inactive
     `UPDATE product_variants SET deletedAt = datetime('now'), active = 0
      WHERE deletedAt IS NULL AND productId IN (
        SELECT id FROM products WHERE deletedAt IS NOT NULL OR active = 0
      );`,
-    // 3. Cascade soft-delete to products whose category or subcategory is soft-deleted or inactive
+    // 4. Cascade soft-delete to products whose category or subcategory is soft-deleted or inactive
     `UPDATE products SET deletedAt = datetime('now'), active = 0
      WHERE deletedAt IS NULL AND (
        categoryId IN (SELECT id FROM categories WHERE deletedAt IS NOT NULL OR active = 0) OR
-       (subcategoryId IS NOT NULL AND subcategoryId IN (SELECT id FROM subcategories WHERE deletedAt IS NOT NULL OR active = 0))
+       (subcategoryId IS NOT NULL AND subcategoryId != '' AND subcategoryId IN (SELECT id FROM subcategories WHERE deletedAt IS NOT NULL OR active = 0))
      );`,
-    // 4. Cascade again to variants of newly soft-deleted products
+    // 5. Cascade again to variants of newly soft-deleted products
     `UPDATE product_variants SET deletedAt = datetime('now'), active = 0
      WHERE deletedAt IS NULL AND productId IN (
        SELECT id FROM products WHERE deletedAt IS NOT NULL OR active = 0

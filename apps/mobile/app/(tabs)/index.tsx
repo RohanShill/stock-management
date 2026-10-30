@@ -244,8 +244,9 @@ const SearchResultItem = React.memo<SearchResultItemProps>(({
   activeColors,
   onAction,
 }) => {
-  const isOut = item.currentStock <= 0;
-  const isLow = !isOut && item.currentStock <= item.minStockLevel;
+  const isOut = item.isOutOfStock;
+  const isLow = !isOut && item.minStockLevel > 0 && item.currentStock <= item.minStockLevel;
+  const isZeroUnstocked = item.currentStock <= 0 && !isOut;
 
   return (
     <Surface
@@ -293,6 +294,8 @@ const SearchResultItem = React.memo<SearchResultItemProps>(({
               ? styles.stockPillOut
               : isLow
               ? styles.stockPillLow
+              : isZeroUnstocked
+              ? (isDarkMode ? styles.stockPillNeutralDark : styles.stockPillNeutral)
               : styles.stockPillOk,
           ]}
         >
@@ -303,6 +306,8 @@ const SearchResultItem = React.memo<SearchResultItemProps>(({
                 ? styles.stockTextOut
                 : isLow
                 ? styles.stockTextLow
+                : isZeroUnstocked
+                ? (isDarkMode ? styles.stockTextNeutralDark : styles.stockTextNeutral)
                 : styles.stockTextOk,
             ]}
           >
@@ -388,6 +393,15 @@ export default function HomeScreen() {
       const catMap = new Map<string, string>();
       categories.forEach((c) => catMap.set(c.id, c.name));
 
+      // Get set of variant IDs that have recorded stock movements
+      const { getDatabase } = await import('../../src/database/db.js');
+      const db = await getDatabase();
+      const movementRows = await db.getAllAsync<{ variantId: string }>(
+        `SELECT DISTINCT variantId FROM stock_movements WHERE storeId = ?;`,
+        [storeId]
+      );
+      const movedVariantIds = new Set((movementRows || []).map((m) => m.variantId));
+
       let totalUnits = 0;
       let totalVariants = 0;
       let lowCount = 0;
@@ -400,11 +414,18 @@ export default function HomeScreen() {
         for (const v of p.variants) {
           totalVariants += 1;
           const stock = Number(v.currentStock ?? 0);
-          const minLevel = Number(v.minStockLevel ?? 5);
+          const minLevel = Number(v.minStockLevel ?? 0);
+          const opening = Number(v.openingStock ?? 0);
           totalUnits += Math.max(0, stock);
 
-          const isOut = stock <= 0;
-          const isLow = stock <= minLevel;
+          // An item is genuinely tracked as "Out of Stock" if it previously had stock
+          // or has an explicit reorder threshold (minStockLevel > 0), and now has stock <= 0.
+          // Brand new unstocked catalog items (stock=0, opening=0, movements=0, min=0) do not falsely alarm as "Restock Needed".
+          const hasHistory = stock > 0 || opening > 0 || movedVariantIds.has(v.id);
+          const isTracked = hasHistory || minLevel > 0;
+
+          const isOut = isTracked && stock <= 0;
+          const isLow = isTracked && minLevel > 0 && stock > 0 && stock <= minLevel;
 
           const itemObj: RestockItem = {
             variantId: v.id,
@@ -1318,6 +1339,18 @@ const styles = StyleSheet.create({
   },
   stockTextOut: {
     color: '#DC2626',
+  },
+  stockPillNeutral: {
+    backgroundColor: '#F1F5F9',
+  },
+  stockTextNeutral: {
+    color: '#64748B',
+  },
+  stockPillNeutralDark: {
+    backgroundColor: '#1E293B',
+  },
+  stockTextNeutralDark: {
+    color: '#94A3B8',
   },
   searchActionsRow: {
     flexDirection: 'row',

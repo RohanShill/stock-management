@@ -63,10 +63,7 @@ export default function SettingsScreen() {
       for (const cat of cats) {
         const subs = await ProductRepository.getSubcategories(cat.id, storeId);
         subcatMap[cat.id] = (subs || []).filter(
-          (s) =>
-            !s.name.toLowerCase().includes('elbow') &&
-            !s.name.toLowerCase().includes('albow') &&
-            !s.name.toLowerCase().includes('angle')
+          (s) => !s.name.toLowerCase().includes('angle')
         );
       }
       setCategorySubcategories(subcatMap);

@@ -58,8 +58,8 @@ export class MatrixRepository {
   }
 
   /**
-   * Ensures default sub-tabs (Pipes, Pipe Fittings, Others) exist for a category.
-   * If it's a Pipe category and empty, seeds initial data matching client's sketch.
+   * Fetches active sub-tabs (sections) for a category.
+   * Does NOT auto-create default sections, allowing fresh installations to start clean.
    */
   static async ensureDefaultSubTabs(
     storeId: string,
@@ -68,152 +68,25 @@ export class MatrixRepository {
     deviceId: string
   ): Promise<Subcategory[]> {
     const db = await getDatabase();
-    const now = new Date().toISOString();
 
-    const isPipeCategory = categoryName.toLowerCase().includes('pipe');
-    const isBathCategory = categoryName.toLowerCase().includes('bath');
-
-    // 1. Query active subcategories belonging strictly to this category
-    let rows = await db.getAllAsync<any>(
+    // Query active subcategories belonging strictly to this category
+    const rows = await db.getAllAsync<any>(
       `SELECT * FROM subcategories 
        WHERE categoryId = ? 
          AND storeId = ? 
          AND deletedAt IS NULL 
          AND active = 1
-         AND LOWER(name) NOT LIKE '%albow%' 
-         AND LOWER(name) NOT LIKE '%elbow%' 
-         AND LOWER(name) NOT LIKE '%angles%'
-         AND LOWER(name) NOT LIKE '%emulsion%'
-         AND LOWER(name) NOT LIKE '%distemper%'
-         AND LOWER(name) NOT LIKE '%primer%'
-         AND LOWER(name) NOT LIKE '%solvent%'
-         AND LOWER(name) NOT LIKE '%waterproof%'
-         AND LOWER(name) NOT LIKE '%putty%'
          AND LOWER(name) != 'general'
          AND id NOT LIKE 'demo-sub-%'
        ORDER BY displayOrder ASC, createdAt ASC;`,
       [categoryId, storeId]
     );
 
-    // Query all subcategories that ever existed for this category (active or deleted)
-    const allEverSubcats = await db.getAllAsync<any>(
-      `SELECT LOWER(name) as name, deletedAt FROM subcategories WHERE categoryId = ? AND storeId = ?;`,
-      [categoryId, storeId]
-    );
-
-    // If it's a Pipe category, make sure default tabs exist ONLY IF they were never created before
-    if (isPipeCategory) {
-      const everHadPipes = allEverSubcats && allEverSubcats.some((r) => r.name === 'pipes');
-      const everHadFittings = allEverSubcats && allEverSubcats.some((r) => r.name.includes('fitting'));
-      const everHadOthers = allEverSubcats && allEverSubcats.some((r) => r.name.includes('other'));
-
-      if (!everHadPipes) {
-        const id = uuidv4();
-        await db.runAsync(
-          `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);`,
-          [id, storeId, categoryId, 'Pipes', 'Pipes section', 1, now, now]
-        );
-      }
-      if (!everHadFittings) {
-        const id = uuidv4();
-        await db.runAsync(
-          `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);`,
-          [id, storeId, categoryId, 'Pipe Fittings', 'Pipe Fittings section', 2, now, now]
-        );
-      }
-      if (!everHadOthers) {
-        const id = uuidv4();
-        await db.runAsync(
-          `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);`,
-          [id, storeId, categoryId, 'Others', 'Other accessories section', 3, now, now]
-        );
-      }
-
-      // Re-query rows
-      rows = await db.getAllAsync<any>(
-        `SELECT * FROM subcategories 
-         WHERE categoryId = ? 
-           AND storeId = ? 
-           AND deletedAt IS NULL 
-           AND active = 1
-           AND LOWER(name) NOT LIKE '%albow%' 
-           AND LOWER(name) NOT LIKE '%elbow%' 
-           AND LOWER(name) NOT LIKE '%angles%'
-           AND LOWER(name) NOT LIKE '%emulsion%'
-           AND LOWER(name) NOT LIKE '%distemper%'
-           AND LOWER(name) NOT LIKE '%primer%'
-           AND LOWER(name) NOT LIKE '%solvent%'
-           AND LOWER(name) NOT LIKE '%waterproof%'
-           AND LOWER(name) NOT LIKE '%putty%'
-           AND LOWER(name) != 'general'
-           AND id NOT LIKE 'demo-sub-%'
-         ORDER BY displayOrder ASC, createdAt ASC;`,
-        [categoryId, storeId]
-      );
-    }
-
-    if (rows && rows.length > 0) {
-      return rows.map((r) => ({
-        ...r,
-        active: Boolean(r.active),
-        displayOrder: r.displayOrder ?? 0,
-      }));
-    }
-
-    // Only auto-create defaults if category has NEVER had any subcategories at all (brand new category)
-    if (!allEverSubcats || allEverSubcats.length === 0) {
-      const defaultTabs = isPipeCategory
-        ? ['Pipes', 'Pipe Fittings', 'Others']
-        : isBathCategory
-        ? ['Bath Fittings', 'Taps & Showers', 'Others']
-        : [categoryName, 'Accessories', 'Others'];
-
-      const createdTabs: Subcategory[] = [];
-
-      for (let i = 0; i < defaultTabs.length; i++) {
-        const tabName = defaultTabs[i];
-        const id = uuidv4();
-        const record: Subcategory = {
-          id,
-          storeId,
-          categoryId,
-          name: tabName,
-          description: `${tabName} section under ${categoryName}`,
-          displayOrder: i + 1,
-          active: true,
-          createdAt: now,
-          updatedAt: now,
-        };
-
-        await db.runAsync(
-          `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);`,
-          [id, storeId, categoryId, record.name, record.description ?? null, record.displayOrder, now, now]
-        );
-
-        await SyncQueueRepository.enqueue(storeId, deviceId, 'subcategory', id, 'create', record as unknown as Record<string, unknown>);
-        createdTabs.push(record);
-      }
-
-      // Seed sketch items for "Pipes" tab ONLY if the entire category has no products at all yet
-      if (isPipeCategory && createdTabs.length > 0) {
-        const existingProds = await db.getAllAsync<any>(
-          `SELECT id FROM products WHERE categoryId = ? AND storeId = ? AND deletedAt IS NULL;`,
-          [categoryId, storeId]
-        );
-        if (!existingProds || existingProds.length === 0) {
-          const pipesTab = createdTabs[0];
-          await this.seedSketchPipesData(storeId, categoryId, pipesTab.id, deviceId);
-        }
-      }
-
-      return createdTabs;
-    }
-
-    return [];
+    return (rows || []).map((r) => ({
+      ...r,
+      active: Boolean(r.active),
+      displayOrder: r.displayOrder ?? 0,
+    }));
   }
 
   /**
@@ -331,8 +204,6 @@ export class MatrixRepository {
     const db = await getDatabase();
 
     let sql = `SELECT * FROM products WHERE storeId = ? AND categoryId = ? AND deletedAt IS NULL AND active = 1
-      AND LOWER(name) NOT LIKE '%albow%'
-      AND LOWER(name) NOT LIKE '%elbow%'
       AND LOWER(name) NOT LIKE '%emulsion%'
       AND LOWER(name) NOT LIKE '%distemper%'
       AND LOWER(name) NOT LIKE '%primer%'
@@ -408,18 +279,8 @@ export class MatrixRepository {
         continue;
       }
 
-      // User requirement: "albow ho v hta do hard coded ha"
-      const rawSize = (v.size || v.name || 'Standard').trim();
-      if (
-        rawSize.toLowerCase().includes('albow') ||
-        rawSize.toLowerCase().includes('elbow') ||
-        (prod?.name && (prod.name.toLowerCase().includes('albow') || prod.name.toLowerCase().includes('elbow')))
-      ) {
-        continue;
-      }
-
       const brand = rawBrand;
-      const size = rawSize;
+      const size = (v.size || v.name || 'Standard').trim();
 
       brandSet.add(brand);
       sizeSet.add(size);
@@ -539,7 +400,7 @@ export class MatrixRepository {
         const sku = `${cleanBrand.toUpperCase().slice(0, 3)}-${cleanSize.replace(/[^a-zA-Z0-9]/g, '')}-${uuidv4().slice(0, 8).toUpperCase()}`;
         await db.runAsync(
           `INSERT INTO product_variants (id, storeId, productId, name, sku, size, purchasePricePaise, sellingPricePaise, minStockLevel, openingStock, currentStock, active, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, 0, 0, 5, 0, 0, 1, ?, ?);`,
+           VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 1, ?, ?);`,
           [varId, storeId, prodId, `${cleanBrand} ${cleanSize}`, sku, cleanSize, now, now]
         );
       }
@@ -622,7 +483,7 @@ export class MatrixRepository {
         const sku = `${cleanBrand.toUpperCase().slice(0, 3)}-${cleanSize.replace(/[^a-zA-Z0-9]/g, '')}-${uuidv4().slice(0, 8).toUpperCase()}`;
         await db.runAsync(
           `INSERT INTO product_variants (id, storeId, productId, name, sku, size, purchasePricePaise, sellingPricePaise, minStockLevel, openingStock, currentStock, active, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, 0, 0, 5, 0, 0, 1, ?, ?);`,
+           VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 1, ?, ?);`,
           [varId, storeId, prodId, `${cleanBrand} ${cleanSize}`, sku, cleanSize, now, now]
         );
       }

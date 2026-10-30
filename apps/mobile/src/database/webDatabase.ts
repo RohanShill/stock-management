@@ -126,12 +126,10 @@ class WebSQLiteStore {
           const validCatIds = new Set(this.tables.categories.map((c: any) => c.id));
           this.tables.subcategories = this.tables.subcategories.filter((s: any) => validCatIds.has(s.categoryId));
 
-          // Clean up any old dummy subcategories like 'Angles', 'Elbow', 'Albow', 'Emulsion', 'Distemper', 'Primer', 'Waterproof', 'Putty'
+          // Clean up any old dummy subcategories like 'Angles', 'Emulsion', 'Distemper', 'Primer', 'Waterproof', 'Putty'
           this.tables.subcategories = (this.tables.subcategories || []).filter(
             (s: any) =>
               !s.name.toLowerCase().includes('angle') &&
-              !s.name.toLowerCase().includes('elbow') &&
-              !s.name.toLowerCase().includes('albow') &&
               !s.name.toLowerCase().includes('emulsion') &&
               !s.name.toLowerCase().includes('distemper') &&
               !s.name.toLowerCase().includes('primer') &&
@@ -142,19 +140,12 @@ class WebSQLiteStore {
               !s.id?.startsWith('demo-sub-')
           );
 
-          // Clean up any products or variants with 'elbow' / 'albow' or paint demo items
+          // Clean up any paint demo items
           this.tables.product_variants = (this.tables.product_variants || []).filter(
-            (v: any) =>
-              !v.size?.toLowerCase().includes('elbow') &&
-              !v.size?.toLowerCase().includes('albow') &&
-              !v.name?.toLowerCase().includes('elbow') &&
-              !v.name?.toLowerCase().includes('albow') &&
-              !v.id?.startsWith('demo-var-')
+            (v: any) => !v.id?.startsWith('demo-var-')
           );
           this.tables.products = (this.tables.products || []).filter(
             (p: any) =>
-              !p.name?.toLowerCase().includes('elbow') &&
-              !p.name?.toLowerCase().includes('albow') &&
               !p.name?.toLowerCase().includes('emulsion') &&
               !p.name?.toLowerCase().includes('distemper') &&
               !p.name?.toLowerCase().includes('primer') &&

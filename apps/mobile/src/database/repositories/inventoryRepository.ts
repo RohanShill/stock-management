@@ -69,7 +69,7 @@ export class InventoryRepository {
       delta = -deltaQuantity;
     }
 
-    const balanceBefore = variantRow.currentStock;
+    const balanceBefore = Number(variantRow.currentStock ?? 0);
     const balanceAfter = balanceBefore + delta;
 
     if (balanceAfter < 0) {
