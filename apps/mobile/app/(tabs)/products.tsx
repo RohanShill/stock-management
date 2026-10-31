@@ -1417,7 +1417,7 @@ export default function ProductsScreen() {
                   {submittingAction
                     ? 'Processing...'
                     : actionModalMode === 'sell'
-                    ? 'Confirm Sell'
+                    ? 'Confirm Sell Out'
                     : 'Confirm Stock In'}
                 </Text>
               </TouchableOpacity>

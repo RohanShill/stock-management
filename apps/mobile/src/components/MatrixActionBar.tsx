@@ -104,9 +104,9 @@ export const MatrixActionBar: React.FC<MatrixActionBarProps> = React.memo(({
         )}
       </View>
 
-      {/* Buttons Matching Client's Sketch: [ stock ] (Green) & [ sell ] (Red) */}
+      {/* Buttons: [ + Stock ] (Green) & [ Sell Out ] (Red) */}
       <View style={styles.buttonsRow}>
-        {/* [ stock ] button */}
+        {/* [ + Stock ] button */}
         <TouchableOpacity
           activeOpacity={0.8}
           disabled={!isSelected}
@@ -116,13 +116,15 @@ export const MatrixActionBar: React.FC<MatrixActionBarProps> = React.memo(({
             {
               backgroundColor: isSelected
                 ? isDarkMode
-                  ? '#064E3B'
-                  : '#ECFDF5'
+                  ? '#059669'
+                  : '#10B981'
                 : isDarkMode
                 ? activeColors.surfaceElevated
                 : activeColors.surfaceSubtle,
               borderColor: isSelected
-                ? '#059669'
+                ? isDarkMode
+                  ? '#10B981'
+                  : '#059669'
                 : activeColors.border,
             },
           ]}
@@ -130,22 +132,22 @@ export const MatrixActionBar: React.FC<MatrixActionBarProps> = React.memo(({
           <MaterialCommunityIcons
             name="plus-circle-outline"
             size={20}
-            color={isSelected ? '#059669' : activeColors.textMuted}
+            color={isSelected ? '#FFFFFF' : activeColors.textMuted}
           />
           <Text
             style={[
               styles.actionButtonText,
               {
-                color: isSelected ? '#059669' : activeColors.textMuted,
+                color: isSelected ? '#FFFFFF' : activeColors.textMuted,
                 fontWeight: '800',
               },
             ]}
           >
-            stock
+            + Stock
           </Text>
         </TouchableOpacity>
 
-        {/* [ sell ] button */}
+        {/* [ Sell Out ] button */}
         <TouchableOpacity
           activeOpacity={0.8}
           disabled={!isSelected}
@@ -155,13 +157,15 @@ export const MatrixActionBar: React.FC<MatrixActionBarProps> = React.memo(({
             {
               backgroundColor: isSelected
                 ? isDarkMode
-                  ? '#7F1D1D'
-                  : '#FEF2F2'
+                  ? '#DC2626'
+                  : '#EF4444'
                 : isDarkMode
                 ? activeColors.surfaceElevated
                 : activeColors.surfaceSubtle,
               borderColor: isSelected
-                ? '#DC2626'
+                ? isDarkMode
+                  ? '#F87171'
+                  : '#DC2626'
                 : activeColors.border,
             },
           ]}
@@ -169,18 +173,18 @@ export const MatrixActionBar: React.FC<MatrixActionBarProps> = React.memo(({
           <MaterialCommunityIcons
             name="cart-arrow-down"
             size={20}
-            color={isSelected ? '#DC2626' : activeColors.textMuted}
+            color={isSelected ? '#FFFFFF' : activeColors.textMuted}
           />
           <Text
             style={[
               styles.actionButtonText,
               {
-                color: isSelected ? '#DC2626' : activeColors.textMuted,
+                color: isSelected ? '#FFFFFF' : activeColors.textMuted,
                 fontWeight: '800',
               },
             ]}
           >
-            sell
+            Sell Out
           </Text>
         </TouchableOpacity>
       </View>
