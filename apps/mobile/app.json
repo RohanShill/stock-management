@@ -34,7 +34,16 @@
       "expo-router",
       "expo-sqlite",
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "buildArchs": ["arm64-v8a"],
+            "enablePngCrunchInReleaseBuilds": true
+          }
+        }
+      ]
     ],
     "extra": {
       "isDemo": false,

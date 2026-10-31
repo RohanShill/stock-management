@@ -32,6 +32,19 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       'expo-sqlite',
       'expo-secure-store',
       'expo-font',
+      [
+        'expo-build-properties',
+        {
+          android: {
+            // Target real physical Android phones & tablets (64-bit ARM).
+            // Completely excludes bloated x86 and x86_64 emulator binaries.
+            buildArchs: process.env.REACT_NATIVE_ARCHITECTURES
+              ? process.env.REACT_NATIVE_ARCHITECTURES.split(',').map((s: string) => s.trim())
+              : ['arm64-v8a'],
+            enablePngCrunchInReleaseBuilds: true,
+          },
+        },
+      ],
     ],
     owner: 'rohanshill',
     extra: {
