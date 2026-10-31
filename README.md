@@ -1,219 +1,262 @@
-# Hardware Store Stock Management & Inventory Android App
+<div align="center">
+  <img src="apps/mobile/assets/icon.png" width="110" height="110" alt="MANJU STORES Logo" style="border-radius: 22px;" />
+  <h1>MANJU STORES — Stock Management & POS</h1>
+  <p><strong>A High-Performance, Offline-First Mobile & Tablet Inventory Management Solution for Hardware, Building Materials, Paints, Pipes & Sanitary Stores.</strong></p>
 
-A production-oriented, offline-first mobile and cloud application built for hardware and building-materials stores in India (default currency ₹ INR, metric/imperial conversions, GST breakdown, pipe length cutting calculators, and English/Hindi language options).
+  <p>
+    <a href="https://github.com/RohanShill/stock-management/releases/latest"><img src="https://img.shields.io/badge/Release-v1.0.0-blue?style=for-the-badge&logo=android" alt="Latest Release" /></a>
+    <a href="https://expo.dev"><img src="https://img.shields.io/badge/Expo-SDK_52-black?style=for-the-badge&logo=expo" alt="Expo SDK" /></a>
+    <a href="https://reactnative.dev"><img src="https://img.shields.io/badge/React_Native-0.76-61DAFB?style=for-the-badge&logo=react" alt="React Native" /></a>
+    <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-5.7-3178C6?style=for-the-badge&logo=typescript" alt="TypeScript" /></a>
+    <a href="https://www.sqlite.org"><img src="https://img.shields.io/badge/SQLite-WAL_Offline-003B57?style=for-the-badge&logo=sqlite" alt="SQLite" /></a>
+    <img src="https://img.shields.io/badge/Tests-50_Passing-brightgreen?style=for-the-badge&logo=vitest" alt="50 Tests Passing" />
+  </p>
+
+  <h3>
+    <a href="https://expo.dev/artifacts/eas/dDN8KIHaCLXIIVt1S1XIyaEW40LM8Dz8x4K1y2eM_U0.apk">📲 Direct Download Android APK (v1.0.0)</a> &nbsp;•&nbsp;
+    <a href="https://github.com/RohanShill/stock-management/releases/latest">📦 GitHub Releases</a> &nbsp;•&nbsp;
+    <a href="#-quick-start">🚀 Quick Start</a> &nbsp;•&nbsp;
+    <a href="#-key-features">✨ Key Features</a>
+  </h3>
+</div>
 
 ---
 
-## 1. Project Overview
+## 📱 App Showcase
 
-Hardware stores have unique inventory requirements:
-- Selling pipes, wires, and cables by variable length (e.g. 7.5 metres cut from standard 3-metre pipes).
-- Handling count, weight (kg/g), volume (litres/ml), and box packaging units.
-- Uninterrupted daily billing and inventory management even when internet connectivity is intermittent or completely down.
-- Automatic, idempotent background synchronization with MongoDB Atlas when online.
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="50%">
+        <strong>🏠 Home Dashboard & Stock Overview</strong><br/><br/>
+        <img src="docs/screenshots/home-overview.jpg" width="280" alt="Home Screen & Stock Overview" /><br/>
+        <em>Glowing Low-Stock Alerts & Restock List</em>
+      </td>
+      <td align="center" width="50%">
+        <strong>📦 2D Matrix Table & Quick Actions</strong><br/><br/>
+        <img src="docs/screenshots/matrix-products.jpg" width="280" alt="2D Matrix Grid" /><br/>
+        <em>Interactive Brands vs. Sizes Matrix with 1-Tap Stock / Sell</em>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ---
 
-## 2. Monorepo Structure
+## ✨ Key Features
+
+### ⚡ 1. Offline-First SQLite Architecture
+- **Instant Response:** Zero network lag during billing, inventory adjustments, and catalog browsing.
+- **ACID Transactions:** Powered by `expo-sqlite` with **WAL (Write-Ahead Logging)** mode. Data is always protected even during sudden battery drain or app termination.
+- **Full Offline Reliability:** Stores operate completely normally without internet connection throughout the day.
+
+### 📊 2. Interactive 2D Matrix Table
+- **Multi-Variant Visualization:** Unique grid layout tailored for hardware stores — **Rows = Sizes** (e.g. 10L, 20L, 50L, 1/2", 1") and **Columns = Brands/Categories** (e.g. Berger Prime, Asian Paints, Supreme Pipe).
+- **1-Tap Quick Action Bar:** Select any cell in the table to immediately restock (`+ Stock`) or record sales (`Sell Out`) without navigating through complex sub-menus.
+- **Dynamic Category & Section Tabs:** Fast switching between product departments (`PIPE`, `PAINT`, `CIMENT`, `KANTI`, etc.).
+
+### 🔔 3. Intelligent Stock Overview & Low-Stock Alerts
+- **Live Inventory Cards:** High-contrast summary cards showing total **Low Stock** and **Out of Stock** items.
+- **Restock Needed Feed:** Immediate actionable list showing current quantity left, minimum safety threshold, and 1-tap restock shortcut.
+
+### 📱 4. Android Phone & Tablet Optimized
+- **Dual Form-Factor Support:** Fluid responsive layout with auto-rotation support (`default` orientation) for Android billing tablets and counter mobile phones.
+- **Safe Ergonomics:** Built-in bottom navigation padding tuned to prevent gesture navigation pill interference (matching modern WhatsApp/Telegram ergonomics).
+- **Theme Support:** Polished Dark Mode and clean Light Mode with high-contrast accessibility buttons.
+
+### 🧾 5. Parties & Khata Ledger (CRM)
+- **Customer & Supplier Accounts:** Track ledger balances, total receivables, and payables.
+- **Transaction History:** Link sales and restocks to specific parties with remaining credit balance calculations.
+
+### 📜 6. Full Transaction Audit & Filtered History
+- **12-Hour Timestamps:** Exact date and time tracking (e.g., `10:02 PM`) for all stock entries and sales.
+- **Calendar & Quick Filters:** Filter activity by `Today`, `Yesterday`, `Last 7 Days`, or custom date range calendar picker.
+
+### 🧮 7. Hardware Domain Calculation Engine
+- **Pipe Cutting Best-Fit Algorithm:** Buy pipes in bulk lengths (e.g. 3m) and sell fractional cuts (e.g. 7.5m). The engine searches for usable remnants first before cutting into fresh whole pipes.
+- **Integer Paise Precision:** Financial totals and GST calculations use integer Paise (₹ 1 = 100 paise) to eliminate JavaScript floating-point errors.
+- **GST Breakdown:** Automatic CGST/SGST splits and nearest-rupee round-off adjustments.
+
+### 🔄 8. Background Cloud Synchronization
+- **Outbox Sync Engine:** Changes made offline are queued with unique client UUIDs in a local `sync_queue`.
+- **Idempotent Replay:** Cloud API validates operation tokens to ensure retries never duplicate transactions or double-deduct inventory.
+- **Incremental Cursors:** Cloud pulls use high-water mark timestamps (`server_cursor`) to sync only modified records.
+
+---
+
+## 🏗️ Monorepo Structure
 
 ```
 hardware-store-manager/
+├── .github/
+│   └── workflows/
+│       └── build-apk.yml     # GitHub Actions automated signed Android APK build & release
 ├── apps/
-│   └── mobile/              # React Native + Expo Android app
-│       ├── app/             # Expo Router screens (tabs, auth, modals)
+│   └── mobile/              # React Native + Expo Android app (Phones & Tablets)
+│       ├── app/             # Expo Router screens (tabs, modals, auth)
+│       │   ├── (tabs)/      # Home, Products (Matrix), History, Settings
+│       │   └── _layout.tsx  # Root navigation stack & splash screen handler
 │       ├── src/
-│       │   ├── database/    # SQLite tables, WAL mode, repositories
-│       │   ├── sync/        # Dedicated Offline Sync Engine
-│       │   ├── store/       # Zustand application state
-│       │   └── i18n/        # English & Hindi translation dictionaries
-│       ├── eas.json         # EAS Android APK & AAB build profiles
-│       └── app.json         # Expo Android package & configuration
+│       │   ├── database/    # SQLite tables, WAL migrations, repositories
+│       │   ├── store/       # Zustand reactive state store
+│       │   ├── sync/        # Offline Sync Engine (Queue & Cursor pull)
+│       │   └── tests/       # Mobile unit & integration tests (32 tests)
+│       ├── assets/          # App icons, adaptive icons, splash screens
+│       ├── eas.json         # Expo Application Services build configuration
+│       └── app.json         # Android manifest, versionCode, permissions
 ├── services/
-│   └── api/                 # Express.js + Mongoose (MongoDB Atlas) backend
+│   └── api/                 # Express.js + Mongoose cloud backend
 │       ├── src/
-│       │   ├── models/      # Mongoose schemas & indexes
+│       │   ├── models/      # MongoDB schemas (Product, Sale, Party, Movement)
 │       │   ├── routes/      # REST API v1 endpoints
-│       │   └── middleware/  # JWT auth & role validation
+│       │   └── middleware/  # JWT auth, role validation, idempotency
 │       └── .env.example
 ├── packages/
-│   └── shared/              # Shared types, Zod schemas, unit conversion & pipe math
+│   └── shared/              # Shared TypeScript domain logic & validation
 │       └── src/
-│           ├── types/       # Units, Pipe math, Money (Paise), Models, Sync
-│           ├── schemas/     # Zod validation schemas
-│           └── utils/       # SKU generator, calculation algorithms
-├── docs/                    # Schema, Sync Engine, & API Reference documentation
-├── package.json             # Root npm workspace
-└── README.md
+│           ├── types/       # Units, Pipe Math, Money (Paise), Sync
+│           ├── schemas/     # Zod data validation schemas
+│           └── utils/       # SKU generator, pipe cutting algorithms
+├── docs/                    # Architectural specs, schema designs, screenshots
+└── package.json             # Root npm workspaces configuration
 ```
 
 ---
 
-## 3. Technology Stack & Versions
+## 🛠️ Technology Stack
 
-- **Mobile Client:** React Native 0.76.6, Expo SDK 52, Expo Router v4, `expo-sqlite` v15, React Native Paper v5, Zustand v5, TanStack Query v5.
-- **Backend Service:** Node.js v24+, Express 4.21, Mongoose 8.9 (MongoDB Atlas), Zod 3.24, Helmet 8.0, JWT, bcryptjs.
-- **Shared Domain:** TypeScript 5.7 strict mode, Vitest 3.2.
-
----
-
-## 4. Prerequisites
-
-1. **Node.js:** v18+ (tested on Node v24.19)
-2. **npm:** v10+ (tested on npm 11.13)
-3. **MongoDB:** MongoDB Atlas cluster URI or local MongoDB instance (`mongodb://127.0.0.1:27017/hardware_store_db`)
-4. **Android Development (Optional for device builds):** Android Studio / Expo Go app on an Android phone.
+| Layer | Technologies |
+|---|---|
+| **Mobile App** | React Native `0.76.6`, Expo SDK `52`, Expo Router `v4`, `expo-sqlite` `v15` (WAL), React Native Paper `v5`, Zustand `v5`, Lucide Icons |
+| **Backend API** | Node.js `v20+` / `v24`, Express `4.21`, Mongoose `8.9` (MongoDB Atlas), Zod `3.24`, Helmet, JWT, bcryptjs |
+| **Shared Core** | TypeScript `5.7` Strict Mode, Vitest `v3` |
+| **CI / CD** | GitHub Actions (`build-apk.yml`), Expo EAS Build (Preview APK & Production AAB) |
 
 ---
 
-## 5. Quick Start Instructions
+## 🚀 Quick Start
 
-### Step 1: Install Dependencies & Build Shared Core
+### 1. Prerequisites
+- **Node.js:** `v18+` (tested on Node `v20` and `v24`)
+- **npm:** `v10+`
+- **MongoDB:** MongoDB Atlas connection string or local MongoDB instance
+
+### 2. Installation & Build Shared Packages
 ```bash
+# Clone the repository
+git clone https://github.com/RohanShill/stock-management.git
+cd stock-management
+
+# Install dependencies and compile shared domain library
 npm install
 npm run build:shared
 ```
 
-### Step 2: Run All Automated Tests
+### 3. Run Automated Tests
 ```bash
 npm test
 ```
-*Verifies unit conversions, critical pipe length cutting calculations (120m - 7.5m = 112.5m), monetary paise calculations, API endpoints, and mobile SQLite schemas.*
+*Executes all 50 automated tests across domain math, API endpoints, SQLite tables, and the 2D Matrix engine.*
 
-### Step 3: Configure & Start Backend API
+### 4. Start Backend API
 ```bash
 cd services/api
-copy .env.example .env
+cp .env.example .env
 npm run dev
 ```
-The API starts at `http://localhost:4000/api/v1` with a health check at `http://localhost:4000/health`.
+API runs at `http://localhost:4000/api/v1` with a health check at `http://localhost:4000/health`.
 
-### Step 4: Start Mobile App
+### 5. Start Mobile App in Development
 ```bash
 cd apps/mobile
-npm start
+npx expo start -c
 ```
-Scan the QR code with the **Expo Go** Android app or run `npm run android` on an Android emulator.
+- Press `a` to open on a connected Android device or emulator.
+- Or scan the terminal QR code using **Expo Go** on your Android device.
 
 ---
 
-## 6. Offline-First Architecture & Data Flow
+## 🧪 Automated Test Suite (50 Passing)
+
+The project includes strict automated test suites across every layer of the monorepo:
 
 ```
-+--------------------------------------------------------+
-|                     Android Device                     |
-|                                                        |
-|  [ User UI: POS Billing, Purchases, Adjustments ]      |
-|                         |                              |
-|                         v (Atomic SQLite Transaction)  |
-|            +--------------------------+                |
-|            |  Local SQLite Database   |                |
-|            |  - Products & Variants   |                |
-|            |  - Sales & Line Items    |                |
-|            |  - Stock Movements       |                |
-|            |  - Outbox (sync_queue)   |                |
-|            +--------------------------+                |
-|                         |                              |
-|                         v                              |
-|            +--------------------------+                |
-|            |   Offline Sync Engine    |                |
-|            +--------------------------+                |
-+-------------------------|------------------------------+
-                          | (When Online)
-                          | Push: Outbox batches
-                          | Pull: Incremental cursors
-                          v
-+--------------------------------------------------------+
-|                   Cloud API Service                    |
-|                                                        |
-|  [ Express.js REST API v1 + Idempotency Validator ]    |
-|                         |                              |
-|                         v                              |
-|             [ MongoDB Atlas Database ]                 |
-+--------------------------------------------------------+
+Test Suites:
+ ✓ packages/shared/src/tests/domain.test.ts        (13 tests passed)
+   - Canonical millimetre unit conversions
+   - Fractional pipe cutting & remnant allocation
+   - Monetary integer Paise calculations & GST splits
+   - Dynamic SKU generation & invoice round-off
+
+ ✓ services/api/src/tests/api.test.ts              (5 tests passed)
+   - Health check endpoint
+   - Unauthorized access prevention
+   - JWT authentication lifecycle
+
+ ✓ apps/mobile/src/tests/matrix.test.ts           (14 tests passed)
+   - Matrix grid row & column derivation
+   - Size normalization & unit matching
+   - Quick-action stock increment & decrement
+
+ ✓ apps/mobile/src/tests/repositories.test.ts     (9 tests passed)
+   - SQLite CRUD operations on Products & Parties
+   - Outbox sync queue enqueue & status tracking
+
+ ✓ apps/mobile/src/tests/demo.test.ts             (6 tests passed)
+   - Factory sample reset & security boundary isolation
+
+ ✓ apps/mobile/src/tests/mobile.test.ts           (3 tests passed)
+   - Schema validation & English/Hindi locale lookups
+
+Total: 50 / 50 Tests Passed (100% Success Rate)
 ```
 
-### Local Database Persistence (SQLite)
-- All sales, purchases, product updates, and inventory changes write directly to SQLite.
-- Operations survive app restarts, crashes, and network loss.
-- Foreign keys and WAL (Write-Ahead Logging) are active for transactional safety.
-
-### Sync Outbox & Idempotency
-- Every local change enqueues an operation into `sync_queue` with a client UUID.
-- The backend verifies operation IDs: retried requests acknowledge without duplicating sales or deducting stock twice.
-- Incremental pulls use a high-water mark timestamp (`server_cursor`) so the app never redownloads unchanged catalogue data.
-
 ---
 
-## 7. Pipe Length Stock & Pipe Cutting Logic
+## 📦 Building Standalone Android APK
 
-Hardware shops buy whole pipes (e.g. 3m) but sell custom partial lengths (e.g. 7.5m).
+### Option A: GitHub Actions (Recommended — Free & Automated)
+The repository includes a pre-configured GitHub Actions CI/CD workflow ([`.github/workflows/build-apk.yml`](.github/workflows/build-apk.yml)).
 
-### Method A: Aggregate Length Tracking
-- Tracks total stock in canonical millimetres (120,000 mm = 40 pipes × 3m).
-- Selling 7.5 metres (7,500 mm) leaves 112.5 metres (112,500 mm).
-- Avoids deducting whole pipes when fractional lengths are sold.
+- **1-Click Manual Build:**
+  1. Open the repository on GitHub.
+  2. Navigate to the **Actions** tab.
+  3. Select **"Build & Release Android APK"** and click **Run workflow**.
+- **Automated on Git Tag:**
+  Push any version tag to trigger an automatic compile and GitHub Release:
+  ```bash
+  git tag v1.0.1
+  git push origin v1.0.1
+  ```
+- **Permanent Client Download URL:**
+  Client can download the latest standalone APK directly from:  
+  👉 **`https://github.com/RohanShill/stock-management/releases/latest`**
 
-### Method B: Individual Pieces & Remnants
-- Tracks physical segments with `originalLengthMm`, `currentLengthMm`, and `status`.
-- **Best-Fit Algorithm:** When cutting 800 mm, the engine first searches for an existing remnant that is ≥ 800 mm (to avoid cutting into a whole pipe), cuts the requested amount, and leaves the remaining usable length available for subsequent customers.
-
----
-
-## 8. Money, Tax, & Rounding Precision
-
-- Financial calculations use integer **Paise** (₹ 1 = 100 paise) to eliminate JavaScript floating-point rounding errors.
-- Line items compute taxable amounts, GST (with 50/50 CGST and SGST splits), and discounts.
-- Invoice totals include automatic nearest-rupee round-off adjustments.
-
----
-
-## 9. Testing on Physical Android Phones
-
-1. Ensure the phone and computer are on the same Wi-Fi network.
-2. In the mobile app's **More → Settings**, set the API URL to your computer's local IP (e.g. `http://192.168.1.15:4000`).
-3. Run `npx expo start` in `apps/mobile` and scan the QR code using Expo Go.
-
----
-
-## 10. Building Standalone Android APK & AAB
-
-Using Expo Application Services (EAS):
+### Option B: Expo EAS Cloud Build
 ```bash
 cd apps/mobile
 
-# Build testable standalone APK for Android phones:
+# Fast Standalone APK (arm64-v8a optimized, ~28 MB):
 npx eas-cli build -p android --profile preview
 
-# Build production Android App Bundle (AAB) for Google Play:
+# Production Google Play Store App Bundle (AAB):
 npx eas-cli build -p android --profile production
 ```
 
 ---
 
-## 11. Multi-Device Offline Consistency Limitations
+## 🔐 Client Evaluation Demo Mode
 
-When several devices operate offline simultaneously:
-- **Stock Contention:** If Device A and Device B both sell the last remaining pipe while disconnected, both sales will be completed locally to keep the shop running.
-- **Cloud Reconciliation:** When connecting to the cloud, the backend audits both transactions and raises a **Stock Reconciliation Flag** for the store owner. Sales history is never deleted or hidden.
-
----
-
-## 12. Verification & Test Summary
-
-All 33 automated tests passed:
-- **`packages/shared`:** 13/13 tests passed (unit conversions, critical pipe calculations, monetary precision, GST splits, invoice round-off, SKU generation).
-- **`services/api`:** 5/5 tests passed (health check, unauthorized request blocking, JWT authentication).
-- **`apps/mobile`:** 15/15 tests passed (SQLite table schemas, English/Hindi dictionary lookup, Zustand state mutations, Demo isolation & security boundaries, deterministic sample data reset).
+For conducting safe demonstrations and client evaluations without exposing live databases:
+- **Application ID:** `com.hardwarestore.manager.demo`
+- **Database:** Isolated SQLite database (`hardware_store_demo.db`).
+- **Safety Policy:** Cloud sync is strictly disabled by code policy in Demo Mode.
+- **1-Tap Reset:** Safe factory reset button in Settings instantly re-populates pristine sample hardware inventory.
+- For complete details, see [docs/DEMO_BUILD.md](docs/DEMO_BUILD.md).
 
 ---
 
-## 13. Client Evaluation Demo Build
+## 📄 License & Maintainer
 
-For safe demonstration and client testing without exposing production systems or live client records:
-- **Separate Demo App Name:** `Hardware Store (Demo)`
-- **Separate Android Application ID:** `com.hardwarestore.manager.demo`
-- **Isolated SQLite Storage:** `hardware_store_demo.db`
-- **Security Boundary:** Cloud synchronization to production servers is strictly blocked by code policy in demo mode.
-- **Sample Data Reset:** Safe 1-tap reset restores all sample categories, products, stock levels, and invoices back to pristine factory demo state.
-- **Build Command:** `npx eas-cli build -p android --profile demo`
-- **Full Guide:** See [DEMO_BUILD.md](file:///d:/Stock%20Managment/docs/DEMO_BUILD.md) for full instructions.
+Developed by **Rohan Shill** for **MANJU STORES**.  
+All rights reserved. Distributed under the MIT License.
