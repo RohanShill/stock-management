@@ -164,6 +164,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E293B',
     padding: 10,
     borderRadius: 12,
+    width: '100%',
+    maxWidth: 500,
+    alignSelf: 'center',
   },
   title: {
     fontSize: 20,

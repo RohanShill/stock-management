@@ -141,6 +141,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E293B',
     padding: 10,
     borderRadius: 16,
+    width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
   },
   logoHeaderWrapper: {
     alignItems: 'center',

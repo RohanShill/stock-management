@@ -2489,6 +2489,9 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     maxHeight: '80%',
+    width: '100%',
+    maxWidth: 540,
+    alignSelf: 'center',
     ...shadows.floating,
   },
   modalHeaderRow: {

@@ -901,6 +901,9 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.md,
     paddingBottom: 40,
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
   },
 
   // Header Card
