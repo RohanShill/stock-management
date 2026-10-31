@@ -16,6 +16,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     android: {
       package: 'com.manjuhardware.store',
+      versionCode: 1,
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#000000',
