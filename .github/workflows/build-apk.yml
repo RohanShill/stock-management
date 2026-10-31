@@ -17,6 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      CI: true
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: 1. Checkout Code
@@ -34,8 +38,10 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: 4. Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: 4. Configure Android SDK Environment & Licenses
+        run: |
+          echo "Using Android SDK at: $ANDROID_HOME"
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: 5. Install Dependencies
         run: npm ci
@@ -62,7 +68,10 @@ jobs:
           OUTPUT_APK="build-output/Manju_Stores_${TAG}.apk"
 
           # Locate generated APK
-          FOUND_APK=$(find apps/mobile/android/app/build/outputs/apk/ -name "*.apk" | head -n 1)
+          FOUND_APK=$(find apps/mobile/android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          if [ -z "$FOUND_APK" ]; then
+            FOUND_APK=$(find apps/mobile/android/app/build/outputs/apk/ -name "*.apk" | head -n 1)
+          fi
 
           if [ -z "$FOUND_APK" ]; then
             echo "Error: No APK file found in build outputs!"
@@ -71,20 +80,34 @@ jobs:
 
           echo "Found APK: $FOUND_APK"
 
-          # If unsigned, sign with Android debug keystore so it installs immediately on all devices
+          # Check if signature verification is needed
+          NEEDS_SIGNING=false
           if [[ "$FOUND_APK" == *"unsigned"* ]]; then
-            echo "Signing unsigned APK with keystore..."
+            NEEDS_SIGNING=true
+          fi
+
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
+          if [ -n "$APKSIGNER" ]; then
+            if ! "$APKSIGNER" verify "$FOUND_APK" >/dev/null 2>&1; then
+              echo "Verification failed: APK is not signed."
+              NEEDS_SIGNING=true
+            else
+              echo "Verification passed: APK is already signed."
+            fi
+          fi
+
+          if [ "$NEEDS_SIGNING" = true ]; then
+            echo "Signing APK with Android keystore..."
             DEBUG_KEYSTORE="$HOME/.android/debug.keystore"
             if [ ! -f "$DEBUG_KEYSTORE" ]; then
               mkdir -p "$HOME/.android"
               keytool -genkey -v -keystore "$DEBUG_KEYSTORE" -alias androiddebugkey -storepass android -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=AndroidDebug,O=Android,C=US"
             fi
-            APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
             if [ -n "$APKSIGNER" ]; then
-              echo "Using apksigner: $APKSIGNER"
+              echo "Signing with apksigner ($APKSIGNER)..."
               "$APKSIGNER" sign --ks "$DEBUG_KEYSTORE" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey "$FOUND_APK"
             else
-              echo "Falling back to jarsigner"
+              echo "Signing with jarsigner..."
               jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 -keystore "$DEBUG_KEYSTORE" -storepass android -keypass android "$FOUND_APK" androiddebugkey
             fi
           fi
