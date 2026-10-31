@@ -276,7 +276,7 @@ export default function HistoryScreen() {
   const handleCalendarDayPress = (d: number) => {
     const year = calendarViewingMonth.getFullYear();
     const month = calendarViewingMonth.getMonth();
-    const clickedDate = new Date(year, month, d);
+    const clickedDate = new Date(year, month, d, 0, 0, 0, 0);
 
     if (draftTimeFilterMode === 'day') {
       setDraftSelectedDate(clickedDate);
@@ -287,24 +287,28 @@ export default function HistoryScreen() {
         setRangePickingStep('end');
       } else {
         // Step === 'end'
-        if (clickedDate < draftRangeStartDate) {
+        const sTime = new Date(draftRangeStartDate).setHours(0, 0, 0, 0);
+        const cTime = clickedDate.getTime();
+
+        if (cTime < sTime) {
+          // If clicked before current start, reset start to this earlier date
           setDraftRangeStartDate(clickedDate);
           setDraftRangeEndDate(clickedDate);
           setRangePickingStep('end');
         } else {
           // Check 31-day limit for safety & optimization
-          const diffDays =
-            Math.round(
-              (clickedDate.getTime() - draftRangeStartDate.getTime()) / (1000 * 60 * 60 * 24)
-            ) + 1;
+          const diffDays = Math.round((cTime - sTime) / (1000 * 60 * 60 * 24)) + 1;
 
           if (diffDays > 31) {
             const capped = new Date(draftRangeStartDate);
             capped.setDate(capped.getDate() + 30);
+            capped.setHours(23, 59, 59, 999);
             setDraftRangeEndDate(capped);
             showToast('Max range capped to 31 days for high speed', 'info');
           } else {
-            setDraftRangeEndDate(clickedDate);
+            const endNormalized = new Date(clickedDate);
+            endNormalized.setHours(23, 59, 59, 999);
+            setDraftRangeEndDate(endNormalized);
           }
           setRangePickingStep('start');
         }
@@ -314,8 +318,10 @@ export default function HistoryScreen() {
 
   const applyRangePreset = (days: number) => {
     const end = new Date();
+    end.setHours(23, 59, 59, 999);
     const start = new Date();
     start.setDate(start.getDate() - (days - 1));
+    start.setHours(0, 0, 0, 0);
     setDraftRangeStartDate(start);
     setDraftRangeEndDate(end);
     setDraftTimeFilterMode('range');
@@ -341,10 +347,15 @@ export default function HistoryScreen() {
       startIso = s.toISOString();
       endIso = e.toISOString();
     } else if (mode === 'range') {
-      const s = new Date(rStart || rangeStartDate);
+      let s = new Date(rStart || rangeStartDate);
       s.setHours(0, 0, 0, 0);
-      const e = new Date(rEnd || rangeEndDate);
+      let e = new Date(rEnd || rangeEndDate);
       e.setHours(23, 59, 59, 999);
+      if (s.getTime() > e.getTime()) {
+        const tmp = s;
+        s = e;
+        e = tmp;
+      }
       startIso = s.toISOString();
       endIso = e.toISOString();
     } else if (mode === 'month') {
@@ -463,6 +474,7 @@ export default function HistoryScreen() {
     setSelectedDate(now);
     setRangeStartDate(d7);
     setRangeEndDate(now);
+    setSearchQuery('');
     loadHistory(false, 'all', now, d7, now);
   };
 
@@ -498,17 +510,18 @@ export default function HistoryScreen() {
   const isDraftNextDisabled = useMemo(() => {
     const now = new Date();
     if (draftTimeFilterMode === 'day') {
-      return (
-        draftSelectedDate.getDate() >= now.getDate() &&
-        draftSelectedDate.getMonth() >= now.getMonth() &&
-        draftSelectedDate.getFullYear() >= now.getFullYear()
-      );
+      const d = new Date(draftSelectedDate);
+      d.setHours(0, 0, 0, 0);
+      const today = new Date(now);
+      today.setHours(0, 0, 0, 0);
+      return d.getTime() >= today.getTime();
     }
     if (draftTimeFilterMode === 'month') {
-      return (
-        draftSelectedDate.getMonth() >= now.getMonth() &&
-        draftSelectedDate.getFullYear() >= now.getFullYear()
-      );
+      const dYear = draftSelectedDate.getFullYear();
+      const dMonth = draftSelectedDate.getMonth();
+      const nowYear = now.getFullYear();
+      const nowMonth = now.getMonth();
+      return dYear > nowYear || (dYear === nowYear && dMonth >= nowMonth);
     }
     if (draftTimeFilterMode === 'year') {
       return draftSelectedDate.getFullYear() >= now.getFullYear();
@@ -604,10 +617,15 @@ export default function HistoryScreen() {
             itemDate.getDate() === selectedDate.getDate();
           if (!isSameDay) return false;
         } else if (timeFilterMode === 'range') {
-          const s = new Date(rangeStartDate);
+          let s = new Date(rangeStartDate);
           s.setHours(0, 0, 0, 0);
-          const e = new Date(rangeEndDate);
+          let e = new Date(rangeEndDate);
           e.setHours(23, 59, 59, 999);
+          if (s.getTime() > e.getTime()) {
+            const tmp = s;
+            s = e;
+            e = tmp;
+          }
           if (itemDate < s || itemDate > e) return false;
         } else if (timeFilterMode === 'month') {
           const isSameMonth =
@@ -665,10 +683,15 @@ export default function HistoryScreen() {
                 itemDate.getDate() === selectedDate.getDate()
               );
             } else if (timeFilterMode === 'range') {
-              const s = new Date(rangeStartDate);
+              let s = new Date(rangeStartDate);
               s.setHours(0, 0, 0, 0);
-              const e = new Date(rangeEndDate);
+              let e = new Date(rangeEndDate);
               e.setHours(23, 59, 59, 999);
+              if (s.getTime() > e.getTime()) {
+                const tmp = s;
+                s = e;
+                e = tmp;
+              }
               return itemDate >= s && itemDate <= e;
             } else if (timeFilterMode === 'month') {
               return (
@@ -1199,11 +1222,17 @@ export default function HistoryScreen() {
     try {
       const d = new Date(isoDate);
       if (isNaN(d.getTime())) return isoDate;
-      return d.toLocaleDateString('en-IN', {
+      const dateStr = d.toLocaleDateString('en-IN', {
         day: 'numeric',
         month: 'short',
         year: 'numeric',
       });
+      const timeStr = d.toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+      return `${dateStr}, ${timeStr}`;
     } catch {
       return isoDate;
     }
@@ -1440,6 +1469,10 @@ export default function HistoryScreen() {
     refreshing,
     history.length,
     timeFilterMode,
+    selectedDate,
+    rangeStartDate,
+    rangeEndDate,
+    filterType,
     stats,
     searchQuery,
     isAnyFilterActive,
@@ -1795,6 +1828,11 @@ export default function HistoryScreen() {
                               month: 'short',
                               year: 'numeric',
                             })}`
+                          : rangePickingStep === 'end'
+                          ? `Step 2: Tap End Date on Calendar (Start: ${draftRangeStartDate.toLocaleDateString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                            })})`
                           : `Selected: ${draftRangeStartDate.toLocaleDateString('en-IN', {
                               day: 'numeric',
                               month: 'short',
