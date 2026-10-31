@@ -45,7 +45,7 @@ jobs:
           REACT_NATIVE_ARCHITECTURES: 'arm64-v8a'
         run: |
           cd apps/mobile
-          npx expo prebuild --platform android --clean
+          npx expo prebuild --platform android --clean --no-install
 
       - name: 7. Compile Android APK with Gradle
         env:
