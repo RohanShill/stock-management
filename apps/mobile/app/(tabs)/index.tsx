@@ -859,10 +859,20 @@ export default function HomeScreen() {
           style={[
             styles.statCard,
             {
-              backgroundColor: isDarkMode && stats.lowStockCount > 0 ? '#451A03' : activeColors.surface,
-              borderColor: stats.lowStockCount > 0 ? (isDarkMode ? '#D97706' : '#FDE68A') : activeColors.border,
+              backgroundColor: isDarkMode
+                ? stats.lowStockCount > 0
+                  ? 'rgba(245, 158, 11, 0.14)'
+                  : activeColors.surface
+                : stats.lowStockCount > 0
+                ? '#FFFBEB'
+                : activeColors.surface,
+              borderColor: stats.lowStockCount > 0
+                ? isDarkMode
+                  ? '#F59E0B'
+                  : '#FDE68A'
+                : activeColors.border,
+              borderWidth: stats.lowStockCount > 0 ? 1.5 : 1,
             },
-            !isDarkMode && stats.lowStockCount > 0 && styles.statCardWarning,
           ]}
           onPress={() =>
             router.push({
@@ -873,18 +883,78 @@ export default function HomeScreen() {
           activeOpacity={0.8}
         >
           <View style={styles.statCardTop}>
-            <Text style={[styles.statLabel, { color: activeColors.textSecondary }]}>Low Stock</Text>
-            <MaterialCommunityIcons name="alert-circle-outline" size={20} color={colors.warning} />
+            <Text
+              style={[
+                styles.statLabel,
+                {
+                  color: stats.lowStockCount > 0
+                    ? isDarkMode
+                      ? '#FDE68A'
+                      : '#92400E'
+                    : activeColors.textSecondary,
+                  fontWeight: '700',
+                },
+              ]}
+            >
+              Low Stock
+            </Text>
+            <View
+              style={[
+                styles.statBadgeIcon,
+                {
+                  backgroundColor: stats.lowStockCount > 0
+                    ? isDarkMode
+                      ? 'rgba(245, 158, 11, 0.25)'
+                      : '#FEF3C7'
+                    : isDarkMode
+                    ? '#1E293B'
+                    : '#F1F5F9',
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="alert-circle"
+                size={18}
+                color={
+                  stats.lowStockCount > 0
+                    ? isDarkMode
+                      ? '#FBBF24'
+                      : '#D97706'
+                    : activeColors.textMuted
+                }
+              />
+            </View>
           </View>
           <Text
             style={[
               styles.statValue,
-              { color: stats.lowStockCount > 0 ? colors.warning : activeColors.textPrimary },
+              {
+                color: stats.lowStockCount > 0
+                  ? isDarkMode
+                    ? '#FBBF24'
+                    : '#B45309'
+                  : activeColors.textPrimary,
+                fontWeight: '900',
+              },
             ]}
           >
             {stats.lowStockCount}
           </Text>
-          <Text style={[styles.statSub, { color: activeColors.textMuted }]}>Needs reorder</Text>
+          <Text
+            style={[
+              styles.statSub,
+              {
+                color: stats.lowStockCount > 0
+                  ? isDarkMode
+                    ? '#FCD34D'
+                    : '#B45309'
+                  : activeColors.textMuted,
+                fontWeight: '600',
+              },
+            ]}
+          >
+            Needs reorder
+          </Text>
         </TouchableOpacity>
 
         {/* Out of Stock */}
@@ -892,10 +962,20 @@ export default function HomeScreen() {
           style={[
             styles.statCard,
             {
-              backgroundColor: isDarkMode && stats.outOfStockCount > 0 ? '#450A0A' : activeColors.surface,
-              borderColor: stats.outOfStockCount > 0 ? (isDarkMode ? '#DC2626' : '#FECACA') : activeColors.border,
+              backgroundColor: isDarkMode
+                ? stats.outOfStockCount > 0
+                  ? 'rgba(239, 68, 68, 0.14)'
+                  : activeColors.surface
+                : stats.outOfStockCount > 0
+                ? '#FEF2F2'
+                : activeColors.surface,
+              borderColor: stats.outOfStockCount > 0
+                ? isDarkMode
+                  ? '#EF4444'
+                  : '#FECACA'
+                : activeColors.border,
+              borderWidth: stats.outOfStockCount > 0 ? 1.5 : 1,
             },
-            !isDarkMode && stats.outOfStockCount > 0 && styles.statCardDanger,
           ]}
           onPress={() =>
             router.push({
@@ -906,18 +986,78 @@ export default function HomeScreen() {
           activeOpacity={0.8}
         >
           <View style={styles.statCardTop}>
-            <Text style={[styles.statLabel, { color: activeColors.textSecondary }]}>Out of Stock</Text>
-            <MaterialCommunityIcons name="close-circle-outline" size={20} color={colors.danger} />
+            <Text
+              style={[
+                styles.statLabel,
+                {
+                  color: stats.outOfStockCount > 0
+                    ? isDarkMode
+                      ? '#FECACA'
+                      : '#991B1B'
+                    : activeColors.textSecondary,
+                  fontWeight: '700',
+                },
+              ]}
+            >
+              Out of Stock
+            </Text>
+            <View
+              style={[
+                styles.statBadgeIcon,
+                {
+                  backgroundColor: stats.outOfStockCount > 0
+                    ? isDarkMode
+                      ? 'rgba(239, 68, 68, 0.25)'
+                      : '#FEE2E2'
+                    : isDarkMode
+                    ? '#1E293B'
+                    : '#F1F5F9',
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="close-circle"
+                size={18}
+                color={
+                  stats.outOfStockCount > 0
+                    ? isDarkMode
+                      ? '#F87171'
+                      : '#DC2626'
+                    : activeColors.textMuted
+                }
+              />
+            </View>
           </View>
           <Text
             style={[
               styles.statValue,
-              { color: stats.outOfStockCount > 0 ? colors.danger : activeColors.textPrimary },
+              {
+                color: stats.outOfStockCount > 0
+                  ? isDarkMode
+                    ? '#F87171'
+                    : '#DC2626'
+                  : activeColors.textPrimary,
+                fontWeight: '900',
+              },
             ]}
           >
             {stats.outOfStockCount}
           </Text>
-          <Text style={[styles.statSub, { color: activeColors.textMuted }]}>Zero balance</Text>
+          <Text
+            style={[
+              styles.statSub,
+              {
+                color: stats.outOfStockCount > 0
+                  ? isDarkMode
+                    ? '#FCA5A5'
+                    : '#B91C1C'
+                  : activeColors.textMuted,
+                fontWeight: '600',
+              },
+            ]}
+          >
+            Zero balance
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -1535,6 +1675,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  statBadgeIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statLabel: {
     fontSize: 12,
