@@ -15,9 +15,13 @@ if (typeof globalThis !== 'undefined') {
   }
 }
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { MD3LightTheme, MD3DarkTheme, PaperProvider } from 'react-native-paper';
+
+// Keep the splash screen visible while app resources & database load
+SplashScreen.preventAutoHideAsync().catch(() => {});
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -54,11 +58,25 @@ export default function RootLayout() {
     };
   }, [isDarkMode, activeColors]);
 
+  const [appIsReady, setAppIsReady] = useState(false);
+
   useEffect(() => {
-    // Initialize SQLite database
-    getDatabase().catch((err) => {
-      console.error('Failed to initialize SQLite database:', err);
-    });
+    let isMounted = true;
+
+    async function initApp() {
+      try {
+        // Initialize SQLite database
+        await getDatabase();
+      } catch (err) {
+        console.error('Failed to initialize SQLite database:', err);
+      } finally {
+        if (isMounted) {
+          setAppIsReady(true);
+        }
+      }
+    }
+
+    initApp();
 
     // Subscribe to synchronization status
     const unsubscribe = SyncEngine.subscribe((status) => {
@@ -66,8 +84,25 @@ export default function RootLayout() {
       setLastSyncTime(status.lastSyncTime);
     });
 
-    return unsubscribe;
+    // Failsafe timer so splash screen never hangs for more than 2.5 seconds
+    const timer = setTimeout(() => {
+      if (isMounted) {
+        setAppIsReady(true);
+      }
+    }, 2500);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      unsubscribe();
+    };
   }, []);
+
+  useEffect(() => {
+    if (appIsReady) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [appIsReady]);
 
   return (
     <SafeAreaProvider>

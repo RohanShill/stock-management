@@ -32,6 +32,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       'expo-sqlite',
       'expo-secure-store',
       'expo-font',
+      'expo-splash-screen',
       [
         'expo-build-properties',
         {
