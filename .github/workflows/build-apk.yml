@@ -1,0 +1,121 @@
+name: Build & Release Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag (e.g. v1.0.0)'
+        required: false
+        default: 'v1.0.0'
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 1. Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 2. Set up Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 3. Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 4. Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 5. Install Dependencies
+        run: npm ci
+
+      - name: 6. Prebuild Android Native Files
+        env:
+          REACT_NATIVE_ARCHITECTURES: 'arm64-v8a'
+        run: |
+          cd apps/mobile
+          npx expo prebuild --platform android --clean
+
+      - name: 7. Compile Android APK with Gradle
+        env:
+          REACT_NATIVE_ARCHITECTURES: 'arm64-v8a'
+        run: |
+          cd apps/mobile/android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
+
+      - name: 8. Prepare & Sign APK Artifact
+        run: |
+          mkdir -p build-output
+          TAG="${{ github.event.inputs.version || github.ref_name || 'v1.0.0' }}"
+          OUTPUT_APK="build-output/Manju_Stores_${TAG}.apk"
+
+          # Locate generated APK
+          FOUND_APK=$(find apps/mobile/android/app/build/outputs/apk/ -name "*.apk" | head -n 1)
+
+          if [ -z "$FOUND_APK" ]; then
+            echo "Error: No APK file found in build outputs!"
+            exit 1
+          fi
+
+          echo "Found APK: $FOUND_APK"
+
+          # If unsigned, sign with Android debug keystore so it installs immediately on all devices
+          if [[ "$FOUND_APK" == *"unsigned"* ]]; then
+            echo "Signing unsigned APK with keystore..."
+            DEBUG_KEYSTORE="$HOME/.android/debug.keystore"
+            if [ ! -f "$DEBUG_KEYSTORE" ]; then
+              mkdir -p "$HOME/.android"
+              keytool -genkey -v -keystore "$DEBUG_KEYSTORE" -alias androiddebugkey -storepass android -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=AndroidDebug,O=Android,C=US"
+            fi
+            APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
+            if [ -n "$APKSIGNER" ]; then
+              echo "Using apksigner: $APKSIGNER"
+              "$APKSIGNER" sign --ks "$DEBUG_KEYSTORE" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey "$FOUND_APK"
+            else
+              echo "Falling back to jarsigner"
+              jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 -keystore "$DEBUG_KEYSTORE" -storepass android -keypass android "$FOUND_APK" androiddebugkey
+            fi
+          fi
+
+          cp "$FOUND_APK" "$OUTPUT_APK"
+          echo "Final APK ready at: $OUTPUT_APK"
+          ls -lh build-output/
+
+      - name: 9. Upload Artifact to GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: Manju_Stores_APK
+          path: build-output/*.apk
+          retention-days: 30
+
+      - name: 10. Publish GitHub Release with APK Attached
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name || 'v1.0.0' }}
+          name: MANJU STORES Official Release ${{ github.event.inputs.version || github.ref_name || 'v1.0.0' }}
+          body: |
+            ## 📱 MANJU STORES — Official Android Release
+
+            Official standalone build for Android Mobile Phones & Android Tablets.
+
+            - **Version**: `${{ github.event.inputs.version || github.ref_name || 'v1.0.0' }}`
+            - **Target Architecture**: `arm64-v8a` (Optimized ~28 MB)
+            - **Package**: `com.manjuhardware.store`
+
+            ### ⬇️ Direct Download
+            Click the `.apk` file below in the **Assets** section to download and install directly on your device.
+          files: build-output/*.apk
+          generate_release_notes: true
