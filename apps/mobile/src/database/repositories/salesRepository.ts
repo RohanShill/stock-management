@@ -40,15 +40,27 @@ export class SalesRepository {
       [storeId, limit]
     );
 
-    const sales: Sale[] = [];
-    for (const r of rows) {
-      const items = await db.getAllAsync<any>(
-        `SELECT * FROM sale_items WHERE saleId = ?;`,
-        [r.id]
-      );
-      sales.push({ ...r, items });
+    if (!rows || rows.length === 0) return [];
+
+    const saleIds = rows.map((r) => r.id);
+    const placeholders = saleIds.map(() => '?').join(',');
+    const allItems = await db.getAllAsync<any>(
+      `SELECT * FROM sale_items WHERE saleId IN (${placeholders});`,
+      saleIds
+    );
+
+    const itemsBySaleId = new Map<string, any[]>();
+    for (const item of allItems) {
+      if (!itemsBySaleId.has(item.saleId)) {
+        itemsBySaleId.set(item.saleId, []);
+      }
+      itemsBySaleId.get(item.saleId)!.push(item);
     }
-    return sales;
+
+    return rows.map((r) => ({
+      ...r,
+      items: itemsBySaleId.get(r.id) || [],
+    }));
   }
 
   static async getSale(saleId: string): Promise<Sale | null> {

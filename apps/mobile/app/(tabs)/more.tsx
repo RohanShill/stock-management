@@ -60,12 +60,14 @@ export default function SettingsScreen() {
       setCategories(cats);
 
       const subcatMap: Record<string, Subcategory[]> = {};
-      for (const cat of cats) {
-        const subs = await ProductRepository.getSubcategories(cat.id, storeId);
-        subcatMap[cat.id] = (subs || []).filter(
-          (s) => !s.name.toLowerCase().includes('angle')
-        );
-      }
+      await Promise.all(
+        cats.map(async (cat) => {
+          const subs = await ProductRepository.getSubcategories(cat.id, storeId);
+          subcatMap[cat.id] = (subs || []).filter(
+            (s) => !s.name.toLowerCase().includes('angle')
+          );
+        })
+      );
       setCategorySubcategories(subcatMap);
     } catch (err) {
       console.error('Error loading settings categories:', err);
@@ -73,10 +75,6 @@ export default function SettingsScreen() {
       setLoading(false);
     }
   }, [store]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
 
   useFocusEffect(
     useCallback(() => {

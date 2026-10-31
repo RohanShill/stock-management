@@ -412,7 +412,7 @@ export default function HomeScreen() {
       const allList: RestockItem[] = [];
 
       for (const p of products) {
-        for (const v of p.variants) {
+        for (const v of (p.variants || [])) {
           totalVariants += 1;
           const stock = Number(v.currentStock ?? 0);
           const minLevel = Number(v.minStockLevel ?? 0);
@@ -576,10 +576,15 @@ export default function HomeScreen() {
     const query = homeSearchQuery.trim().toLowerCase();
     if (!query) return [];
     const terms = query.split(/\s+/).filter(Boolean);
-    return allSelectableItems.filter((item) => {
+    const results: RestockItem[] = [];
+    for (const item of allSelectableItems) {
       const searchTarget = `${item.productName} ${item.variantName} ${item.brand || ''} ${item.categoryName || ''} ${item.rackLocation || ''}`.toLowerCase();
-      return terms.every((term) => searchTarget.includes(term));
-    });
+      if (terms.every((term) => searchTarget.includes(term))) {
+        results.push(item);
+        if (results.length >= 50) break; // Capped at 50 for super fast rendering
+      }
+    }
+    return results;
   }, [allSelectableItems, homeSearchQuery]);
 
   const filteredItemsForSearch = React.useMemo(() => {

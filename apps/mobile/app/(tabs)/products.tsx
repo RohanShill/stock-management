@@ -361,7 +361,7 @@ export default function ProductsScreen() {
   /**
    * Add a Brand Column
    */
-  const handleAddBrand = async (brandName: string) => {
+  const handleAddBrand = useCallback(async (brandName: string) => {
     if (!activeSubcategoryId) {
       showToast('Please add a section first using "+ SECTION"', 'warning');
       return;
@@ -382,12 +382,12 @@ export default function ProductsScreen() {
       console.error('Error adding brand:', e);
       showToast('Could not add brand', 'error');
     }
-  };
+  }, [activeSubcategoryId, store, selectedCategoryId, activeSubcategoryId, matrixData.sizes, deviceId, loadMatrix, showToast]);
 
   /**
    * Delete a Brand Column
    */
-  const handleDeleteBrand = async (brandName: string) => {
+  const handleDeleteBrand = useCallback(async (brandName: string) => {
     try {
       const storeId = store?.id || 'store-1';
       await MatrixRepository.deleteBrand(
@@ -403,12 +403,12 @@ export default function ProductsScreen() {
       console.error('Error removing brand:', e);
       showToast('Could not remove brand', 'error');
     }
-  };
+  }, [store, selectedCategoryId, activeSubcategoryId, deviceId, loadMatrix, showToast]);
 
   /**
    * Rename a Brand Column
    */
-  const handleRenameBrand = async (oldBrand: string, newBrand: string) => {
+  const handleRenameBrand = useCallback(async (oldBrand: string, newBrand: string) => {
     try {
       const storeId = store?.id || 'store-1';
       await MatrixRepository.renameBrand(
@@ -425,12 +425,12 @@ export default function ProductsScreen() {
       console.error('Error renaming brand:', e);
       showToast('Could not rename brand', 'error');
     }
-  };
+  }, [store, selectedCategoryId, activeSubcategoryId, deviceId, loadMatrix, showToast]);
 
   /**
    * Delete a Size Row
    */
-  const handleDeleteSize = async (sizeName: string) => {
+  const handleDeleteSize = useCallback(async (sizeName: string) => {
     try {
       const storeId = store?.id || 'store-1';
       await MatrixRepository.deleteSize(
@@ -446,12 +446,12 @@ export default function ProductsScreen() {
       console.error('Error removing size:', e);
       showToast('Could not remove size', 'error');
     }
-  };
+  }, [store, selectedCategoryId, activeSubcategoryId, deviceId, loadMatrix, showToast]);
 
   /**
    * Rename a Size Row
    */
-  const handleRenameSize = async (oldSize: string, newSize: string) => {
+  const handleRenameSize = useCallback(async (oldSize: string, newSize: string) => {
     try {
       const storeId = store?.id || 'store-1';
       await MatrixRepository.renameSize(
@@ -468,12 +468,12 @@ export default function ProductsScreen() {
       console.error('Error renaming size:', e);
       showToast('Could not rename size', 'error');
     }
-  };
+  }, [store, selectedCategoryId, activeSubcategoryId, deviceId, loadMatrix, showToast]);
 
   /**
    * Add a Size Row
    */
-  const handleAddSize = async (sizeName: string) => {
+  const handleAddSize = useCallback(async (sizeName: string) => {
     if (!activeSubcategoryId) {
       showToast('Please add a section first using "+ SECTION"', 'warning');
       return;
@@ -494,12 +494,12 @@ export default function ProductsScreen() {
       console.error('Error adding size:', e);
       showToast('Could not add size', 'error');
     }
-  };
+  }, [activeSubcategoryId, store, selectedCategoryId, activeSubcategoryId, matrixData.brands, deviceId, loadMatrix, showToast]);
 
   /**
    * Reorder sizes/items via drag or nudge
    */
-  const handleReorderSizes = async (newSizes: string[]) => {
+  const handleReorderSizes = useCallback(async (newSizes: string[]) => {
     try {
       setMatrixData((prev) => ({
         ...prev,
@@ -519,12 +519,37 @@ export default function ProductsScreen() {
       console.error('Error saving size order:', e);
       showToast('Could not save size order', 'error');
     }
-  };
+  }, [store, selectedCategoryId, activeSubcategoryId, showToast]);
+
+  /**
+   * Reorder brands left or right
+   */
+  const handleReorderBrands = useCallback(async (newBrands: string[]) => {
+    try {
+      setMatrixData((prev) => ({
+        ...prev,
+        brands: newBrands,
+      }));
+
+      const storeId = store?.id || 'store-1';
+      if (selectedCategoryId && activeSubcategoryId) {
+        await MatrixRepository.saveBrandOrder(
+          storeId,
+          selectedCategoryId,
+          activeSubcategoryId,
+          newBrands
+        );
+      }
+    } catch (e) {
+      console.error('Error saving brand order:', e);
+      showToast('Could not save brand order', 'error');
+    }
+  }, [store, selectedCategoryId, activeSubcategoryId, showToast]);
 
   /**
    * Handle Cell Selection
    */
-  const handleSelectCell = (
+  const handleSelectCell = useCallback((
     cellKey: string,
     cell: MatrixCellData | null,
     size: string,
@@ -534,12 +559,12 @@ export default function ProductsScreen() {
     setSelectedCell(cell);
     setSelectedSize(size);
     setSelectedBrand(brand);
-  };
+  }, []);
 
   /**
    * Open Stock In Modal
    */
-  const handleOpenStockIn = () => {
+  const handleOpenStockIn = useCallback(() => {
     if (!selectedSize || !selectedBrand) return;
     setActionModalMode('add');
     setActionQty('');
@@ -549,12 +574,12 @@ export default function ProductsScreen() {
         ? (selectedCell.purchasePricePaise / 100).toString()
         : ''
     );
-  };
+  }, [selectedSize, selectedBrand, selectedCell]);
 
   /**
    * Open Sell Modal
    */
-  const handleOpenSell = () => {
+  const handleOpenSell = useCallback(() => {
     if (!selectedSize || !selectedBrand) return;
     setActionModalMode('sell');
     setActionQty('');
@@ -564,7 +589,7 @@ export default function ProductsScreen() {
         ? (selectedCell.sellingPricePaise / 100).toString()
         : ''
     );
-  };
+  }, [selectedSize, selectedBrand, selectedCell]);
 
   /**
    * Confirm Stock Adjustment (Stock In or Sell)
@@ -1165,6 +1190,7 @@ export default function ProductsScreen() {
                 onDeleteSize={handleDeleteSize}
                 onRenameSize={handleRenameSize}
                 onReorderSizes={handleReorderSizes}
+                onReorderBrands={handleReorderBrands}
                 isDarkMode={isDarkMode}
                 activeColors={activeColors}
                 emptyLabel={activeCategory?.name || 'Items'}

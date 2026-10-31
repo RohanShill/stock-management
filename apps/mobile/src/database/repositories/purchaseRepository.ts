@@ -36,15 +36,27 @@ export class PurchaseRepository {
       [storeId, limit]
     );
 
-    const purchases: Purchase[] = [];
-    for (const r of rows) {
-      const items = await db.getAllAsync<any>(
-        `SELECT * FROM purchase_items WHERE purchaseId = ?;`,
-        [r.id]
-      );
-      purchases.push({ ...r, items });
+    if (!rows || rows.length === 0) return [];
+
+    const purchaseIds = rows.map((r) => r.id);
+    const placeholders = purchaseIds.map(() => '?').join(',');
+    const allItems = await db.getAllAsync<any>(
+      `SELECT * FROM purchase_items WHERE purchaseId IN (${placeholders});`,
+      purchaseIds
+    );
+
+    const itemsByPurchaseId = new Map<string, any[]>();
+    for (const item of allItems) {
+      if (!itemsByPurchaseId.has(item.purchaseId)) {
+        itemsByPurchaseId.set(item.purchaseId, []);
+      }
+      itemsByPurchaseId.get(item.purchaseId)!.push(item);
     }
-    return purchases;
+
+    return rows.map((r) => ({
+      ...r,
+      items: itemsByPurchaseId.get(r.id) || [],
+    }));
   }
 
   static async createPurchase(

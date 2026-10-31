@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -392,11 +392,16 @@ export default function HistoryScreen() {
     [store, timeFilterMode, selectedDate, rangeStartDate, rangeEndDate, calculateBoundaries]
   );
 
-  // Smooth, non-blocking refresh on tab focus
+  const hasHistoryRef = useRef(false);
+  useEffect(() => {
+    hasHistoryRef.current = history.length > 0;
+  }, [history.length]);
+
+  // Smooth, non-blocking refresh on tab focus (single fetch, no loop)
   useFocusEffect(
     useCallback(() => {
-      loadHistory(history.length > 0);
-    }, [loadHistory, history.length])
+      loadHistory(hasHistoryRef.current);
+    }, [loadHistory])
   );
 
   const onRefresh = async () => {

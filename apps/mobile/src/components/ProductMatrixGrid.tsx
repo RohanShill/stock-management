@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ interface ProductMatrixGridProps {
   onDeleteSize?: (size: string) => Promise<void> | void;
   onRenameSize?: (oldSize: string, newSize: string) => Promise<void> | void;
   onReorderSizes?: (newSizes: string[]) => Promise<void> | void;
+  onReorderBrands?: (newBrands: string[]) => Promise<void> | void;
   isDarkMode: boolean;
   activeColors: any;
   emptyLabel?: string;
@@ -63,6 +64,7 @@ const MatrixCell = React.memo<MatrixCellProps>(({
   return (
     <TouchableOpacity
       activeOpacity={0.7}
+      delayPressIn={0}
       onPress={() => onSelect(cellKey, cellData || null, size, brand)}
       style={[
         styles.cell,
@@ -125,6 +127,119 @@ const MatrixCell = React.memo<MatrixCellProps>(({
   );
 });
 
+interface MatrixRowProps {
+  size: string;
+  currentBrands: string[];
+  cells: Record<string, MatrixCellData>;
+  selectedCellKey: string | null;
+  isDarkMode: boolean;
+  activeColors: any;
+  onSelectCell: (cellKey: string, cell: MatrixCellData | null, size: string, brand: string) => void;
+  onOpenManageSize: (size: string) => void;
+}
+
+const MatrixRow = React.memo<MatrixRowProps>(({
+  size,
+  currentBrands,
+  cells,
+  selectedCellKey,
+  isDarkMode,
+  activeColors,
+  onSelectCell,
+  onOpenManageSize,
+}) => {
+  return (
+    <View style={styles.dataRow}>
+      {/* Left Frozen Column: Size Label */}
+      <TouchableOpacity
+        activeOpacity={0.8}
+        delayPressIn={0}
+        onLongPress={() => onOpenManageSize(size)}
+        delayLongPress={350}
+        style={[
+          styles.rowHeaderCell,
+          {
+            backgroundColor: isDarkMode
+              ? activeColors.surfaceElevated
+              : activeColors.surfaceSubtle,
+            borderColor: activeColors.border,
+          },
+        ]}
+      >
+        <View style={styles.rowHeaderContent}>
+          <Text
+            style={[
+              styles.rowHeaderText,
+              {
+                color: activeColors.textPrimary,
+                fontWeight: '700',
+                flex: 1,
+              },
+            ]}
+            numberOfLines={2}
+          >
+            {size}
+          </Text>
+        </View>
+      </TouchableOpacity>
+
+      {/* Brand Cells for this Size */}
+      {currentBrands.map((brand) => {
+        const cellKey = `${size}___${brand.toLowerCase()}`;
+        return (
+          <MatrixCell
+            key={cellKey}
+            brand={brand}
+            size={size}
+            cellKey={cellKey}
+            cellData={cells[cellKey]}
+            isSelected={selectedCellKey === cellKey}
+            isDarkMode={isDarkMode}
+            activeColors={activeColors}
+            onSelect={onSelectCell}
+          />
+        );
+      })}
+
+      {/* Empty cell under "add brands +" */}
+      <View
+        style={[
+          styles.cell,
+          {
+            backgroundColor: isDarkMode
+              ? activeColors.surfaceElevated
+              : activeColors.surfaceSubtle,
+            borderColor: activeColors.border,
+          },
+        ]}
+      />
+    </View>
+  );
+}, (prev, next) => {
+  if (prev.isDarkMode !== next.isDarkMode || prev.activeColors !== next.activeColors) return false;
+  if (prev.currentBrands !== next.currentBrands) return false;
+  if (prev.size !== next.size) return false;
+  if (prev.onSelectCell !== next.onSelectCell) return false;
+  if (prev.onOpenManageSize !== next.onOpenManageSize) return false;
+
+  // Check if selection touched this row:
+  const prevSelectedInThisRow = Boolean(prev.selectedCellKey && prev.selectedCellKey.startsWith(`${prev.size}___`));
+  const nextSelectedInThisRow = Boolean(next.selectedCellKey && next.selectedCellKey.startsWith(`${next.size}___`));
+  if (prevSelectedInThisRow || nextSelectedInThisRow) {
+    return prev.selectedCellKey === next.selectedCellKey;
+  }
+
+  // Check if cells data for this row changed
+  if (prev.cells !== next.cells) {
+    for (const b of next.currentBrands) {
+      const key = `${next.size}___${b.toLowerCase()}`;
+      if (prev.cells[key] !== next.cells[key]) return false;
+    }
+  }
+
+  return true;
+});
+
 export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
   data,
   selectedCellKey,
@@ -136,12 +251,14 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
   onDeleteSize,
   onRenameSize,
   onReorderSizes,
+  onReorderBrands,
   isDarkMode,
   activeColors,
   emptyLabel = 'Pipes',
 }) => {
   const { brands, sizes, cells } = data;
 
+  const [currentBrands, setCurrentBrands] = useState<string[]>(brands);
   const [currentSizes, setCurrentSizes] = useState<string[]>(sizes);
   const [reorderMode, setReorderMode] = useState(false);
   const [reorderModalVisible, setReorderModalVisible] = useState(false);
@@ -152,6 +269,10 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
     setCurrentSizes(sizes);
   }, [sizes]);
 
+  useEffect(() => {
+    setCurrentBrands(brands);
+  }, [brands]);
+
   const moveSize = (fromIndex: number, toIndex: number) => {
     if (toIndex < 0 || toIndex >= currentSizes.length || fromIndex === toIndex) return;
     const next = [...currentSizes];
@@ -160,6 +281,17 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
     setCurrentSizes(next);
     if (onReorderSizes) {
       onReorderSizes(next);
+    }
+  };
+
+  const moveBrand = (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= currentBrands.length || fromIndex === toIndex) return;
+    const next = [...currentBrands];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    setCurrentBrands(next);
+    if (onReorderBrands) {
+      onReorderBrands(next);
     }
   };
 
@@ -183,6 +315,11 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
     return currentSizes.findIndex((s) => s === manageTarget.name);
   }, [manageTarget, currentSizes]);
 
+  const currentManageBrandIndex = useMemo(() => {
+    if (!manageTarget || manageTarget.type !== 'brand') return -1;
+    return currentBrands.findIndex((b) => b === manageTarget.name);
+  }, [manageTarget, currentBrands]);
+
   // Rename Modal
   const [renameModalVisible, setRenameModalVisible] = useState(false);
   const [renameInput, setRenameInput] = useState('');
@@ -190,10 +327,14 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
 
   const themeShadows = getThemeShadows(isDarkMode);
 
-  const handleOpenManage = (type: 'brand' | 'size', name: string) => {
+  const handleOpenManage = useCallback((type: 'brand' | 'size', name: string) => {
     setManageTarget({ type, name });
     setManageModalVisible(true);
-  };
+  }, []);
+
+  const handleOpenManageSize = useCallback((size: string) => {
+    handleOpenManage('size', size);
+  }, [handleOpenManage]);
 
   const handleTriggerRename = () => {
     if (!manageTarget) return;
@@ -337,7 +478,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
         themeShadows.card,
       ]}
     >
-      <ScrollView horizontal showsHorizontalScrollIndicator={true} bounces={false}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={true} bounces={false} keyboardShouldPersistTaps="always">
         <View>
           {/* Header Row */}
           <View style={styles.headerRow}>
@@ -386,7 +527,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
             </View>
 
             {/* Brand Columns */}
-            {brands.map((brand) => (
+            {currentBrands.map((brand) => (
               <TouchableOpacity
                 key={brand}
                 activeOpacity={0.8}
@@ -444,10 +585,10 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
             <View style={styles.emptyTableBanner}>
               <MaterialCommunityIcons name="table-plus" size={32} color={activeColors.primary} />
               <Text style={[styles.emptyTableTitle, { color: activeColors.textPrimary }]}>
-                {brands.length > 0 ? `Brand "${brands.join(', ')}" added!` : 'No items found'}
+                {currentBrands.length > 0 ? `Brand "${currentBrands.join(', ')}" added!` : 'No items found'}
               </Text>
               <Text style={[styles.emptyTableSubtitle, { color: activeColors.textMuted }]}>
-                {brands.length > 0
+                {currentBrands.length > 0
                   ? 'Tap "+ Add Size / Item" below to add sizes'
                   : 'Tap "add brands +" above or "+ Add Size" below to get started'}
               </Text>
@@ -462,79 +603,22 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
           ) : (
             <ScrollView
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="always"
               style={{ maxHeight: 380 }}
             >
-              {currentSizes.map((size) => {
-                return (
-                  <View
-                    key={size}
-                    style={styles.dataRow}
-                  >
-                    {/* Left Frozen Column: Size Label */}
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onLongPress={() => handleOpenManage('size', size)}
-                      delayLongPress={350}
-                      style={[
-                        styles.rowHeaderCell,
-                        {
-                          backgroundColor: isDarkMode
-                            ? activeColors.surfaceElevated
-                            : activeColors.surfaceSubtle,
-                          borderColor: activeColors.border,
-                        },
-                      ]}
-                    >
-                      <View style={styles.rowHeaderContent}>
-                        <Text
-                          style={[
-                            styles.rowHeaderText,
-                            {
-                              color: activeColors.textPrimary,
-                              fontWeight: '700',
-                              flex: 1,
-                            },
-                          ]}
-                          numberOfLines={2}
-                        >
-                          {size}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-
-                {/* Brand Cells for this Size */}
-                {brands.map((brand) => {
-                  const cellKey = `${size}___${brand.toLowerCase()}`;
-                  return (
-                    <MatrixCell
-                      key={cellKey}
-                      brand={brand}
-                      size={size}
-                      cellKey={cellKey}
-                      cellData={cells[cellKey]}
-                      isSelected={selectedCellKey === cellKey}
-                      isDarkMode={isDarkMode}
-                      activeColors={activeColors}
-                      onSelect={onSelectCell}
-                    />
-                  );
-                })}
-
-                {/* Empty cell under "add brands +" */}
-                <View
-                  style={[
-                    styles.cell,
-                    {
-                      backgroundColor: isDarkMode
-                        ? activeColors.surfaceElevated
-                        : activeColors.surfaceSubtle,
-                      borderColor: activeColors.border,
-                    },
-                  ]}
+              {currentSizes.map((size) => (
+                <MatrixRow
+                  key={size}
+                  size={size}
+                  currentBrands={currentBrands}
+                  cells={cells}
+                  selectedCellKey={selectedCellKey}
+                  isDarkMode={isDarkMode}
+                  activeColors={activeColors}
+                  onSelectCell={onSelectCell}
+                  onOpenManageSize={handleOpenManageSize}
                 />
-              </View>
-            );
-          })}
+              ))}
 
             {/* Bottom Row: "+ Add Size / Item" Button */}
             <View style={styles.dataRow}>
@@ -567,7 +651,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
               </TouchableOpacity>
 
               {/* Blank filler across all brand columns for symmetry */}
-              {brands.map((b) => (
+              {currentBrands.map((b) => (
                 <View
                   key={b}
                   style={[
@@ -1144,6 +1228,127 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
                         name="arrow-down-bold"
                         size={18}
                         color={(currentManageSizeIndex < 0 || currentManageSizeIndex >= currentSizes.length - 1) ? activeColors.textMuted : activeColors.primary}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* Position & Order Box (For Brand columns when more than 1 brand exists) */}
+              {manageTarget?.type === 'brand' && currentBrands.length > 1 && (
+                <View
+                  style={[
+                    styles.reorderSection,
+                    {
+                      backgroundColor: isDarkMode ? activeColors.surfaceElevated : activeColors.surfaceSubtle,
+                      borderColor: activeColors.border,
+                    },
+                  ]}
+                >
+                  <View style={styles.reorderHeaderRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <MaterialCommunityIcons
+                        name="swap-horizontal"
+                        size={18}
+                        color={activeColors.primary}
+                      />
+                      <Text style={[styles.reorderTitle, { color: activeColors.textPrimary }]}>
+                        POSITION & ORDER
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.positionBadge,
+                        { backgroundColor: activeColors.primaryLight },
+                      ]}
+                    >
+                      <Text style={[styles.positionBadgeText, { color: activeColors.primary }]}>
+                        #{currentManageBrandIndex + 1} of {currentBrands.length}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.reorderSubtitle, { color: activeColors.textMuted }]}>
+                    Tap arrows to move brand column left or right
+                  </Text>
+
+                  <View style={styles.reorderBtnRow}>
+                    <TouchableOpacity
+                      activeOpacity={0.75}
+                      disabled={currentManageBrandIndex <= 0}
+                      onPress={() => {
+                        if (currentManageBrandIndex > 0) {
+                          moveBrand(currentManageBrandIndex, currentManageBrandIndex - 1);
+                        }
+                      }}
+                      style={[
+                        styles.reorderBtn,
+                        {
+                          backgroundColor: currentManageBrandIndex <= 0
+                            ? (isDarkMode ? '#1E293B' : '#F1F5F9')
+                            : (isDarkMode ? '#334155' : '#FFFFFF'),
+                          borderColor: currentManageBrandIndex <= 0
+                            ? 'transparent'
+                            : activeColors.border,
+                          opacity: currentManageBrandIndex <= 0 ? 0.45 : 1,
+                        },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name="arrow-left-bold"
+                        size={18}
+                        color={currentManageBrandIndex <= 0 ? activeColors.textMuted : activeColors.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.reorderBtnText,
+                          {
+                            color: currentManageBrandIndex <= 0
+                              ? activeColors.textMuted
+                              : activeColors.textPrimary,
+                          },
+                        ]}
+                      >
+                        Move Left
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      activeOpacity={0.75}
+                      disabled={currentManageBrandIndex < 0 || currentManageBrandIndex >= currentBrands.length - 1}
+                      onPress={() => {
+                        if (currentManageBrandIndex >= 0 && currentManageBrandIndex < currentBrands.length - 1) {
+                          moveBrand(currentManageBrandIndex, currentManageBrandIndex + 1);
+                        }
+                      }}
+                      style={[
+                        styles.reorderBtn,
+                        {
+                          backgroundColor: (currentManageBrandIndex < 0 || currentManageBrandIndex >= currentBrands.length - 1)
+                            ? (isDarkMode ? '#1E293B' : '#F1F5F9')
+                            : (isDarkMode ? '#334155' : '#FFFFFF'),
+                          borderColor: (currentManageBrandIndex < 0 || currentManageBrandIndex >= currentBrands.length - 1)
+                            ? 'transparent'
+                            : activeColors.border,
+                          opacity: (currentManageBrandIndex < 0 || currentManageBrandIndex >= currentBrands.length - 1) ? 0.45 : 1,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.reorderBtnText,
+                          {
+                            color: (currentManageBrandIndex < 0 || currentManageBrandIndex >= currentBrands.length - 1)
+                              ? activeColors.textMuted
+                              : activeColors.textPrimary,
+                          },
+                        ]}
+                      >
+                        Move Right
+                      </Text>
+                      <MaterialCommunityIcons
+                        name="arrow-right-bold"
+                        size={18}
+                        color={(currentManageBrandIndex < 0 || currentManageBrandIndex >= currentBrands.length - 1) ? activeColors.textMuted : activeColors.primary}
                       />
                     </TouchableOpacity>
                   </View>

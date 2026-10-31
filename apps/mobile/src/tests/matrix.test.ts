@@ -301,4 +301,50 @@ describe('MatrixRepository Utilities', () => {
     expect(executedSql.some((s) => s.includes('UPDATE product_variants \n       SET size = ?'))).toBe(true);
     expect(executedSql.some((s) => s.includes('UPDATE subcategories SET customValues = ?'))).toBe(true);
   });
+
+  it('saves custom brand order and applies custom brand order when loading matrix', async () => {
+    let savedCustomValues = '';
+    const mockDb = {
+      getFirstAsync: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('FROM subcategories')) {
+          return Promise.resolve({
+            customValues: JSON.stringify({ brandOrder: ['Finolex', 'Supreme', 'Astral'] }),
+          });
+        }
+        return Promise.resolve(null);
+      }),
+      getAllAsync: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('FROM products')) {
+          return Promise.resolve([
+            { id: 'p1', brand: 'Supreme', name: 'Supreme Items' },
+            { id: 'p2', brand: 'Astral', name: 'Astral Items' },
+            { id: 'p3', brand: 'Finolex', name: 'Finolex Items' },
+          ]);
+        }
+        if (sql.includes('FROM product_variants')) {
+          return Promise.resolve([]);
+        }
+        return Promise.resolve([]);
+      }),
+      runAsync: vi.fn().mockImplementation((sql: string, params: any[]) => {
+        if (sql.includes('UPDATE subcategories SET customValues = ?')) {
+          savedCustomValues = params[0];
+        }
+        return Promise.resolve({ changes: 1 });
+      }),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+
+    // Test saveBrandOrder
+    await MatrixRepository.saveBrandOrder('store-1', 'cat-1', 'sub-1', ['Finolex', 'Astral', 'Supreme']);
+    expect(savedCustomValues).toContain('Finolex');
+    expect(savedCustomValues).toContain('Astral');
+    expect(savedCustomValues).toContain('Supreme');
+
+    // Test getMatrixData with custom brandOrder
+    const data = await MatrixRepository.getMatrixData('store-1', 'cat-1', 'sub-1');
+    expect(data.brands).toEqual(['Finolex', 'Supreme', 'Astral']);
+  });
 });

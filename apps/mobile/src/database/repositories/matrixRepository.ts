@@ -274,12 +274,10 @@ export class MatrixRepository {
       };
     }
 
-    // Brands preserved in unique array (strictly non-general)
-    const brands = Array.from(brandSet).filter((b) => b.toLowerCase() !== 'general');
-
-    // Check if subcategory has custom sizeOrder
+    // Check if subcategory has custom sizeOrder or brandOrder
     let customSizeOrder: string[] | null = null;
-    if (subcategoryId) {
+    let customBrandOrder: string[] | null = null;
+    if (subcategoryId && typeof db.getFirstAsync === 'function') {
       try {
         const subRow = await db.getFirstAsync<{ customValues?: string }>(
           `SELECT customValues FROM subcategories WHERE id = ? AND storeId = ?;`,
@@ -290,10 +288,29 @@ export class MatrixRepository {
           if (Array.isArray(parsed?.sizeOrder)) {
             customSizeOrder = parsed.sizeOrder;
           }
+          if (Array.isArray(parsed?.brandOrder)) {
+            customBrandOrder = parsed.brandOrder;
+          }
         }
       } catch {
         // ignore
       }
+    }
+
+    // Brands preserved in unique array (strictly non-general)
+    const rawBrands = Array.from(brandSet).filter((b) => b.toLowerCase() !== 'general');
+    let brands: string[];
+    if (customBrandOrder && customBrandOrder.length > 0) {
+      const bOrderMap = new Map<string, number>();
+      customBrandOrder.forEach((b, idx) => bOrderMap.set(b.trim().toLowerCase(), idx));
+      brands = rawBrands.sort((a, b) => {
+        const idxA = bOrderMap.has(a.trim().toLowerCase()) ? bOrderMap.get(a.trim().toLowerCase())! : 999999;
+        const idxB = bOrderMap.has(b.trim().toLowerCase()) ? bOrderMap.get(b.trim().toLowerCase())! : 999999;
+        if (idxA !== idxB) return idxA - idxB;
+        return a.localeCompare(b);
+      });
+    } else {
+      brands = rawBrands;
     }
 
     let sizes: string[];
@@ -407,6 +424,28 @@ export class MatrixRepository {
           `UPDATE product_variants SET deletedAt = NULL, active = 1, updatedAt = ? WHERE id = ?;`,
           [now, existingVar.id]
         );
+      }
+    }
+
+    // Persist to brandOrder if customValues has brandOrder
+    if (typeof db.getFirstAsync === 'function') {
+      try {
+        const subRow = await db.getFirstAsync<{ customValues?: string }>(
+          `SELECT customValues FROM subcategories WHERE id = ? AND storeId = ?;`,
+          [subcategoryId, storeId]
+        );
+        if (subRow?.customValues) {
+          const parsed = JSON.parse(subRow.customValues);
+          if (Array.isArray(parsed?.brandOrder) && !parsed.brandOrder.some((b: string) => b.trim().toLowerCase() === cleanBrand.toLowerCase())) {
+            parsed.brandOrder.push(cleanBrand);
+            await db.runAsync(
+              `UPDATE subcategories SET customValues = ?, updatedAt = ? WHERE id = ? AND storeId = ?;`,
+              [JSON.stringify(parsed), now, subcategoryId, storeId]
+            );
+          }
+        }
+      } catch {
+        // ignore
       }
     }
   }
@@ -572,6 +611,28 @@ export class MatrixRepository {
       `UPDATE products SET deletedAt = ?, active = 0 WHERE storeId = ? AND categoryId = ? AND subcategoryId = ? AND LOWER(brand) = ?;`,
       [now, storeId, categoryId, subcategoryId, cleanBrand]
     );
+
+    // 3. Clean from brandOrder in subcategories.customValues if present
+    if (typeof db.getFirstAsync === 'function') {
+      try {
+        const subRow = await db.getFirstAsync<{ customValues?: string }>(
+          `SELECT customValues FROM subcategories WHERE id = ? AND storeId = ?;`,
+          [subcategoryId, storeId]
+        );
+        if (subRow?.customValues) {
+          const parsed = JSON.parse(subRow.customValues);
+          if (Array.isArray(parsed?.brandOrder)) {
+            parsed.brandOrder = parsed.brandOrder.filter((b: string) => b.trim().toLowerCase() !== cleanBrand);
+            await db.runAsync(
+              `UPDATE subcategories SET customValues = ?, updatedAt = ? WHERE id = ? AND storeId = ?;`,
+              [JSON.stringify(parsed), now, subcategoryId, storeId]
+            );
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
   }
 
   /**
@@ -616,6 +677,30 @@ export class MatrixRepository {
          );`,
       [cleanNew, now, storeId, categoryId, subcategoryId, cleanNew.toLowerCase()]
     );
+
+    // 3. Update brandOrder in subcategories.customValues if present
+    if (typeof db.getFirstAsync === 'function') {
+      try {
+        const subRow = await db.getFirstAsync<{ customValues?: string }>(
+          `SELECT customValues FROM subcategories WHERE id = ? AND storeId = ?;`,
+          [subcategoryId, storeId]
+        );
+        if (subRow?.customValues) {
+          const parsed = JSON.parse(subRow.customValues);
+          if (Array.isArray(parsed?.brandOrder)) {
+            parsed.brandOrder = parsed.brandOrder.map((b: string) =>
+              b.trim().toLowerCase() === cleanOld.toLowerCase() ? cleanNew : b
+            );
+            await db.runAsync(
+              `UPDATE subcategories SET customValues = ?, updatedAt = ? WHERE id = ? AND storeId = ?;`,
+              [JSON.stringify(parsed), now, subcategoryId, storeId]
+            );
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
   }
 
   /**
@@ -834,8 +919,23 @@ export class MatrixRepository {
     const db = await getDatabase();
     const now = new Date().toISOString();
 
-    // 1. Update subcategories customValues with sizeOrder JSON
-    const customJson = JSON.stringify({ sizeOrder: newSizes });
+    // 1. Update subcategories customValues with sizeOrder JSON, preserving other customValues (like brandOrder)
+    let parsed: any = {};
+    if (typeof db.getFirstAsync === 'function') {
+      try {
+        const subRow = await db.getFirstAsync<{ customValues?: string }>(
+          `SELECT customValues FROM subcategories WHERE id = ? AND storeId = ?;`,
+          [subcategoryId, storeId]
+        );
+        if (subRow?.customValues) {
+          parsed = JSON.parse(subRow.customValues) || {};
+        }
+      } catch {
+        // ignore
+      }
+    }
+    parsed.sizeOrder = newSizes;
+    const customJson = JSON.stringify(parsed);
     await db.runAsync(
       `UPDATE subcategories SET customValues = ?, updatedAt = ? WHERE id = ? AND storeId = ?;`,
       [customJson, now, subcategoryId, storeId]
@@ -853,6 +953,41 @@ export class MatrixRepository {
         [i + 1, now, storeId, sizeName, categoryId, subcategoryId]
       );
     }
+  }
+
+  /**
+   * Saves custom brand order for a category/subcategory
+   */
+  static async saveBrandOrder(
+    storeId: string,
+    categoryId: string,
+    subcategoryId: string,
+    newBrands: string[]
+  ): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+
+    // 1. Update subcategories customValues with brandOrder JSON, preserving other customValues (like sizeOrder)
+    let parsed: any = {};
+    if (typeof db.getFirstAsync === 'function') {
+      try {
+        const subRow = await db.getFirstAsync<{ customValues?: string }>(
+          `SELECT customValues FROM subcategories WHERE id = ? AND storeId = ?;`,
+          [subcategoryId, storeId]
+        );
+        if (subRow?.customValues) {
+          parsed = JSON.parse(subRow.customValues) || {};
+        }
+      } catch {
+        // ignore
+      }
+    }
+    parsed.brandOrder = newBrands;
+    const customJson = JSON.stringify(parsed);
+    await db.runAsync(
+      `UPDATE subcategories SET customValues = ?, updatedAt = ? WHERE id = ? AND storeId = ?;`,
+      [customJson, now, subcategoryId, storeId]
+    );
   }
 
   /**

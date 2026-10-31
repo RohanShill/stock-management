@@ -327,8 +327,11 @@ export class ProductRepository {
     await SyncQueueRepository.enqueue(storeId, deviceId, 'product', productId, 'create', product as unknown as Record<string, unknown>);
 
     const created = await this.getProductsWithVariants(storeId);
-    const p = created.find((item) => item.id === productId)!;
-    return { product: p, variants: p.variants };
+    const p = created.find((item) => item.id === productId);
+    if (!p) {
+      return { product: product as Product, variants: [] };
+    }
+    return { product: p, variants: p.variants || [] };
   }
 
   static async updateProduct(
@@ -496,127 +499,129 @@ export class ProductRepository {
     const errors: string[] = [];
     const now = new Date().toISOString();
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
+    await db.withTransactionAsync(async () => {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
 
-      // Check for SKU conflict in local SQLite (including soft-deleted to avoid UNIQUE constraint violation)
-      const existingSku = await db.getFirstAsync<any>(
-        `SELECT id, deletedAt FROM product_variants WHERE sku = ? AND storeId = ?;`,
-        [row.sku, storeId]
-      );
-
-      if (existingSku) {
-        errors.push(`Row ${i + 1}: SKU '${row.sku}' already exists in database. Skipped.`);
-        skippedCount++;
-        continue;
-      }
-
-      // Find or create Category
-      let cat = await db.getFirstAsync<any>(
-        `SELECT id FROM categories WHERE name = ? AND storeId = ?;`,
-        [row.categoryName, storeId]
-      );
-      if (!cat) {
-        const catId = uuidv4();
-        await db.runAsync(
-          `INSERT INTO categories (id, storeId, name, displayOrder, active, createdAt, updatedAt) VALUES (?, ?, ?, 0, 1, ?, ?);`,
-          [catId, storeId, row.categoryName, now, now]
+        // Check for SKU conflict in local SQLite (including soft-deleted to avoid UNIQUE constraint violation)
+        const existingSku = await db.getFirstAsync<any>(
+          `SELECT id, deletedAt FROM product_variants WHERE sku = ? AND storeId = ?;`,
+          [row.sku, storeId]
         );
-        cat = { id: catId };
-        await SyncQueueRepository.enqueue(storeId, deviceId, 'category', catId, 'create', {
-          id: catId,
-          storeId,
-          name: row.categoryName,
-        });
-      }
 
-      // Find or create Subcategory
-      let subcat = await db.getFirstAsync<any>(
-        `SELECT id FROM subcategories WHERE name = ? AND categoryId = ? AND storeId = ?;`,
-        [row.subcategoryName, cat.id, storeId]
-      );
-      if (!subcat) {
-        const subId = uuidv4();
-        await db.runAsync(
-          `INSERT INTO subcategories (id, storeId, categoryId, name, displayOrder, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, 0, 1, ?, ?);`,
-          [subId, storeId, cat.id, row.subcategoryName, now, now]
+        if (existingSku) {
+          errors.push(`Row ${i + 1}: SKU '${row.sku}' already exists in database. Skipped.`);
+          skippedCount++;
+          continue;
+        }
+
+        // Find or create Category
+        let cat = await db.getFirstAsync<any>(
+          `SELECT id FROM categories WHERE name = ? AND storeId = ?;`,
+          [row.categoryName, storeId]
         );
-        subcat = { id: subId };
-        await SyncQueueRepository.enqueue(storeId, deviceId, 'subcategory', subId, 'create', {
-          id: subId,
-          storeId,
-          categoryId: cat.id,
-          name: row.subcategoryName,
-        });
-      }
-
-      // Find or create Product
-      let prod = await db.getFirstAsync<any>(
-        `SELECT id FROM products WHERE name = ? AND categoryId = ? AND subcategoryId = ? AND storeId = ?;`,
-        [row.productName, cat.id, subcat.id, storeId]
-      );
-      if (!prod) {
-        const prodId = uuidv4();
-        await db.runAsync(
-          `INSERT INTO products (id, storeId, categoryId, subcategoryId, name, brand, measurementType, baseUnit, allowedUnits, active, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
-          [
-            prodId,
+        if (!cat) {
+          const catId = uuidv4();
+          await db.runAsync(
+            `INSERT INTO categories (id, storeId, name, displayOrder, active, createdAt, updatedAt) VALUES (?, ?, ?, 0, 1, ?, ?);`,
+            [catId, storeId, row.categoryName, now, now]
+          );
+          cat = { id: catId };
+          await SyncQueueRepository.enqueue(storeId, deviceId, 'category', catId, 'create', {
+            id: catId,
             storeId,
-            cat.id,
-            subcat.id,
-            row.productName,
-            row.brand ?? null,
-            row.measurementType,
-            row.baseUnit,
-            JSON.stringify([row.baseUnit]),
+            name: row.categoryName,
+          });
+        }
+
+        // Find or create Subcategory
+        let subcat = await db.getFirstAsync<any>(
+          `SELECT id FROM subcategories WHERE name = ? AND categoryId = ? AND storeId = ?;`,
+          [row.subcategoryName, cat.id, storeId]
+        );
+        if (!subcat) {
+          const subId = uuidv4();
+          await db.runAsync(
+            `INSERT INTO subcategories (id, storeId, categoryId, name, displayOrder, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, 0, 1, ?, ?);`,
+            [subId, storeId, cat.id, row.subcategoryName, now, now]
+          );
+          subcat = { id: subId };
+          await SyncQueueRepository.enqueue(storeId, deviceId, 'subcategory', subId, 'create', {
+            id: subId,
+            storeId,
+            categoryId: cat.id,
+            name: row.subcategoryName,
+          });
+        }
+
+        // Find or create Product
+        let prod = await db.getFirstAsync<any>(
+          `SELECT id FROM products WHERE name = ? AND categoryId = ? AND subcategoryId = ? AND storeId = ?;`,
+          [row.productName, cat.id, subcat.id, storeId]
+        );
+        if (!prod) {
+          const prodId = uuidv4();
+          await db.runAsync(
+            `INSERT INTO products (id, storeId, categoryId, subcategoryId, name, brand, measurementType, baseUnit, allowedUnits, active, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
+            [
+              prodId,
+              storeId,
+              cat.id,
+              subcat.id,
+              row.productName,
+              row.brand ?? null,
+              row.measurementType,
+              row.baseUnit,
+              JSON.stringify([row.baseUnit]),
+              now,
+              now,
+            ]
+          );
+          prod = { id: prodId };
+          importedProducts++;
+        }
+
+        // Create Variant
+        const varId = uuidv4();
+        const purchasePricePaise = rupeeToPaise(row.purchasePriceRs);
+        const sellingPricePaise = rupeeToPaise(row.sellingPriceRs);
+
+        await db.runAsync(
+          `INSERT INTO product_variants (id, storeId, productId, name, sku, barcode, size, purchasePricePaise, sellingPricePaise, taxRatePercent, minStockLevel, openingStock, currentStock, rackLocation, active, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
+          [
+            varId,
+            storeId,
+            prod.id,
+            row.variantName,
+            row.sku,
+            row.barcode ?? null,
+            row.size ?? null,
+            purchasePricePaise,
+            sellingPricePaise,
+            row.taxRatePercent,
+            row.minStockLevel,
+            row.openingStock,
+            row.openingStock,
+            row.rackLocation ?? null,
             now,
             now,
           ]
         );
-        prod = { id: prodId };
-        importedProducts++;
+
+        if (row.openingStock > 0) {
+          const movementId = uuidv4();
+          await db.runAsync(
+            `INSERT INTO stock_movements (id, storeId, variantId, movementType, quantityChangeBase, balanceBeforeBase, balanceAfterBase, referenceType, reason, deviceId, userId, createdAt)
+             VALUES (?, ?, ?, 'opening_stock', ?, 0, ?, 'manual', 'Bulk CSV Catalogue Import', ?, ?, ?);`,
+            [movementId, storeId, varId, row.openingStock, row.openingStock, deviceId, userId ?? null, now]
+          );
+        }
+
+        importedVariants++;
       }
-
-      // Create Variant
-      const varId = uuidv4();
-      const purchasePricePaise = rupeeToPaise(row.purchasePriceRs);
-      const sellingPricePaise = rupeeToPaise(row.sellingPriceRs);
-
-      await db.runAsync(
-        `INSERT INTO product_variants (id, storeId, productId, name, sku, barcode, size, purchasePricePaise, sellingPricePaise, taxRatePercent, minStockLevel, openingStock, currentStock, rackLocation, active, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
-        [
-          varId,
-          storeId,
-          prod.id,
-          row.variantName,
-          row.sku,
-          row.barcode ?? null,
-          row.size ?? null,
-          purchasePricePaise,
-          sellingPricePaise,
-          row.taxRatePercent,
-          row.minStockLevel,
-          row.openingStock,
-          row.openingStock,
-          row.rackLocation ?? null,
-          now,
-          now,
-        ]
-      );
-
-      if (row.openingStock > 0) {
-        const movementId = uuidv4();
-        await db.runAsync(
-          `INSERT INTO stock_movements (id, storeId, variantId, movementType, quantityChangeBase, balanceBeforeBase, balanceAfterBase, referenceType, reason, deviceId, userId, createdAt)
-           VALUES (?, ?, ?, 'opening_stock', ?, 0, ?, 'manual', 'Bulk CSV Catalogue Import', ?, ?, ?);`,
-          [movementId, storeId, varId, row.openingStock, row.openingStock, deviceId, userId ?? null, now]
-        );
-      }
-
-      importedVariants++;
-    }
+    });
 
     return { importedProducts, importedVariants, skippedCount, errors };
   }

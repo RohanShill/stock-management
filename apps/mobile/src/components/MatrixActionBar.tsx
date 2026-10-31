@@ -14,7 +14,7 @@ interface MatrixActionBarProps {
   activeColors: any;
 }
 
-export const MatrixActionBar: React.FC<MatrixActionBarProps> = ({
+export const MatrixActionBar: React.FC<MatrixActionBarProps> = React.memo(({
   selectedCell,
   selectedSize,
   selectedBrand,
@@ -186,7 +186,7 @@ export const MatrixActionBar: React.FC<MatrixActionBarProps> = ({
       </View>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
