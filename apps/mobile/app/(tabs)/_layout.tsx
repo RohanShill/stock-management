@@ -1,4 +1,5 @@
 import React from 'react';
+import { Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,8 +15,10 @@ export default function TabLayout() {
   const activeColors = isDarkMode ? darkColors : lightColors;
   const themeShadows = getThemeShadows(isDarkMode);
 
-  const bottomInset = insets.bottom > 0 ? insets.bottom : 8;
-  const tabHeight = 56 + bottomInset;
+  // WhatsApp-style safe bottom spacing for Android Gesture Navigation Bar pill
+  const safeBottom = Math.max(insets.bottom, Platform.OS === 'android' ? 18 : 10);
+  const bottomPadding = safeBottom + (Platform.OS === 'android' ? 12 : 6);
+  const tabHeight = 52 + bottomPadding;
 
   return (
     <Tabs
@@ -25,7 +28,7 @@ export default function TabLayout() {
           borderTopColor: activeColors.border,
           borderTopWidth: 0.5,
           height: tabHeight,
-          paddingBottom: bottomInset,
+          paddingBottom: bottomPadding,
           paddingTop: 6,
           ...themeShadows.floating,
         },
