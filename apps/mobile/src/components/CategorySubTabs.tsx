@@ -109,14 +109,14 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
       ]}
     >
       {/* ========================================================= */}
-      {/* TIER 1: MAIN SECTIONS (Level 1)                          */}
+      {/* TIER 1: MAIN SECTIONS                                      */}
       {/* ========================================================= */}
       <View style={styles.tierSection}>
         <View style={styles.tierHeader}>
           <View style={styles.tierHeaderLeft}>
             <MaterialCommunityIcons
               name="layers-outline"
-              size={14}
+              size={13}
               color={activeColors.primary}
             />
             <Text
@@ -125,7 +125,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                 { color: activeColors.textPrimary },
               ]}
             >
-              1. MAIN SECTIONS IN {categoryName.toUpperCase()}
+              {categoryName.toUpperCase()} SECTIONS
             </Text>
             <View
               style={[
@@ -146,32 +146,6 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                 {subcategories.length}
               </Text>
             </View>
-          </View>
-
-          <View
-            style={[
-              styles.depthBadge,
-              {
-                backgroundColor: !isViewingChild
-                  ? activeColors.primaryLight
-                  : isDarkMode
-                  ? activeColors.surface
-                  : activeColors.surfaceSubtle,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.depthBadgeText,
-                {
-                  color: !isViewingChild
-                    ? activeColors.primary
-                    : activeColors.textMuted,
-                },
-              ]}
-            >
-              Level 1
-            </Text>
           </View>
         </View>
 
@@ -254,7 +228,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
       </View>
 
       {/* ========================================================= */}
-      {/* TIER 2: SUB-SECTIONS (Level 2 under Active Root Section) */}
+      {/* TIER 2: SUB-SECTIONS (under Active Root Section)           */}
       {/* ========================================================= */}
       {activeRootSection && (
         <View
@@ -272,7 +246,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
             <View style={styles.tierHeaderLeft}>
               <MaterialCommunityIcons
                 name="subdirectory-arrow-right"
-                size={14}
+                size={13}
                 color={activeColors.primary}
               />
               <Text
@@ -282,37 +256,11 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                 ]}
                 numberOfLines={1}
               >
-                2. SUB-SECTIONS OF{' '}
+                Sub-sections of{' '}
                 <Text style={{ fontWeight: '800', color: activeColors.textPrimary }}>
                   "{activeRootSection.name}"
                 </Text>
                 :
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.depthBadge,
-                {
-                  backgroundColor: isViewingChild && !activeLevel3
-                    ? activeColors.primaryLight
-                    : isDarkMode
-                    ? activeColors.surface
-                    : activeColors.surfaceSubtle,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.depthBadgeText,
-                  {
-                    color: isViewingChild && !activeLevel3
-                      ? activeColors.primary
-                      : activeColors.textMuted,
-                  },
-                ]}
-              >
-                Level 2
               </Text>
             </View>
           </View>
@@ -331,7 +279,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                 !isViewingChild && styles.subPillActiveHighlight,
                 {
                   backgroundColor: !isViewingChild
-                    ? activeColors.primaryLight
+                    ? activeColors.primary
                     : isDarkMode
                     ? activeColors.surface
                     : activeColors.surfaceSubtle,
@@ -339,29 +287,30 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                     ? activeColors.primary
                     : activeColors.border,
                 },
+                !isViewingChild && themeShadows.card,
               ]}
             >
               <MaterialCommunityIcons
                 name="package-variant-closed"
                 size={13}
-                color={!isViewingChild ? activeColors.primary : activeColors.textMuted}
+                color={!isViewingChild ? '#FFFFFF' : activeColors.textMuted}
               />
               <Text
                 style={[
                   styles.subPillText,
                   {
                     color: !isViewingChild
-                      ? activeColors.primary
+                      ? '#FFFFFF'
                       : activeColors.textSecondary,
                     fontWeight: !isViewingChild ? '800' : '600',
                   },
                 ]}
               >
-                {!isViewingChild ? `✓ Main: ${activeRootSection.name}` : `Main: ${activeRootSection.name}`}
+                {!isViewingChild ? `• Main: ${activeRootSection.name}` : `Main: ${activeRootSection.name}`}
               </Text>
             </TouchableOpacity>
 
-            {/* Child Sub-sections (Level 2) */}
+            {/* Child Sub-sections */}
             {childSubcategories.map((child) => {
               const isThisChildDirectlyActive = child.id === activeSubcategoryId;
               const isThisChildBranchActive = activeLevel3?.parentId === child.id;
@@ -400,7 +349,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                         ? '#FFFFFF'
                         : isThisChildBranchActive
                         ? activeColors.primary
-                        : activeColors.primary
+                        : activeColors.textSecondary
                     }
                   />
                   <Text
@@ -458,7 +407,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
       )}
 
       {/* ========================================================= */}
-      {/* TIER 3: NESTED SUB-SECTIONS (Level 3 under active Level 2) */}
+      {/* TIER 3: NESTED SUB-SECTIONS (under active Level 2)         */}
       {/* ========================================================= */}
       {isViewingChild && activeChild && (
         <View
@@ -476,7 +425,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
             <View style={styles.tierHeaderLeft}>
               <MaterialCommunityIcons
                 name="subdirectory-arrow-right"
-                size={14}
+                size={13}
                 color={activeColors.primary}
               />
               <Text
@@ -486,37 +435,11 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                 ]}
                 numberOfLines={1}
               >
-                3. NESTED SUB-SECTIONS OF{' '}
+                Nested Sub-sections of{' '}
                 <Text style={{ fontWeight: '800', color: activeColors.textPrimary }}>
                   "{activeChild.name}"
                 </Text>
                 :
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.depthBadge,
-                {
-                  backgroundColor: activeLevel3
-                    ? activeColors.primaryLight
-                    : isDarkMode
-                    ? activeColors.surface
-                    : activeColors.surfaceSubtle,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.depthBadgeText,
-                  {
-                    color: activeLevel3
-                      ? activeColors.primary
-                      : activeColors.textMuted,
-                  },
-                ]}
-              >
-                Level 3
               </Text>
             </View>
           </View>
@@ -553,7 +476,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                   <MaterialCommunityIcons
                     name={isL3Active ? 'check' : 'folder-outline'}
                     size={13}
-                    color={isL3Active ? '#FFFFFF' : activeColors.primary}
+                    color={isL3Active ? '#FFFFFF' : activeColors.textSecondary}
                   />
                   <Text
                     style={[
@@ -737,12 +660,12 @@ const styles = StyleSheet.create({
   cardContainer: {
     marginHorizontal: 16,
     marginVertical: 4,
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     overflow: 'hidden',
   },
   tierSection: {
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 12,
   },
   tierDivider: {
@@ -752,7 +675,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 5,
   },
   tierHeaderLeft: {
     flexDirection: 'row',
@@ -774,25 +697,16 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
-  depthBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: borderRadius.full,
-  },
-  depthBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
   scrollRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   mainPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: borderRadius.full,
     borderWidth: 1,
   },
@@ -813,11 +727,11 @@ const styles = StyleSheet.create({
   subPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: borderRadius.full,
     borderWidth: 1,
-    gap: 5,
+    gap: 4,
   },
   subPillActiveHighlight: {
     borderWidth: 1.5,
@@ -828,8 +742,8 @@ const styles = StyleSheet.create({
   addDashedBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     borderRadius: borderRadius.full,
     borderWidth: 1,
     borderStyle: 'dashed',

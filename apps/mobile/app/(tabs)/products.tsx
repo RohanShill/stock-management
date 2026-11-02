@@ -1365,132 +1365,42 @@ export default function ProductsScreen() {
             />
           </View>
 
-          {/* 3.1 Prominent Location & Scope Indicator Card */}
+          {/* 3.1 Compact Scope Indicator (Zero wasted screen space) */}
           {activeSubcategory && (
-            <View
-              style={[
-                styles.locationCard,
-                {
-                  backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#FFFFFF',
-                  borderColor: isViewingChildSubcategory
-                    ? (isDarkMode ? '#059669' : '#10B981')
-                    : activeColors.border,
-                },
-                themeShadows.card,
-              ]}
-            >
-              <View style={styles.locationTopRow}>
-                {/* Scope Level Badge */}
-                <View
-                  style={[
-                    styles.locationBadge,
-                    {
-                      backgroundColor: isViewingChildSubcategory
-                        ? (isDarkMode ? '#064E3B' : '#ECFDF5')
-                        : (isDarkMode ? '#1E1B4B' : '#EEF2FF'),
-                      borderColor: isViewingChildSubcategory
-                        ? (isDarkMode ? '#059669' : '#A7F3D0')
-                        : (isDarkMode ? '#4338CA' : '#C7D2FE'),
-                    },
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    name={isViewingChildSubcategory ? 'folder-check' : 'layers'}
-                    size={12}
-                    color={
-                      isViewingChildSubcategory
-                        ? (isDarkMode ? '#34D399' : '#059669')
-                        : activeColors.primary
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.locationBadgeText,
-                      {
-                        color: isViewingChildSubcategory
-                          ? (isDarkMode ? '#34D399' : '#047857')
-                          : activeColors.primary,
-                      },
-                    ]}
-                  >
+            <View style={styles.scopeWrap}>
+              <View style={styles.scopeLeft}>
+                <MaterialCommunityIcons
+                  name={isViewingChildSubcategory ? 'folder-table-outline' : 'table-large'}
+                  size={14}
+                  color={activeColors.primary}
+                />
+                <Text style={[styles.scopeLabel, { color: activeColors.textSecondary }]}>
+                  Stock Matrix:{' '}
+                  <Text style={[styles.scopeTarget, { color: activeColors.primary }]}>
                     {isViewingChildSubcategory
-                      ? level3Subcategories.some((s) => s.id === activeSubcategory.id)
-                        ? 'NESTED SUB-SECTION (LEVEL 3)'
-                        : 'SUB-SECTION (LEVEL 2)'
-                      : 'MAIN SECTION (LEVEL 1)'}
+                      ? `${activeRootSection?.name} › ${activeSubcategory.name}`
+                      : activeSubcategory.name}
                   </Text>
-                </View>
-
-                <Text style={[styles.locationCountText, { color: activeColors.textMuted }]}>
-                  {matrixData.brands.length} Brands • {matrixData.sizes.length} Sizes
                 </Text>
-              </View>
-
-              {/* Location Breadcrumb Path */}
-              <View style={styles.locationTitleRow}>
-                <Text
-                  style={[styles.locationPathText, { color: activeColors.textSecondary }]}
-                  numberOfLines={1}
-                >
-                  {activeCategory?.name || 'Category'}
-                  {activeRootSection ? ` › ${activeRootSection.name}` : ''}
-                  {isViewingChildSubcategory ? (
-                    <>
-                      {' › '}
-                      <Text style={[styles.locationActiveTarget, { color: activeColors.primary }]}>
-                        {activeSubcategory.name}
-                      </Text>
-                    </>
-                  ) : (
-                    <Text style={{ fontWeight: '700', color: activeColors.textPrimary }}>
-                      {' (Main)'}
-                    </Text>
-                  )}
-                </Text>
-
-                {isViewingChildSubcategory && activeRootSection && (
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => handleSelectRootSection(activeRootSection.id)}
+                {isViewingChildSubcategory && (
+                  <View
                     style={[
-                      styles.locationSwitchBtn,
+                      styles.subBadgeCompact,
                       {
-                        backgroundColor: isDarkMode ? activeColors.surface : activeColors.surfaceSubtle,
-                        borderColor: activeColors.border,
+                        backgroundColor: isDarkMode ? '#1E1B4B' : '#EEF2FF',
+                        borderColor: isDarkMode ? '#4338CA' : '#C7D2FE',
                       },
                     ]}
                   >
-                    <MaterialCommunityIcons name="arrow-up" size={11} color={activeColors.primary} />
-                    <Text style={[styles.locationSwitchText, { color: activeColors.primary }]}>
-                      Go to Main
+                    <Text style={[styles.subBadgeTextCompact, { color: activeColors.primary }]}>
+                      Sub-section
                     </Text>
-                  </TouchableOpacity>
+                  </View>
                 )}
               </View>
-
-              {/* Clear Guidance Note for user & client */}
-              <View style={styles.locationHelpRow}>
-                <MaterialCommunityIcons
-                  name="information-outline"
-                  size={12}
-                  color={isViewingChildSubcategory ? '#10B981' : activeColors.primary}
-                />
-                <Text
-                  style={[
-                    styles.locationHelpNote,
-                    {
-                      color: isViewingChildSubcategory
-                        ? activeColors.textPrimary
-                        : activeColors.textSecondary,
-                    },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {isViewingChildSubcategory
-                    ? `Quantities below belong specifically to "${activeSubcategory.name}".`
-                    : `Showing stock for "${activeSubcategory.name}". Tap any sub-section above to enter it.`}
-                </Text>
-              </View>
+              <Text style={[styles.scopeCounts, { color: activeColors.textMuted }]}>
+                {matrixData.brands.length} Brands • {matrixData.sizes.length} Sizes
+              </Text>
             </View>
           )}
 
@@ -2377,77 +2287,6 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: borderRadius.lg,
   },
-  locationCard: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  locationTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  locationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  locationBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  locationCountText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  locationTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  locationPathText: {
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
-  },
-  locationActiveTarget: {
-    fontWeight: '900',
-    fontSize: 14,
-  },
-  locationSwitchBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    marginLeft: 8,
-  },
-  locationSwitchText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  locationHelpRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  locationHelpNote: {
-    fontSize: 11,
-    fontWeight: '500',
-    flex: 1,
-  },
   scopeWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2467,6 +2306,17 @@ const styles = StyleSheet.create({
   },
   scopeTarget: {
     fontWeight: '800',
+  },
+  subBadgeCompact: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+    borderWidth: 1,
+    marginLeft: 4,
+  },
+  subBadgeTextCompact: {
+    fontSize: 10,
+    fontWeight: '700',
   },
   scopeCounts: {
     fontSize: 11,
