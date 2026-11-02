@@ -23,7 +23,7 @@ interface CategorySubTabsProps {
   onEnterChildSubcategory: (child: Subcategory) => void;
   onSelectBreadcrumb: (index: number) => void;
   onGoBack: () => void;
-  onAddSubTab: (name: string, parentId?: string | null) => Promise<void>;
+  onAddSubTab: (name: string, parentId?: string | null, isChild?: boolean) => Promise<void>;
   onDeleteSubTab?: (subcatId: string) => Promise<void> | void;
   onLongPressSubcategory?: (subcat: Subcategory) => void;
   isDarkMode: boolean;
@@ -48,6 +48,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
   const [modalVisible, setModalVisible] = useState(false);
   const [modalParentId, setModalParentId] = useState<string | null>(null);
   const [modalParentName, setModalParentName] = useState<string>('');
+  const [modalIsChild, setModalIsChild] = useState<boolean>(true);
   const [newTabName, setNewTabName] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -58,9 +59,14 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
   const currentDepth: number = activeSubcategory?.depth ?? (breadcrumbPath.length > 0 ? (breadcrumbPath[breadcrumbPath.length - 1].depth ?? 1) : 1);
   const isNested = breadcrumbPath.length > 1;
 
-  const openAddModal = (parentId: string | null = null, parentName: string = '') => {
+  const openAddModal = (
+    parentId: string | null = null,
+    parentName: string = '',
+    isChild: boolean = true
+  ) => {
     setModalParentId(parentId);
     setModalParentName(parentName);
+    setModalIsChild(isChild);
     setNewTabName('');
     setModalVisible(true);
   };
@@ -69,16 +75,16 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
     const clean = newTabName.trim();
     if (!clean || submitting) return;
 
-    // Check sibling duplicate
-    const checkList = modalParentId ? childSubcategories : subcategories;
+    // Check duplicate
+    const checkList = modalIsChild ? childSubcategories : subcategories;
     if (checkList.some((s) => s.name.toLowerCase() === clean.toLowerCase())) {
-      showToast(`Section "${clean}" already exists here.`, 'warning');
+      showToast(`"${clean}" already exists here.`, 'warning');
       return;
     }
 
     try {
       setSubmitting(true);
-      await onAddSubTab(clean, modalParentId);
+      await onAddSubTab(clean, modalParentId, modalIsChild);
       setNewTabName('');
       setModalVisible(false);
     } catch (e: any) {
@@ -301,7 +307,8 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                   : null,
                 isNested
                   ? (breadcrumbPath[breadcrumbPath.length - 2]?.name || '')
-                  : ''
+                  : '',
+                false
               )
             }
             style={[
@@ -422,7 +429,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                 <TouchableOpacity
                   activeOpacity={0.75}
                   onPress={() =>
-                    openAddModal(activeSubcategory.id, activeSubcategory.name)
+                    openAddModal(activeSubcategory.id, activeSubcategory.name, true)
                   }
                   style={[
                     styles.addChildCardBtn,
@@ -457,7 +464,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                 <TouchableOpacity
                   activeOpacity={0.75}
                   onPress={() =>
-                    openAddModal(activeSubcategory.id, activeSubcategory.name)
+                    openAddModal(activeSubcategory.id, activeSubcategory.name, true)
                   }
                   style={[
                     styles.emptyAddBtn,
@@ -565,8 +572,10 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                     { color: activeColors.textPrimary },
                   ]}
                 >
-                  {modalParentName
-                    ? `Add Sub-Section inside "${modalParentName}"`
+                  {modalIsChild
+                    ? `Add Sub-Section inside "${modalParentName || activeSubcategory?.name}"`
+                    : isNested
+                    ? `Add Sibling Sub-Section`
                     : `Add New Section in ${categoryName}`}
                 </Text>
                 <Text
@@ -575,7 +584,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                     { color: activeColors.textMuted },
                   ]}
                 >
-                  {modalParentName
+                  {modalIsChild
                     ? 'e.g. UPVC Pipe, Schedule 80, 4-Metre, etc.'
                     : 'e.g. Water Supply Pipes, Drainage Pipes, Fittings'}
                 </Text>
@@ -594,7 +603,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                 },
               ]}
               placeholder={
-                modalParentName
+                modalIsChild
                   ? 'Enter sub-section name...'
                   : 'Enter section name...'
               }
@@ -642,8 +651,10 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                 <Text style={styles.btnConfirmText}>
                   {submitting
                     ? 'Creating...'
-                    : modalParentName
+                    : modalIsChild
                     ? '+ Add Sub-Section'
+                    : isNested
+                    ? '+ Add Sibling'
                     : '+ Create Section'}
                 </Text>
               </TouchableOpacity>

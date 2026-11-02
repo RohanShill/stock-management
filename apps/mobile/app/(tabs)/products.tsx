@@ -539,13 +539,14 @@ export default function ProductsScreen() {
   /**
    * Add a custom sub-tab / sub-section dynamically
    */
-  const handleAddSubTab = async (tabName: string, parentId?: string | null) => {
+  const handleAddSubTab = async (
+    tabName: string,
+    parentId?: string | null,
+    isChild: boolean = true
+  ) => {
     try {
       const storeId = store?.id || 'store-1';
-      // If parentId is not explicitly passed, determine if we are currently at a nested view level
-      const effectiveParentId = parentId !== undefined
-        ? parentId
-        : (breadcrumbPath.length > 0 ? breadcrumbPath[breadcrumbPath.length - 1].parentId || null : null);
+      const effectiveParentId = parentId ? parentId.trim() : null;
 
       const created = await MatrixRepository.addSubTab(
         storeId,
@@ -555,19 +556,45 @@ export default function ProductsScreen() {
         effectiveParentId
       );
 
-      if (parentId) {
-        // Added as child under active subcategory!
-        // Immediately drill into this newly created child
-        await handleEnterChildSubcategory(created);
-        showToast(`Sub-section "${tabName}" added!`, 'success');
+      if (isChild) {
+        // Added as child under current active subcategory!
+        // Immediately refresh childSubcategories from SQLite so it appears in the list!
+        const targetParentId = effectiveParentId || activeSubcategoryId;
+        if (targetParentId) {
+          const nextChildren = await MatrixRepository.ensureDefaultSubTabs(
+            storeId,
+            selectedCategoryId,
+            '',
+            deviceId,
+            targetParentId
+          );
+          setChildSubcategories(nextChildren);
+        } else {
+          setChildSubcategories((prev) => [...prev, created]);
+        }
+        showToast(`Sub-section "${tabName}" created!`, 'success');
       } else {
         // Added as sibling at the current view level
-        setSubcategories((prev) => [...prev, created]);
+        const updatedSiblings = await MatrixRepository.ensureDefaultSubTabs(
+          storeId,
+          selectedCategoryId,
+          '',
+          deviceId,
+          effectiveParentId
+        );
+        setSubcategories(updatedSiblings);
         setActiveSubcategoryId(created.id);
         if (breadcrumbPath.length > 0) {
           setBreadcrumbPath((prev) => [...prev.slice(0, -1), created]);
         }
-        setChildSubcategories([]);
+        const children = await MatrixRepository.ensureDefaultSubTabs(
+          storeId,
+          selectedCategoryId,
+          '',
+          deviceId,
+          created.id
+        );
+        setChildSubcategories(children);
         await loadMatrix(selectedCategoryId, created.id);
         showToast(`Section "${tabName}" added!`, 'success');
       }
