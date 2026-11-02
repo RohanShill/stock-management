@@ -13,14 +13,23 @@ import { Subcategory } from '@hardware-store/shared';
 import { useAppStore } from '../store/useAppStore.js';
 import { borderRadius, getThemeShadows } from '../theme/tokens.js';
 
-interface CategorySubTabsProps {
+export interface HierarchyTier {
+  depth: number;
+  parent: Subcategory | null; // null for Root Level (Level 1)
+  items: Subcategory[]; // Siblings at this level
+  activeId: string | null; // Currently selected item id in this tier
+}
+
+export interface CategorySubTabsProps {
   categoryName: string;
-  subcategories: Subcategory[]; // Root sections (Level 1)
-  activeRootSectionId: string;
-  activeSubcategoryId: string; // The currently active node (root or child) whose matrix is displayed
-  childSubcategories: Subcategory[]; // Children of activeRootSection (Level 2)
-  level3Subcategories?: Subcategory[]; // Children of activeSubcategory (Level 3) if activeSubcategory is Level 2
-  onSelectRootSection: (sectionId: string) => void;
+  hierarchyTiers?: HierarchyTier[];
+  subcategories?: Subcategory[];
+  activeRootSectionId?: string;
+  activeSubcategoryId: string;
+  breadcrumbPath?: Subcategory[];
+  childSubcategories?: Subcategory[];
+  level3Subcategories?: Subcategory[];
+  onSelectRootSection?: (sectionId: string) => void;
   onSelectSubcategory: (subcatId: string) => void;
   onAddSubTab: (name: string, parentId?: string | null, isChild?: boolean) => Promise<void>;
   onDeleteSubTab?: (subcatId: string) => Promise<void> | void;
@@ -31,10 +40,12 @@ interface CategorySubTabsProps {
 
 export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
   categoryName,
-  subcategories,
-  activeRootSectionId,
+  hierarchyTiers,
+  subcategories = [],
+  activeRootSectionId = '',
   activeSubcategoryId,
-  childSubcategories,
+  breadcrumbPath = [],
+  childSubcategories = [],
   level3Subcategories = [],
   onSelectRootSection,
   onSelectSubcategory,
@@ -43,6 +54,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
   isDarkMode,
   activeColors,
 }) => {
+  const [isMinimized, setIsMinimized] = useState<boolean>(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalParentId, setModalParentId] = useState<string | null>(null);
   const [modalParentName, setModalParentName] = useState<string>('');
@@ -53,11 +65,49 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
   const themeShadows = getThemeShadows(isDarkMode);
   const { showToast } = useAppStore();
 
-  const activeRootSection = subcategories.find((s) => s.id === activeRootSectionId) || subcategories[0] || null;
-  const isViewingChild = Boolean(activeRootSection && activeSubcategoryId !== activeRootSection.id);
-  const activeLevel3 = level3Subcategories.find((s) => s.id === activeSubcategoryId);
-  const activeChild = childSubcategories.find((s) => s.id === activeSubcategoryId) ||
-    (activeLevel3 ? childSubcategories.find((s) => s.id === activeLevel3.parentId) : undefined);
+  // If hierarchyTiers is provided by parent, use it directly.
+  // Otherwise, construct fallback tiers from subcategories, childSubcategories, etc.
+  const tiers: HierarchyTier[] = React.useMemo(() => {
+    if (hierarchyTiers && hierarchyTiers.length > 0) {
+      return hierarchyTiers;
+    }
+
+    const fallback: HierarchyTier[] = [];
+    fallback.push({
+      depth: 1,
+      parent: null,
+      items: subcategories,
+      activeId: activeRootSectionId || (subcategories[0]?.id ?? null),
+    });
+
+    const activeRoot = subcategories.find((s) => s.id === activeRootSectionId) || subcategories[0];
+    if (activeRoot) {
+      fallback.push({
+        depth: 2,
+        parent: activeRoot,
+        items: childSubcategories,
+        activeId: activeSubcategoryId,
+      });
+
+      const activeChild = childSubcategories.find((s) => s.id === activeSubcategoryId);
+      if (activeChild && level3Subcategories.length > 0) {
+        fallback.push({
+          depth: 3,
+          parent: activeChild,
+          items: level3Subcategories,
+          activeId: activeSubcategoryId,
+        });
+      }
+    }
+    return fallback;
+  }, [
+    hierarchyTiers,
+    subcategories,
+    activeRootSectionId,
+    childSubcategories,
+    activeSubcategoryId,
+    level3Subcategories,
+  ]);
 
   const openAddModal = (
     parentId: string | null = null,
@@ -75,15 +125,6 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
     const clean = newTabName.trim();
     if (!clean || submitting) return;
 
-    // Check duplicate
-    const checkList = modalIsChild
-      ? (activeChild && modalParentId === activeChild.id ? level3Subcategories : childSubcategories)
-      : subcategories;
-    if (checkList.some((s) => s.name.toLowerCase() === clean.toLowerCase())) {
-      showToast(`"${clean}" already exists here.`, 'warning');
-      return;
-    }
-
     try {
       setSubmitting(true);
       await onAddSubTab(clean, modalParentId, modalIsChild);
@@ -97,6 +138,10 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
     }
   };
 
+  const crumbs = breadcrumbPath.length > 0
+    ? breadcrumbPath
+    : subcategories.filter((s) => s.id === activeSubcategoryId || s.id === activeRootSectionId);
+
   return (
     <View
       style={[
@@ -109,463 +154,334 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
       ]}
     >
       {/* ========================================================= */}
-      {/* TIER 1: MAIN SECTIONS                                      */}
+      {/* MINIMIZED (COLLAPSED) VIEW: Saves max screen on mobile    */}
       {/* ========================================================= */}
-      <View style={styles.tierSection}>
-        <View style={styles.tierHeader}>
-          <View style={styles.tierHeaderLeft}>
+      {isMinimized ? (
+        <View style={styles.minimizedRow}>
+          <View style={styles.minimizedLeft}>
             <MaterialCommunityIcons
               name="layers-outline"
-              size={13}
+              size={14}
               color={activeColors.primary}
             />
-            <Text
-              style={[
-                styles.tierTitle,
-                { color: activeColors.textPrimary },
-              ]}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.crumbScroll}
             >
-              {categoryName.toUpperCase()} SECTIONS
-            </Text>
-            <View
-              style={[
-                styles.countBadge,
-                {
-                  backgroundColor: isDarkMode
-                    ? activeColors.surface
-                    : activeColors.surfaceSubtle,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.countText,
-                  { color: activeColors.textSecondary },
-                ]}
-              >
-                {subcategories.length}
-              </Text>
-            </View>
+              {crumbs.map((crumb, idx) => {
+                const isLast = idx === crumbs.length - 1;
+                return (
+                  <View key={crumb.id} style={styles.crumbItem}>
+                    {idx > 0 && (
+                      <Text style={[styles.crumbSeparator, { color: activeColors.textMuted }]}>
+                        ›
+                      </Text>
+                    )}
+                    <TouchableOpacity
+                      activeOpacity={0.75}
+                      onPress={() => onSelectSubcategory(crumb.id)}
+                      onLongPress={() => onLongPressSubcategory?.(crumb)}
+                      delayLongPress={350}
+                      style={[
+                        styles.crumbChip,
+                        isLast && {
+                          backgroundColor: activeColors.primaryLight,
+                          borderColor: activeColors.primary,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.crumbText,
+                          {
+                            color: isLast ? activeColors.primary : activeColors.textSecondary,
+                            fontWeight: isLast ? '800' : '600',
+                          },
+                        ]}
+                      >
+                        {crumb.name}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </ScrollView>
           </View>
-        </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.scrollRow}
-        >
-          {subcategories.map((sub) => {
-            const isRootActive = sub.id === activeRootSection?.id;
-            return (
-              <TouchableOpacity
-                key={sub.id}
-                activeOpacity={0.75}
-                onPress={() => onSelectRootSection(sub.id)}
-                onLongPress={() => onLongPressSubcategory?.(sub)}
-                delayLongPress={350}
-                style={[
-                  styles.mainPill,
-                  {
-                    backgroundColor: isRootActive
-                      ? activeColors.primary
-                      : isDarkMode
-                      ? activeColors.surface
-                      : activeColors.surfaceSubtle,
-                    borderColor: isRootActive
-                      ? activeColors.primary
-                      : activeColors.border,
-                  },
-                  isRootActive && themeShadows.card,
-                ]}
-              >
-                {isRootActive && <View style={styles.whiteDot} />}
-                <Text
-                  style={[
-                    styles.mainPillText,
-                    {
-                      color: isRootActive
-                        ? '#FFFFFF'
-                        : activeColors.textSecondary,
-                    },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {sub.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-
-          {/* Add Main Section Button */}
           <TouchableOpacity
-            activeOpacity={0.75}
-            onPress={() => openAddModal(null, '', false)}
+            activeOpacity={0.7}
+            onPress={() => setIsMinimized(false)}
             style={[
-              styles.addDashedBtn,
+              styles.toggleBtn,
               {
-                backgroundColor: isDarkMode
-                  ? activeColors.surface
-                  : activeColors.surfaceSubtle,
-                borderColor: activeColors.primary,
+                backgroundColor: isDarkMode ? activeColors.surface : activeColors.surfaceSubtle,
+                borderColor: activeColors.border,
               },
             ]}
           >
-            <MaterialCommunityIcons
-              name="plus"
-              size={13}
-              color={activeColors.primary}
-            />
-            <Text
-              style={[
-                styles.addDashedText,
-                { color: activeColors.primary },
-              ]}
-            >
-              Section
+            <MaterialCommunityIcons name="chevron-down" size={15} color={activeColors.primary} />
+            <Text style={[styles.toggleBtnText, { color: activeColors.primary }]}>
+              Expand
             </Text>
           </TouchableOpacity>
-        </ScrollView>
-      </View>
-
-      {/* ========================================================= */}
-      {/* TIER 2: SUB-SECTIONS (under Active Root Section)           */}
-      {/* ========================================================= */}
-      {activeRootSection && (
-        <View
-          style={[
-            styles.tierSection,
-            styles.tierDivider,
-            {
-              borderTopColor: isDarkMode
-                ? activeColors.surface
-                : activeColors.border,
-            },
-          ]}
-        >
-          <View style={styles.tierHeader}>
-            <View style={styles.tierHeaderLeft}>
-              <MaterialCommunityIcons
-                name="subdirectory-arrow-right"
-                size={13}
-                color={activeColors.primary}
-              />
-              <Text
-                style={[
-                  styles.tierTitle,
-                  { color: activeColors.textSecondary },
-                ]}
-                numberOfLines={1}
-              >
-                Sub-sections of{' '}
-                <Text style={{ fontWeight: '800', color: activeColors.textPrimary }}>
-                  "{activeRootSection.name}"
-                </Text>
-                :
-              </Text>
-            </View>
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.scrollRow}
-          >
-            {/* Option A: Direct Section Stock */}
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={() => onSelectSubcategory(activeRootSection.id)}
-              style={[
-                styles.subPill,
-                !isViewingChild && styles.subPillActiveHighlight,
-                {
-                  backgroundColor: !isViewingChild
-                    ? activeColors.primary
-                    : isDarkMode
-                    ? activeColors.surface
-                    : activeColors.surfaceSubtle,
-                  borderColor: !isViewingChild
-                    ? activeColors.primary
-                    : activeColors.border,
-                },
-                !isViewingChild && themeShadows.card,
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="package-variant-closed"
-                size={13}
-                color={!isViewingChild ? '#FFFFFF' : activeColors.textMuted}
-              />
-              <Text
-                style={[
-                  styles.subPillText,
-                  {
-                    color: !isViewingChild
-                      ? '#FFFFFF'
-                      : activeColors.textSecondary,
-                    fontWeight: !isViewingChild ? '800' : '600',
-                  },
-                ]}
-              >
-                {!isViewingChild ? `• Main: ${activeRootSection.name}` : `Main: ${activeRootSection.name}`}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Child Sub-sections */}
-            {childSubcategories.map((child) => {
-              const isThisChildDirectlyActive = child.id === activeSubcategoryId;
-              const isThisChildBranchActive = activeLevel3?.parentId === child.id;
-              const isHighlighted = isThisChildDirectlyActive || isThisChildBranchActive;
-
-              return (
-                <TouchableOpacity
-                  key={child.id}
-                  activeOpacity={0.75}
-                  onPress={() => onSelectSubcategory(child.id)}
-                  onLongPress={() => onLongPressSubcategory?.(child)}
-                  delayLongPress={350}
-                  style={[
-                    styles.subPill,
-                    isHighlighted && styles.subPillActiveHighlight,
-                    {
-                      backgroundColor: isThisChildDirectlyActive
-                        ? activeColors.primary
-                        : isThisChildBranchActive
-                        ? activeColors.primaryLight
-                        : isDarkMode
-                        ? activeColors.surface
-                        : activeColors.surfaceSubtle,
-                      borderColor: isHighlighted
-                        ? activeColors.primary
-                        : activeColors.border,
-                    },
-                    isThisChildDirectlyActive && themeShadows.card,
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    name={isThisChildDirectlyActive ? 'check' : isThisChildBranchActive ? 'folder-open' : 'folder-outline'}
-                    size={13}
-                    color={
-                      isThisChildDirectlyActive
-                        ? '#FFFFFF'
-                        : isThisChildBranchActive
-                        ? activeColors.primary
-                        : activeColors.textSecondary
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.subPillText,
-                      {
-                        color: isThisChildDirectlyActive
-                          ? '#FFFFFF'
-                          : isThisChildBranchActive
-                          ? activeColors.primary
-                          : activeColors.textPrimary,
-                        fontWeight: isHighlighted ? '800' : '600',
-                      },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {child.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-
-            {/* Add Sub-section Button */}
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={() =>
-                openAddModal(activeRootSection.id, activeRootSection.name, true)
-              }
-              style={[
-                styles.addDashedBtn,
-                {
-                  backgroundColor: isDarkMode
-                    ? activeColors.surface
-                    : activeColors.surfaceSubtle,
-                  borderColor: activeColors.primary,
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="plus"
-                size={13}
-                color={activeColors.primary}
-              />
-              <Text
-                style={[
-                  styles.addDashedText,
-                  { color: activeColors.primary },
-                ]}
-              >
-                Sub-section
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
         </View>
-      )}
-
-      {/* ========================================================= */}
-      {/* TIER 3: NESTED SUB-SECTIONS (under active Level 2)         */}
-      {/* ========================================================= */}
-      {isViewingChild && activeChild && (
-        <View
-          style={[
-            styles.tierSection,
-            styles.tierDivider,
-            {
-              borderTopColor: isDarkMode
-                ? activeColors.surface
-                : activeColors.border,
-            },
-          ]}
-        >
-          <View style={styles.tierHeader}>
-            <View style={styles.tierHeaderLeft}>
+      ) : (
+        /* ========================================================= */
+        /* EXPANDED VIEW: Multi-tier, supporting arbitrary depth     */
+        /* ========================================================= */
+        <View>
+          {/* Card Top Header: Category Name + Minimize Toggle */}
+          <View style={styles.topHeaderBar}>
+            <View style={styles.topHeaderLeft}>
               <MaterialCommunityIcons
-                name="subdirectory-arrow-right"
-                size={13}
+                name="layers-outline"
+                size={14}
                 color={activeColors.primary}
               />
               <Text
                 style={[
-                  styles.tierTitle,
-                  { color: activeColors.textSecondary },
+                  styles.topHeaderTitle,
+                  { color: activeColors.textPrimary },
                 ]}
-                numberOfLines={1}
               >
-                Sub-sections of{' '}
-                <Text style={{ fontWeight: '800', color: activeColors.textPrimary }}>
-                  "{activeChild.name}"
-                </Text>
-                :
+                {categoryName.toUpperCase()} SECTIONS
               </Text>
-            </View>
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.scrollRow}
-          >
-            {/* Direct activeChild stock pill */}
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={() => onSelectSubcategory(activeChild.id)}
-              style={[
-                styles.subPill,
-                activeSubcategoryId === activeChild.id && styles.subPillActiveHighlight,
-                {
-                  backgroundColor: activeSubcategoryId === activeChild.id
-                    ? activeColors.primary
-                    : isDarkMode
-                    ? activeColors.surface
-                    : activeColors.surfaceSubtle,
-                  borderColor: activeSubcategoryId === activeChild.id
-                    ? activeColors.primary
-                    : activeColors.border,
-                },
-                activeSubcategoryId === activeChild.id && themeShadows.card,
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="package-variant-closed"
-                size={13}
-                color={activeSubcategoryId === activeChild.id ? '#FFFFFF' : activeColors.textMuted}
-              />
-              <Text
+              <View
                 style={[
-                  styles.subPillText,
+                  styles.countBadge,
                   {
-                    color: activeSubcategoryId === activeChild.id
-                      ? '#FFFFFF'
-                      : activeColors.textSecondary,
-                    fontWeight: activeSubcategoryId === activeChild.id ? '800' : '600',
+                    backgroundColor: isDarkMode
+                      ? activeColors.surface
+                      : activeColors.surfaceSubtle,
                   },
                 ]}
               >
-                {activeSubcategoryId === activeChild.id ? `• Main: ${activeChild.name}` : `Main: ${activeChild.name}`}
-              </Text>
-            </TouchableOpacity>
-
-            {level3Subcategories.map((l3) => {
-              const isL3Active = l3.id === activeSubcategoryId;
-              return (
-                <TouchableOpacity
-                  key={l3.id}
-                  activeOpacity={0.75}
-                  onPress={() => onSelectSubcategory(l3.id)}
-                  onLongPress={() => onLongPressSubcategory?.(l3)}
-                  delayLongPress={350}
+                <Text
                   style={[
-                    styles.subPill,
-                    isL3Active && styles.subPillActiveHighlight,
-                    {
-                      backgroundColor: isL3Active
-                        ? activeColors.primary
-                        : isDarkMode
-                        ? activeColors.surface
-                        : activeColors.surfaceSubtle,
-                      borderColor: isL3Active
-                        ? activeColors.primary
-                        : activeColors.border,
-                    },
-                    isL3Active && themeShadows.card,
+                    styles.countText,
+                    { color: activeColors.textSecondary },
                   ]}
                 >
-                  <MaterialCommunityIcons
-                    name={isL3Active ? 'check' : 'folder-outline'}
-                    size={13}
-                    color={isL3Active ? '#FFFFFF' : activeColors.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.subPillText,
-                      {
-                        color: isL3Active
-                          ? '#FFFFFF'
-                          : activeColors.textPrimary,
-                        fontWeight: isL3Active ? '800' : '600',
-                      },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {l3.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+                  {tiers[0]?.items?.length || subcategories.length}
+                </Text>
+              </View>
+            </View>
 
-            {/* Add Sub-section inside activeChild Button */}
+            {/* Minimize / Hide Button */}
             <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={() => openAddModal(activeChild.id, activeChild.name, true)}
+              activeOpacity={0.7}
+              onPress={() => setIsMinimized(true)}
               style={[
-                styles.addDashedBtn,
+                styles.toggleBtn,
                 {
-                  backgroundColor: isDarkMode
-                    ? activeColors.surface
-                    : activeColors.surfaceSubtle,
-                  borderColor: activeColors.primary,
+                  backgroundColor: isDarkMode ? activeColors.surface : activeColors.surfaceSubtle,
+                  borderColor: activeColors.border,
                 },
               ]}
             >
-              <MaterialCommunityIcons
-                name="plus"
-                size={13}
-                color={activeColors.primary}
-              />
-              <Text
-                style={[
-                  styles.addDashedText,
-                  { color: activeColors.primary },
-                ]}
-              >
-                Sub-section
+              <MaterialCommunityIcons name="chevron-up" size={14} color={activeColors.textSecondary} />
+              <Text style={[styles.toggleBtnText, { color: activeColors.textSecondary }]}>
+                Hide
               </Text>
             </TouchableOpacity>
-          </ScrollView>
+          </View>
+
+          {/* Render All Dynamic Hierarchy Tiers */}
+          {tiers.map((tier, tierIdx) => {
+            const isRootTier = tier.parent === null;
+            return (
+              <View
+                key={tier.parent ? tier.parent.id : 'root-tier'}
+                style={[
+                  styles.tierSection,
+                  tierIdx > 0 && styles.tierDivider,
+                  {
+                    borderTopColor: isDarkMode
+                      ? activeColors.surface
+                      : activeColors.border,
+                  },
+                ]}
+              >
+                {/* Tier Sub-Header */}
+                {!isRootTier && (
+                  <View style={styles.tierHeader}>
+                    <View style={styles.tierHeaderLeft}>
+                      <MaterialCommunityIcons
+                        name="subdirectory-arrow-right"
+                        size={13}
+                        color={activeColors.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.tierTitle,
+                          { color: activeColors.textSecondary },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        Sub-sections of{' '}
+                        <Text style={{ fontWeight: '800', color: activeColors.textPrimary }}>
+                          "{tier.parent?.name}"
+                        </Text>
+                        :
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Horizontal Scroll of Section / Sub-section Pills */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.scrollRow}
+                >
+                  {/* If not root, render Main Section direct stock pill */}
+                  {!isRootTier && tier.parent && (
+                    <TouchableOpacity
+                      activeOpacity={0.75}
+                      onPress={() => onSelectSubcategory(tier.parent!.id)}
+                      style={[
+                        styles.subPill,
+                        activeSubcategoryId === tier.parent.id && styles.subPillActiveHighlight,
+                        {
+                          backgroundColor: activeSubcategoryId === tier.parent.id
+                            ? activeColors.primary
+                            : isDarkMode
+                            ? activeColors.surface
+                            : activeColors.surfaceSubtle,
+                          borderColor: activeSubcategoryId === tier.parent.id
+                            ? activeColors.primary
+                            : activeColors.border,
+                        },
+                        activeSubcategoryId === tier.parent.id && themeShadows.card,
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name="package-variant-closed"
+                        size={13}
+                        color={activeSubcategoryId === tier.parent.id ? '#FFFFFF' : activeColors.textMuted}
+                      />
+                      <Text
+                        style={[
+                          styles.subPillText,
+                          {
+                            color: activeSubcategoryId === tier.parent.id
+                              ? '#FFFFFF'
+                              : activeColors.textSecondary,
+                            fontWeight: activeSubcategoryId === tier.parent.id ? '800' : '600',
+                          },
+                        ]}
+                      >
+                        {activeSubcategoryId === tier.parent.id
+                          ? `• Main: ${tier.parent.name}`
+                          : `Main: ${tier.parent.name}`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Sibling Items at this tier */}
+                  {tier.items.map((item) => {
+                    const isItemActive = item.id === activeSubcategoryId;
+                    const isItemInPath = !isItemActive && tier.activeId === item.id;
+                    const isHighlighted = isItemActive || isItemInPath;
+
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        activeOpacity={0.75}
+                        onPress={() => onSelectSubcategory(item.id)}
+                        onLongPress={() => onLongPressSubcategory?.(item)}
+                        delayLongPress={350}
+                        style={[
+                          isRootTier ? styles.mainPill : styles.subPill,
+                          isHighlighted && styles.subPillActiveHighlight,
+                          {
+                            backgroundColor: isItemActive
+                              ? activeColors.primary
+                              : isItemInPath
+                              ? activeColors.primaryLight
+                              : isDarkMode
+                              ? activeColors.surface
+                              : activeColors.surfaceSubtle,
+                            borderColor: isHighlighted
+                              ? activeColors.primary
+                              : activeColors.border,
+                          },
+                          isItemActive && themeShadows.card,
+                        ]}
+                      >
+                        {isRootTier && isItemActive && <View style={styles.whiteDot} />}
+                        {!isRootTier && (
+                          <MaterialCommunityIcons
+                            name={isItemActive ? 'check' : isItemInPath ? 'folder-open' : 'folder-outline'}
+                            size={13}
+                            color={
+                              isItemActive
+                                ? '#FFFFFF'
+                                : isItemInPath
+                                ? activeColors.primary
+                                : activeColors.textSecondary
+                            }
+                          />
+                        )}
+                        <Text
+                          style={[
+                            isRootTier ? styles.mainPillText : styles.subPillText,
+                            {
+                              color: isItemActive
+                                ? '#FFFFFF'
+                                : isItemInPath
+                                ? activeColors.primary
+                                : activeColors.textPrimary,
+                              fontWeight: isHighlighted ? '800' : '600',
+                            },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {item.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  {/* Add Button for this tier */}
+                  <TouchableOpacity
+                    activeOpacity={0.75}
+                    onPress={() =>
+                      openAddModal(
+                        tier.parent ? tier.parent.id : null,
+                        tier.parent ? tier.parent.name : '',
+                        !isRootTier
+                      )
+                    }
+                    style={[
+                      styles.addDashedBtn,
+                      {
+                        backgroundColor: isDarkMode
+                          ? activeColors.surface
+                          : activeColors.surfaceSubtle,
+                        borderColor: activeColors.primary,
+                      },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="plus"
+                      size={13}
+                      color={activeColors.primary}
+                    />
+                    <Text
+                      style={[
+                        styles.addDashedText,
+                        { color: activeColors.primary },
+                      ]}
+                    >
+                      {isRootTier ? 'Section' : 'Sub-section'}
+                    </Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            );
+          })}
         </View>
       )}
 
@@ -608,7 +524,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                   ]}
                 >
                   {modalIsChild
-                    ? `Add Sub-Section inside "${modalParentName || activeRootSection?.name}"`
+                    ? `Add Sub-Section inside "${modalParentName || activeRootSectionId}"`
                     : `Add New Section in ${categoryName}`}
                 </Text>
                 <Text
@@ -618,7 +534,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                   ]}
                 >
                   {modalIsChild
-                    ? 'e.g. UPVC Pipe, Schedule 80, Thickness, etc.'
+                    ? 'Enter name for this nested sub-section'
                     : 'e.g. Water Supply Pipes, Drainage, Fittings'}
                 </Text>
               </View>
@@ -705,26 +621,58 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
   },
-  tierSection: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  tierDivider: {
-    borderTopWidth: 1,
-  },
-  tierHeader: {
+  minimizedRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
-  tierHeaderLeft: {
+  minimizedLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    flex: 1,
+    gap: 6,
+  },
+  crumbScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  crumbItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  crumbSeparator: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  crumbChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  crumbText: {
+    fontSize: 11,
+  },
+  topHeaderBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  topHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     flex: 1,
   },
-  tierTitle: {
+  topHeaderTitle: {
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.3,
@@ -738,6 +686,44 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
+  toggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    marginLeft: 6,
+  },
+  toggleBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  tierSection: {
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+  },
+  tierDivider: {
+    borderTopWidth: 1,
+  },
+  tierHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  tierHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flex: 1,
+  },
+  tierTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
   scrollRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -750,9 +736,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: borderRadius.full,
     borderWidth: 1,
-  },
-  mainPillActive: {
-    // shadow handled by token
   },
   whiteDot: {
     width: 6,
@@ -793,12 +776,6 @@ const styles = StyleSheet.create({
   addDashedText: {
     fontSize: 11,
     fontWeight: '700',
-  },
-  tier2Wrap: {
-    paddingTop: 8,
-  },
-  tier3Wrap: {
-    paddingTop: 8,
   },
   modalBackdrop: {
     flex: 1,
