@@ -52,7 +52,6 @@ CREATE TABLE IF NOT EXISTS subcategories (
   FOREIGN KEY (parentId) REFERENCES subcategories(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_subcategories_cat ON subcategories(categoryId, displayOrder);
-CREATE INDEX IF NOT EXISTS idx_subcategories_parent ON subcategories(categoryId, parentId, displayOrder);
 
 -- Dynamic Custom Field Definitions
 CREATE TABLE IF NOT EXISTS custom_field_definitions (

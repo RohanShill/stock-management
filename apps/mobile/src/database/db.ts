@@ -27,6 +27,7 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
     "CREATE INDEX IF NOT EXISTS idx_variants_size ON product_variants(productId, size);",
     "CREATE INDEX IF NOT EXISTS idx_products_brand ON products(storeId, categoryId, subcategoryId, brand);",
     "CREATE INDEX IF NOT EXISTS idx_products_deleted ON products(storeId, deletedAt, active);",
+    "CREATE INDEX IF NOT EXISTS idx_subcategories_parent ON subcategories(categoryId, parentId, displayOrder);",
     // Reset automatic placeholder minStockLevel = 5 down to 0 for unstocked items so they don't falsely alert Out of Stock
     "UPDATE product_variants SET minStockLevel = 0 WHERE minStockLevel = 5 AND currentStock = 0 AND (openingStock = 0 OR openingStock IS NULL);",
   ];
@@ -107,10 +108,17 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   await dbInstance.execAsync('PRAGMA cache_size = -64000;');
   await dbInstance.execAsync('PRAGMA temp_store = MEMORY;');
 
-  // Run initial schema migration
+  // 1. Run migrations first if tables already exist from previous app version
+  try {
+    await runVersionedMigrations(dbInstance);
+  } catch {
+    // Fresh DB where tables not created yet; safe to ignore
+  }
+
+  // 2. Run initial schema migration
   await dbInstance.execAsync(SQL_CREATE_TABLES);
 
-  // Run non-destructive column migrations
+  // 3. Run non-destructive column migrations to ensure all tables get latest columns/indexes
   await runVersionedMigrations(dbInstance);
 
   return dbInstance;
