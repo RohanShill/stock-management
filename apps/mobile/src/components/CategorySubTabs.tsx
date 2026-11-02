@@ -435,7 +435,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                 ]}
                 numberOfLines={1}
               >
-                Nested Sub-sections of{' '}
+                Sub-sections of{' '}
                 <Text style={{ fontWeight: '800', color: activeColors.textPrimary }}>
                   "{activeChild.name}"
                 </Text>
@@ -449,6 +449,46 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.scrollRow}
           >
+            {/* Direct activeChild stock pill */}
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => onSelectSubcategory(activeChild.id)}
+              style={[
+                styles.subPill,
+                activeSubcategoryId === activeChild.id && styles.subPillActiveHighlight,
+                {
+                  backgroundColor: activeSubcategoryId === activeChild.id
+                    ? activeColors.primary
+                    : isDarkMode
+                    ? activeColors.surface
+                    : activeColors.surfaceSubtle,
+                  borderColor: activeSubcategoryId === activeChild.id
+                    ? activeColors.primary
+                    : activeColors.border,
+                },
+                activeSubcategoryId === activeChild.id && themeShadows.card,
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="package-variant-closed"
+                size={13}
+                color={activeSubcategoryId === activeChild.id ? '#FFFFFF' : activeColors.textMuted}
+              />
+              <Text
+                style={[
+                  styles.subPillText,
+                  {
+                    color: activeSubcategoryId === activeChild.id
+                      ? '#FFFFFF'
+                      : activeColors.textSecondary,
+                    fontWeight: activeSubcategoryId === activeChild.id ? '800' : '600',
+                  },
+                ]}
+              >
+                {activeSubcategoryId === activeChild.id ? `• Main: ${activeChild.name}` : `Main: ${activeChild.name}`}
+              </Text>
+            </TouchableOpacity>
+
             {level3Subcategories.map((l3) => {
               const isL3Active = l3.id === activeSubcategoryId;
               return (
@@ -460,6 +500,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                   delayLongPress={350}
                   style={[
                     styles.subPill,
+                    isL3Active && styles.subPillActiveHighlight,
                     {
                       backgroundColor: isL3Active
                         ? activeColors.primary
@@ -496,7 +537,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
               );
             })}
 
-            {/* Add Level 3 Button */}
+            {/* Add Sub-section inside activeChild Button */}
             <TouchableOpacity
               activeOpacity={0.75}
               onPress={() => openAddModal(activeChild.id, activeChild.name, true)}
@@ -521,7 +562,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                   { color: activeColors.primary },
                 ]}
               >
-                Level 3 Sub
+                Sub-section
               </Text>
             </TouchableOpacity>
           </ScrollView>

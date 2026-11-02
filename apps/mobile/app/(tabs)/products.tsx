@@ -102,6 +102,12 @@ export default function ProductsScreen() {
   const [manageRenameInput, setManageRenameInput] = useState('');
   const [submittingManageRename, setSubmittingManageRename] = useState(false);
 
+  // Direct Nested Subsection Add Modal (from Long Press or Action sheet)
+  const [nestedAddTarget, setNestedAddTarget] = useState<{ id: string; name: string } | null>(null);
+  const [nestedAddModalVisible, setNestedAddModalVisible] = useState(false);
+  const [nestedAddName, setNestedAddName] = useState('');
+  const [submittingNestedAdd, setSubmittingNestedAdd] = useState(false);
+
   // Search filter
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -313,19 +319,74 @@ export default function ProductsScreen() {
               storeId,
               currentCatId,
               cat?.name || '',
-              deviceId
+              deviceId,
+              null
             );
             if (!isMounted) return;
             setSubcategories(currentSubtabs);
 
+            let targetRootId = activeRootSectionId;
+            if (!targetRootId || !currentSubtabs.some((s) => s.id === targetRootId)) {
+              targetRootId = currentSubtabs[0]?.id || '';
+              setActiveRootSectionId(targetRootId);
+            }
+
+            let children: Subcategory[] = [];
+            if (targetRootId) {
+              children = await MatrixRepository.ensureDefaultSubTabs(
+                storeId,
+                currentCatId,
+                '',
+                deviceId,
+                targetRootId
+              );
+              if (!isMounted) return;
+              setChildSubcategories(children);
+            } else {
+              setChildSubcategories([]);
+            }
+
             let targetSubId = activeSubcategoryId;
-            if (!targetSubId || !currentSubtabs.some((s) => s.id === targetSubId)) {
-              targetSubId = currentSubtabs[0]?.id || '';
-              setActiveSubcategoryId(targetSubId);
+            const isChild = children.some((c) => c.id === targetSubId);
+            const isRoot = targetSubId === targetRootId;
+
+            if (isChild) {
+              // Active is a Level 2 child: fetch any Level 3 children
+              const l3 = await MatrixRepository.ensureDefaultSubTabs(
+                storeId,
+                currentCatId,
+                '',
+                deviceId,
+                targetSubId
+              );
+              if (!isMounted) return;
+              setLevel3Subcategories(l3);
+            } else if (!isRoot) {
+              // Check if targetSubId is a Level 3 child
+              let foundL3 = false;
+              for (const child of children) {
+                const l3Items = await MatrixRepository.ensureDefaultSubTabs(
+                  storeId,
+                  currentCatId,
+                  '',
+                  deviceId,
+                  child.id
+                );
+                if (l3Items.some((l) => l.id === targetSubId)) {
+                  if (!isMounted) return;
+                  setLevel3Subcategories(l3Items);
+                  foundL3 = true;
+                  break;
+                }
+              }
+              if (!foundL3) {
+                targetSubId = targetRootId;
+                setActiveSubcategoryId(targetRootId);
+                setLevel3Subcategories([]);
+              }
             }
 
             if (targetSubId) {
-              // Smooth, silent refresh of the matrix table to display real-time stock
               await loadMatrix(currentCatId, targetSubId, undefined, undefined, true);
             } else {
               setMatrixData({ brands: [], sizes: [], cells: {} });
@@ -340,7 +401,7 @@ export default function ProductsScreen() {
       return () => {
         isMounted = false;
       };
-    }, [store?.id, selectedCategoryId, activeSubcategoryId, deviceId, loadMatrix])
+    }, [store?.id, selectedCategoryId, deviceId, loadMatrix])
   );
 
   /**
@@ -2027,6 +2088,67 @@ export default function ProductsScreen() {
                 />
               </TouchableOpacity>
 
+              {/* 1.5 Add Sub-section Option (Available for any section/sub-section) */}
+              {manageTarget?.type === 'section' && (
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  onPress={() => {
+                    const targetItem = manageTarget.item as Subcategory;
+                    setManageModalVisible(false);
+                    setTimeout(() => {
+                      setNestedAddTarget({ id: targetItem.id, name: targetItem.name });
+                      setNestedAddName('');
+                      setNestedAddModalVisible(true);
+                    }, 150);
+                  }}
+                  style={[
+                    styles.sheetActionItem,
+                    {
+                      backgroundColor: isDarkMode
+                        ? activeColors.surfaceElevated
+                        : activeColors.surfaceSubtle,
+                      borderColor: activeColors.border,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.actionIconBox,
+                      { backgroundColor: isDarkMode ? '#1E1B4B' : '#EEF2FF' },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="folder-plus-outline"
+                      size={20}
+                      color={activeColors.primary}
+                    />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text
+                      style={[
+                        styles.sheetActionTitle,
+                        { color: activeColors.primary },
+                      ]}
+                    >
+                      + Add Sub-section inside "{currentManageItemName}"
+                    </Text>
+                    <Text
+                      style={[
+                        styles.sheetActionSub,
+                        { color: activeColors.textMuted },
+                      ]}
+                    >
+                      Create a nested subsection under this item
+                    </Text>
+                  </View>
+                  <MaterialCommunityIcons
+                    name="chevron-right"
+                    size={20}
+                    color={activeColors.primary}
+                  />
+                </TouchableOpacity>
+              )}
+
               {/* 2. Delete Option */}
               <TouchableOpacity
                 activeOpacity={0.75}
@@ -2201,6 +2323,138 @@ export default function ProductsScreen() {
               >
                 <Text style={styles.btnConfirmText}>
                   {submittingManageRename ? 'Saving...' : 'Save Name'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal: Add Sub-section inside specific parent */}
+      <Modal
+        visible={nestedAddModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNestedAddModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: activeColors.surface,
+                borderColor: activeColors.border,
+              },
+              themeShadows.card,
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <View
+                style={[
+                  styles.modalIconWrap,
+                  { backgroundColor: activeColors.primaryLight },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="folder-plus-outline"
+                  size={24}
+                  color={activeColors.primary}
+                />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text
+                  style={[
+                    styles.modalTitle,
+                    { color: activeColors.textPrimary },
+                  ]}
+                >
+                  Add Sub-section inside "{nestedAddTarget?.name}"
+                </Text>
+                <Text
+                  style={[
+                    styles.modalSubtitle,
+                    { color: activeColors.textMuted },
+                  ]}
+                >
+                  Enter name for this new nested subsection
+                </Text>
+              </View>
+            </View>
+
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: isDarkMode
+                    ? activeColors.surfaceElevated
+                    : activeColors.surfaceSubtle,
+                  borderColor: activeColors.border,
+                  color: activeColors.textPrimary,
+                },
+              ]}
+              placeholder="Enter sub-section name..."
+              placeholderTextColor={activeColors.textMuted}
+              value={nestedAddName}
+              onChangeText={setNestedAddName}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={async () => {
+                const clean = nestedAddName.trim();
+                if (!clean || !nestedAddTarget || submittingNestedAdd) return;
+                try {
+                  setSubmittingNestedAdd(true);
+                  await handleAddSubTab(clean, nestedAddTarget.id, true);
+                  setNestedAddModalVisible(false);
+                  setNestedAddName('');
+                } finally {
+                  setSubmittingNestedAdd(false);
+                }
+              }}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                onPress={() => setNestedAddModalVisible(false)}
+                style={[
+                  styles.btnCancel,
+                  { borderColor: activeColors.border },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.btnCancelText,
+                    { color: activeColors.textSecondary },
+                  ]}
+                >
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={async () => {
+                  const clean = nestedAddName.trim();
+                  if (!clean || !nestedAddTarget || submittingNestedAdd) return;
+                  try {
+                    setSubmittingNestedAdd(true);
+                    await handleAddSubTab(clean, nestedAddTarget.id, true);
+                    setNestedAddModalVisible(false);
+                    setNestedAddName('');
+                  } finally {
+                    setSubmittingNestedAdd(false);
+                  }
+                }}
+                disabled={!nestedAddName.trim() || submittingNestedAdd}
+                style={[
+                  styles.btnConfirm,
+                  {
+                    backgroundColor: nestedAddName.trim()
+                      ? activeColors.primary
+                      : activeColors.border,
+                  },
+                ]}
+              >
+                <Text style={styles.btnConfirmText}>
+                  {submittingNestedAdd ? 'Creating...' : '+ Create'}
                 </Text>
               </TouchableOpacity>
             </View>
