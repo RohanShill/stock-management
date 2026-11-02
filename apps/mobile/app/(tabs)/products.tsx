@@ -605,6 +605,15 @@ export default function ProductsScreen() {
           setChildSubcategories([]);
           setMatrixData({ brands: [], sizes: [], cells: {} });
         }
+      } else if (activeSubcategoryId) {
+        const children = await MatrixRepository.ensureDefaultSubTabs(
+          storeId,
+          selectedCategoryId,
+          '',
+          deviceId,
+          activeSubcategoryId
+        );
+        setChildSubcategories(children);
       }
       showToast('Section removed', 'info');
     } catch (e) {
@@ -1199,15 +1208,35 @@ export default function ProductsScreen() {
             await MatrixRepository.deleteSubTab(storeId, item.id, deviceId);
             const remaining = subcategories.filter((s) => s.id !== item.id);
             setSubcategories(remaining);
+            setChildSubcategories((prev) => prev.filter((s) => s.id !== item.id));
+            setBreadcrumbPath((prev) => prev.filter((s) => s.id !== item.id));
 
             if (activeSubcategoryId === item.id) {
               const nextSub = remaining[0]?.id || '';
               setActiveSubcategoryId(nextSub);
               if (nextSub) {
+                const nextChildren = await MatrixRepository.ensureDefaultSubTabs(
+                  storeId,
+                  selectedCategoryId,
+                  '',
+                  deviceId,
+                  nextSub
+                );
+                setChildSubcategories(nextChildren);
                 await loadMatrix(selectedCategoryId, nextSub);
               } else {
+                setChildSubcategories([]);
                 setMatrixData({ brands: [], sizes: [], cells: {} });
               }
+            } else if (activeSubcategoryId) {
+              const nextChildren = await MatrixRepository.ensureDefaultSubTabs(
+                storeId,
+                selectedCategoryId,
+                '',
+                deviceId,
+                activeSubcategoryId
+              );
+              setChildSubcategories(nextChildren);
             }
             showToast(`Section "${item.name}" deleted`, 'info');
           }
