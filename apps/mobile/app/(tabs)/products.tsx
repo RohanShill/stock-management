@@ -62,6 +62,8 @@ export default function ProductsScreen() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [activeSubcategoryId, setActiveSubcategoryId] = useState<string>('');
+  const [breadcrumbPath, setBreadcrumbPath] = useState<Subcategory[]>([]);
+  const [childSubcategories, setChildSubcategories] = useState<Subcategory[]>([]);
 
   // Matrix Grid State
   const [matrixData, setMatrixData] = useState<MatrixGridData>({
@@ -170,9 +172,11 @@ export default function ProductsScreen() {
     try {
       setLoading(true);
       setSelectedCategoryId(catId);
-      // Immediately reset subcategories and matrixData so previous category data never leaks into new category
+      // Immediately reset subcategories, breadcrumbs, and matrixData so previous category data never leaks into new category
       setSubcategories([]);
       setActiveSubcategoryId('');
+      setBreadcrumbPath([]);
+      setChildSubcategories([]);
       setMatrixData({ brands: [], sizes: [], cells: {} });
       setSelectedCell(null);
       setSelectedCellKey(null);
@@ -184,12 +188,13 @@ export default function ProductsScreen() {
       const cat = list.find((c) => c.id === catId);
       const catName = cat?.name || '';
 
-      // Queries active sub-tabs strictly belonging to this category (no default sections injected)
+      // Queries active root sections strictly belonging to this category (parentId = null)
       const subtabs = await MatrixRepository.ensureDefaultSubTabs(
         storeId,
         catId,
         catName,
-        deviceId
+        deviceId,
+        null
       );
       setSubcategories(subtabs);
 
@@ -198,6 +203,20 @@ export default function ProductsScreen() {
         : subtabs[0]?.id || '';
 
       setActiveSubcategoryId(activeSub);
+
+      if (activeSub) {
+        const children = await MatrixRepository.ensureDefaultSubTabs(
+          storeId,
+          catId,
+          catName,
+          deviceId,
+          activeSub
+        );
+        setChildSubcategories(children);
+      } else {
+        setChildSubcategories([]);
+      }
+
       await loadMatrix(catId, activeSub);
     } catch (e: any) {
       console.error('Error switching category:', e);
@@ -302,38 +321,217 @@ export default function ProductsScreen() {
   );
 
   /**
-   * Handle sub-tab selection (e.g. switching between Pipes, Pipe Fittings, Others)
+   * Handle sub-tab selection (switching sibling subcategories at current view level)
    */
   const handleSelectSubTab = async (subcatId: string) => {
     setActiveSubcategoryId(subcatId);
+    if (subcatId) {
+      const storeId = store?.id || 'store-1';
+      const children = await MatrixRepository.ensureDefaultSubTabs(
+        storeId,
+        selectedCategoryId,
+        '',
+        deviceId,
+        subcatId
+      );
+      setChildSubcategories(children);
+    } else {
+      setChildSubcategories([]);
+    }
     await loadMatrix(selectedCategoryId, subcatId);
   };
 
   /**
-   * Add a custom sub-tab dynamically via the '+' button
+   * Drill down / step into a child subcategory
    */
-  const handleAddSubTab = async (tabName: string) => {
+  const handleEnterChildSubcategory = async (child: Subcategory) => {
     try {
+      setLoading(true);
       const storeId = store?.id || 'store-1';
-      const created = await MatrixRepository.addSubTab(
+
+      // 1. Resolve full breadcrumb trail for this node
+      const path = await MatrixRepository.getBreadcrumbPath(storeId, child.id);
+      setBreadcrumbPath(path);
+
+      // 2. Fetch all siblings sharing the child's parentId
+      const siblings = await MatrixRepository.ensureDefaultSubTabs(
         storeId,
         selectedCategoryId,
-        tabName,
-        deviceId
+        '',
+        deviceId,
+        child.parentId || null
       );
+      setSubcategories(siblings);
+      setActiveSubcategoryId(child.id);
 
-      setSubcategories((prev) => [...prev, created]);
-      setActiveSubcategoryId(created.id);
-      await loadMatrix(selectedCategoryId, created.id);
-      showToast(`Section "${tabName}" added!`, 'success');
-    } catch (e) {
-      console.error('Error adding sub-tab:', e);
-      showToast('Could not add section', 'error');
+      // 3. Fetch any children under this child node
+      const nextChildren = await MatrixRepository.ensureDefaultSubTabs(
+        storeId,
+        selectedCategoryId,
+        '',
+        deviceId,
+        child.id
+      );
+      setChildSubcategories(nextChildren);
+
+      // 4. Load 2D Matrix Table specifically for this child
+      await loadMatrix(selectedCategoryId, child.id);
+    } catch (e: any) {
+      console.error('Error entering child subcategory:', e);
+      showToast(e?.message || 'Could not open subsection', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
   /**
-   * Delete a Sub-Tab dynamically via the 'x' button
+   * Navigate back one level in the hierarchy
+   */
+  const handleGoBack = async () => {
+    if (breadcrumbPath.length === 0) return;
+    try {
+      setLoading(true);
+      const storeId = store?.id || 'store-1';
+      const newPath = breadcrumbPath.slice(0, -1);
+      setBreadcrumbPath(newPath);
+
+      let targetActiveId = '';
+      if (newPath.length === 0) {
+        // Returned to root category sections
+        const rootSubs = await MatrixRepository.ensureDefaultSubTabs(
+          storeId,
+          selectedCategoryId,
+          '',
+          deviceId,
+          null
+        );
+        setSubcategories(rootSubs);
+        const lastRoot = breadcrumbPath[0];
+        targetActiveId = rootSubs.find((s) => s.id === lastRoot?.id)?.id || rootSubs[0]?.id || '';
+      } else {
+        const parentNode = newPath[newPath.length - 1];
+        const siblings = await MatrixRepository.ensureDefaultSubTabs(
+          storeId,
+          selectedCategoryId,
+          '',
+          deviceId,
+          parentNode.parentId || null
+        );
+        setSubcategories(siblings);
+        targetActiveId = parentNode.id;
+      }
+
+      setActiveSubcategoryId(targetActiveId);
+
+      if (targetActiveId) {
+        const children = await MatrixRepository.ensureDefaultSubTabs(
+          storeId,
+          selectedCategoryId,
+          '',
+          deviceId,
+          targetActiveId
+        );
+        setChildSubcategories(children);
+      } else {
+        setChildSubcategories([]);
+      }
+
+      await loadMatrix(selectedCategoryId, targetActiveId);
+    } catch (e: any) {
+      console.error('Error navigating back:', e);
+      showToast('Navigation error', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Jump directly to any level in the breadcrumb trail
+   */
+  const handleSelectBreadcrumb = async (index: number) => {
+    try {
+      setLoading(true);
+      const storeId = store?.id || 'store-1';
+
+      if (index === -1) {
+        // Jump all the way to root sections
+        setBreadcrumbPath([]);
+        const rootSubs = await MatrixRepository.ensureDefaultSubTabs(
+          storeId,
+          selectedCategoryId,
+          '',
+          deviceId,
+          null
+        );
+        setSubcategories(rootSubs);
+        const activeSub = rootSubs[0]?.id || '';
+        setActiveSubcategoryId(activeSub);
+
+        if (activeSub) {
+          const children = await MatrixRepository.ensureDefaultSubTabs(
+            storeId,
+            selectedCategoryId,
+            '',
+            deviceId,
+            activeSub
+          );
+          setChildSubcategories(children);
+        } else {
+          setChildSubcategories([]);
+        }
+        await loadMatrix(selectedCategoryId, activeSub);
+      } else if (index < breadcrumbPath.length - 1) {
+        const targetNode = breadcrumbPath[index];
+        await handleEnterChildSubcategory(targetNode);
+      }
+    } catch (e: any) {
+      console.error('Error selecting breadcrumb:', e);
+      showToast('Navigation error', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Add a custom sub-tab / sub-section dynamically
+   */
+  const handleAddSubTab = async (tabName: string, parentId?: string | null) => {
+    try {
+      const storeId = store?.id || 'store-1';
+      // If parentId is not explicitly passed, determine if we are currently at a nested view level
+      const effectiveParentId = parentId !== undefined
+        ? parentId
+        : (breadcrumbPath.length > 0 ? breadcrumbPath[breadcrumbPath.length - 1].parentId || null : null);
+
+      const created = await MatrixRepository.addSubTab(
+        storeId,
+        selectedCategoryId,
+        tabName,
+        deviceId,
+        effectiveParentId
+      );
+
+      if (parentId) {
+        // Added as child under active subcategory!
+        // Immediately drill into this newly created child
+        await handleEnterChildSubcategory(created);
+        showToast(`Sub-section "${tabName}" added!`, 'success');
+      } else {
+        // Added as sibling at the current view level
+        setSubcategories((prev) => [...prev, created]);
+        setActiveSubcategoryId(created.id);
+        setChildSubcategories([]);
+        await loadMatrix(selectedCategoryId, created.id);
+        showToast(`Section "${tabName}" added!`, 'success');
+      }
+    } catch (e: any) {
+      console.error('Error adding sub-tab:', e);
+      showToast(e?.message || 'Could not add section', 'error');
+    }
+  };
+
+  /**
+   * Delete a Sub-Tab dynamically
    */
   const handleDeleteSubTab = async (subcatId: string) => {
     try {
@@ -341,13 +539,23 @@ export default function ProductsScreen() {
       await MatrixRepository.deleteSubTab(storeId, subcatId, deviceId);
       const remaining = subcategories.filter((s) => s.id !== subcatId);
       setSubcategories(remaining);
+      setChildSubcategories((prev) => prev.filter((s) => s.id !== subcatId));
 
       if (activeSubcategoryId === subcatId) {
         const nextSub = remaining[0]?.id || '';
         setActiveSubcategoryId(nextSub);
         if (nextSub) {
+          const children = await MatrixRepository.ensureDefaultSubTabs(
+            storeId,
+            selectedCategoryId,
+            '',
+            deviceId,
+            nextSub
+          );
+          setChildSubcategories(children);
           await loadMatrix(selectedCategoryId, nextSub);
         } else {
+          setChildSubcategories([]);
           setMatrixData({ brands: [], sizes: [], cells: {} });
         }
       }
@@ -712,14 +920,21 @@ export default function ProductsScreen() {
     if (manageTarget.type === 'category') {
       return categories.findIndex((c) => c.id === manageTarget.item.id);
     } else {
-      return subcategories.findIndex((s) => s.id === manageTarget.item.id);
+      const idx = subcategories.findIndex((s) => s.id === manageTarget.item.id);
+      if (idx !== -1) return idx;
+      return childSubcategories.findIndex((s) => s.id === manageTarget.item.id);
     }
-  }, [manageTarget, categories, subcategories]);
+  }, [manageTarget, categories, subcategories, childSubcategories]);
 
   const currentManageTotal = useMemo(() => {
     if (!manageTarget) return 0;
-    return manageTarget.type === 'category' ? categories.length : subcategories.length;
-  }, [manageTarget, categories, subcategories]);
+    if (manageTarget.type === 'category') {
+      return categories.length;
+    } else {
+      const inSubs = subcategories.some((s) => s.id === manageTarget.item.id);
+      return inSubs ? subcategories.length : childSubcategories.length;
+    }
+  }, [manageTarget, categories, subcategories, childSubcategories]);
 
   const currentManageItemName = useMemo(() => {
     if (!manageTarget) return '';
@@ -727,10 +942,11 @@ export default function ProductsScreen() {
       const found = categories.find((c) => c.id === manageTarget.item.id);
       return found?.name || manageTarget.item.name;
     } else {
-      const found = subcategories.find((s) => s.id === manageTarget.item.id);
+      const found = subcategories.find((s) => s.id === manageTarget.item.id) ||
+                    childSubcategories.find((s) => s.id === manageTarget.item.id);
       return found?.name || manageTarget.item.name;
     }
-  }, [manageTarget, categories, subcategories]);
+  }, [manageTarget, categories, subcategories, childSubcategories]);
 
   const handleOpenManageModal = (type: 'category' | 'section', item: Category | Subcategory) => {
     setManageTarget({ type, item });
@@ -882,6 +1098,12 @@ export default function ProductsScreen() {
 
         await CategoryRepository.updateSubcategory(item.id, { name: clean }, storeId, deviceId);
         setSubcategories((prev) =>
+          prev.map((s) => (s.id === item.id ? { ...s, name: clean } : s))
+        );
+        setChildSubcategories((prev) =>
+          prev.map((s) => (s.id === item.id ? { ...s, name: clean } : s))
+        );
+        setBreadcrumbPath((prev) =>
           prev.map((s) => (s.id === item.id ? { ...s, name: clean } : s))
         );
         setManageRenameModalVisible(false);
@@ -1113,11 +1335,17 @@ export default function ProductsScreen() {
         </View>
       ) : (
         <>
-          {/* 2. Sub-Tabs Bar: [ + Add Section ] */}
+          {/* 2. Sub-Tabs Bar: Hierarchical Navigation & Nested Sub-sections */}
           <CategorySubTabs
+            categoryName={activeCategory?.name || 'Category'}
             subcategories={subcategories}
             activeSubcategoryId={activeSubcategoryId}
+            breadcrumbPath={breadcrumbPath}
+            childSubcategories={childSubcategories}
             onSelectSubcategory={handleSelectSubTab}
+            onEnterChildSubcategory={handleEnterChildSubcategory}
+            onSelectBreadcrumb={handleSelectBreadcrumb}
+            onGoBack={handleGoBack}
             onAddSubTab={handleAddSubTab}
             onLongPressSubcategory={(sub) => handleOpenManageModal('section', sub)}
             isDarkMode={isDarkMode}

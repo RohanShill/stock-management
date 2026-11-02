@@ -82,6 +82,8 @@ export class ProductRepository {
       id,
       storeId,
       categoryId: subcat.categoryId!,
+      parentId: subcat.parentId ?? null,
+      depth: subcat.depth ?? 1,
       name: subcat.name!,
       description: subcat.description,
       displayOrder: subcat.displayOrder ?? 0,
@@ -91,9 +93,9 @@ export class ProductRepository {
     };
 
     await db.runAsync(
-      `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);`,
-      [id, storeId, record.categoryId, record.name, record.description ?? null, record.displayOrder, now, now]
+      `INSERT INTO subcategories (id, storeId, categoryId, parentId, depth, name, description, displayOrder, active, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
+      [id, storeId, record.categoryId, record.parentId ?? null, record.depth ?? 1, record.name, record.description ?? null, record.displayOrder, now, now]
     );
 
     await SyncQueueRepository.enqueue(storeId, deviceId, 'subcategory', id, 'create', record as unknown as Record<string, unknown>);

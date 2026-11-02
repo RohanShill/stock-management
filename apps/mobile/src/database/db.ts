@@ -10,6 +10,8 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
     'ALTER TABLE categories ADD COLUMN icon TEXT;',
     'ALTER TABLE categories ADD COLUMN displayOrder INTEGER DEFAULT 0;',
     'ALTER TABLE subcategories ADD COLUMN displayOrder INTEGER DEFAULT 0;',
+    'ALTER TABLE subcategories ADD COLUMN parentId TEXT DEFAULT NULL;',
+    'ALTER TABLE subcategories ADD COLUMN depth INTEGER DEFAULT 1;',
     'ALTER TABLE products ADD COLUMN modelNumber TEXT;',
     'ALTER TABLE products ADD COLUMN imageUrl TEXT;',
     'ALTER TABLE products ADD COLUMN customValues TEXT;',

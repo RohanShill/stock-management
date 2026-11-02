@@ -203,7 +203,8 @@ export class CategoryRepository {
   static async getSubcategories(
     categoryId?: string,
     storeId?: string,
-    includeArchived = false
+    includeArchived = false,
+    parentId?: string | null
   ): Promise<Subcategory[]> {
     const db = await getDatabase();
     let sql = `SELECT * FROM subcategories WHERE 1=1`;
@@ -217,6 +218,12 @@ export class CategoryRepository {
       sql += ` AND categoryId = ?`;
       params.push(categoryId);
     }
+    if (parentId === null) {
+      sql += ` AND (parentId IS NULL OR parentId = '')`;
+    } else if (parentId !== undefined) {
+      sql += ` AND parentId = ?`;
+      params.push(parentId);
+    }
     if (!includeArchived) {
       sql += ` AND deletedAt IS NULL AND active = 1`;
     }
@@ -225,9 +232,40 @@ export class CategoryRepository {
     const rows = await db.getAllAsync<any>(sql, params);
     return rows.map((r) => ({
       ...r,
+      parentId: r.parentId ?? null,
+      depth: r.depth ?? 1,
       active: Boolean(r.active),
       displayOrder: r.displayOrder ?? 0,
     }));
+  }
+
+  static async getBreadcrumbPath(
+    subcategoryId: string,
+    storeId: string
+  ): Promise<Subcategory[]> {
+    const db = await getDatabase();
+    const path: Subcategory[] = [];
+    let currentId: string | null = subcategoryId;
+    let safetyCounter = 0;
+
+    while (currentId && safetyCounter < 10) {
+      safetyCounter++;
+      const row: any = await db.getFirstAsync<any>(
+        `SELECT * FROM subcategories WHERE id = ? AND storeId = ? AND deletedAt IS NULL;`,
+        [currentId, storeId]
+      );
+      if (!row) break;
+      path.unshift({
+        ...row,
+        parentId: row.parentId ?? null,
+        depth: row.depth ?? 1,
+        active: Boolean(row.active),
+        displayOrder: row.displayOrder ?? 0,
+      });
+      currentId = row.parentId || null;
+    }
+
+    return path;
   }
 
   static async createSubcategory(
@@ -239,10 +277,26 @@ export class CategoryRepository {
     const id = subcat.id || uuidv4();
     const now = new Date().toISOString();
 
+    let depth = subcat.depth ?? 1;
+    const parentId = subcat.parentId ?? null;
+
+    if (parentId) {
+      const parent = await db.getFirstAsync<{ depth: number }>(
+        `SELECT depth FROM subcategories WHERE id = ? AND storeId = ?;`,
+        [parentId, storeId]
+      );
+      depth = (parent?.depth || 1) + 1;
+      if (depth > 5) {
+        throw new Error('Maximum subsection depth (Level 4 under Section) reached.');
+      }
+    }
+
     const record: Subcategory = {
       id,
       storeId,
       categoryId: subcat.categoryId!,
+      parentId,
+      depth,
       name: subcat.name!,
       description: subcat.description,
       displayOrder: subcat.displayOrder ?? 0,
@@ -252,12 +306,14 @@ export class CategoryRepository {
     };
 
     await db.runAsync(
-      `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);`,
+      `INSERT INTO subcategories (id, storeId, categoryId, parentId, depth, name, description, displayOrder, active, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
       [
         id,
         storeId,
         record.categoryId,
+        record.parentId ?? null,
+        record.depth ?? 1,
         record.name,
         record.description ?? null,
         record.displayOrder,

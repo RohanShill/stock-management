@@ -34,16 +34,19 @@ const { mockTables, mockDb } = vi.hoisted(() => {
           updatedAt: params[7],
         });
       } else if (trimmed.startsWith('INSERT INTO SUBCATEGORIES')) {
+        const isHierarchical = params.length >= 10;
         tables.subcategories.push({
           id: params[0],
           storeId: params[1],
           categoryId: params[2],
-          name: params[3],
-          description: params[4],
-          displayOrder: params[5],
+          parentId: isHierarchical ? params[3] : null,
+          depth: isHierarchical ? params[4] : 1,
+          name: isHierarchical ? params[5] : params[3],
+          description: isHierarchical ? params[6] : params[4],
+          displayOrder: isHierarchical ? params[7] : params[5],
           active: 1,
-          createdAt: params[6],
-          updatedAt: params[7],
+          createdAt: isHierarchical ? params[8] : params[6],
+          updatedAt: isHierarchical ? params[9] : params[7],
         });
       } else if (trimmed.startsWith('INSERT INTO CUSTOM_FIELD_DEFINITIONS')) {
         tables.custom_field_definitions.push({
@@ -117,7 +120,14 @@ const { mockTables, mockDb } = vi.hoisted(() => {
         return tables.categories.filter((c) => !c.deletedAt);
       }
       if (trimmed.includes('FROM SUBCATEGORIES')) {
-        return tables.subcategories.filter((s) => !s.deletedAt);
+        let subs = tables.subcategories.filter((s) => !s.deletedAt);
+        if (sql.includes('parentId IS NULL')) {
+          subs = subs.filter((s) => !s.parentId);
+        } else if (sql.includes('parentId = ?')) {
+          const parentParam = params[params.length - 1];
+          subs = subs.filter((s) => s.parentId === parentParam);
+        }
+        return subs;
       }
       if (trimmed.includes('FROM CUSTOM_FIELD_DEFINITIONS')) {
         return tables.custom_field_definitions.filter((f) => !f.deletedAt);
@@ -223,6 +233,80 @@ describe('CategoryRepository Offline Operations', () => {
     expect(sub2.categoryId).toBe(cat.id);
     expect(mockTables.subcategories.length).toBe(2);
     expect(mockTables.sync_queue.filter((q) => q.entityType === 'subcategory').length).toBe(2);
+  });
+
+  it('supports 4 levels of nested subsections under a section (total depth 5) and enforces max limit', async () => {
+    const cat = await CategoryRepository.createCategory({ name: 'Plumbing & Pipes' }, 'store-1', 'dev-1');
+
+    // Level 1: Section (depth 1)
+    const l1Section = await CategoryRepository.createSubcategory(
+      { categoryId: cat.id, name: 'Water Pipes', parentId: null },
+      'store-1',
+      'dev-1'
+    );
+    expect(l1Section.depth).toBe(1);
+
+    // Level 2: Sub-section 1 (depth 2)
+    const l2Sub = await CategoryRepository.createSubcategory(
+      { categoryId: cat.id, name: 'UPVC Pipe', parentId: l1Section.id },
+      'store-1',
+      'dev-1'
+    );
+    expect(l2Sub.depth).toBe(2);
+    expect(l2Sub.parentId).toBe(l1Section.id);
+
+    // Level 3: Sub-section 2 (depth 3)
+    const l3Sub = await CategoryRepository.createSubcategory(
+      { categoryId: cat.id, name: 'Schedule 80', parentId: l2Sub.id },
+      'store-1',
+      'dev-1'
+    );
+    expect(l3Sub.depth).toBe(3);
+    expect(l3Sub.parentId).toBe(l2Sub.id);
+
+    // Level 4: Sub-section 3 (depth 4)
+    const l4Sub = await CategoryRepository.createSubcategory(
+      { categoryId: cat.id, name: '4-Metre', parentId: l3Sub.id },
+      'store-1',
+      'dev-1'
+    );
+    expect(l4Sub.depth).toBe(4);
+    expect(l4Sub.parentId).toBe(l3Sub.id);
+
+    // Level 5: Sub-section 4 (depth 5)
+    const l5Sub = await CategoryRepository.createSubcategory(
+      { categoryId: cat.id, name: 'Threaded End', parentId: l4Sub.id },
+      'store-1',
+      'dev-1'
+    );
+    expect(l5Sub.depth).toBe(5);
+    expect(l5Sub.parentId).toBe(l4Sub.id);
+
+    // Level 6: Should be rejected
+    await expect(
+      CategoryRepository.createSubcategory(
+        { categoryId: cat.id, name: 'Too Deep Subsection', parentId: l5Sub.id },
+        'store-1',
+        'dev-1'
+      )
+    ).rejects.toThrow('Maximum subsection depth (Level 4 under Section) reached.');
+
+    // Breadcrumb path from Level 5 to root
+    const breadcrumbs = await CategoryRepository.getBreadcrumbPath(l5Sub.id, 'store-1');
+    expect(breadcrumbs.map((b) => b.name)).toEqual([
+      'Water Pipes',
+      'UPVC Pipe',
+      'Schedule 80',
+      '4-Metre',
+      'Threaded End',
+    ]);
+
+    // Querying root sections vs child subcategories
+    const rootSections = await CategoryRepository.getSubcategories(cat.id, 'store-1', false, null);
+    expect(rootSections.map((s) => s.name)).toEqual(['Water Pipes']);
+
+    const l2Children = await CategoryRepository.getSubcategories(cat.id, 'store-1', false, l1Section.id);
+    expect(l2Children.map((s) => s.name)).toEqual(['UPVC Pipe']);
   });
 
   it('moves a subcategory safely to another parent category', async () => {

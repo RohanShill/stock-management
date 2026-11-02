@@ -65,25 +65,35 @@ export class MatrixRepository {
     storeId: string,
     categoryId: string,
     categoryName: string,
-    deviceId: string
+    deviceId: string,
+    parentId?: string | null
   ): Promise<Subcategory[]> {
     const db = await getDatabase();
 
-    // Query active subcategories belonging strictly to this category
-    const rows = await db.getAllAsync<any>(
-      `SELECT * FROM subcategories 
+    let sql = `SELECT * FROM subcategories 
        WHERE categoryId = ? 
          AND storeId = ? 
          AND deletedAt IS NULL 
          AND active = 1
          AND LOWER(name) != 'general'
-         AND id NOT LIKE 'demo-sub-%'
-       ORDER BY displayOrder ASC, createdAt ASC;`,
-      [categoryId, storeId]
-    );
+         AND id NOT LIKE 'demo-sub-%'`;
+    const params: any[] = [categoryId, storeId];
+
+    if (parentId === null || parentId === undefined) {
+      sql += ` AND (parentId IS NULL OR parentId = '')`;
+    } else {
+      sql += ` AND parentId = ?`;
+      params.push(parentId);
+    }
+
+    sql += ` ORDER BY displayOrder ASC, createdAt ASC;`;
+
+    const rows = await db.getAllAsync<any>(sql, params);
 
     return (rows || []).map((r) => ({
       ...r,
+      parentId: r.parentId ?? null,
+      depth: r.depth ?? 1,
       active: Boolean(r.active),
       displayOrder: r.displayOrder ?? 0,
     }));
@@ -821,23 +831,46 @@ export class MatrixRepository {
     storeId: string,
     categoryId: string,
     tabName: string,
-    deviceId: string
+    deviceId: string,
+    parentId?: string | null
   ): Promise<Subcategory> {
     const db = await getDatabase();
     const now = new Date().toISOString();
     const id = uuidv4();
 
-    // Get highest displayOrder
-    const lastRow = await db.getFirstAsync<{ maxOrder: number }>(
-      `SELECT MAX(displayOrder) as maxOrder FROM subcategories WHERE categoryId = ? AND storeId = ?;`,
-      [categoryId, storeId]
-    );
+    let depth = 1;
+    const parentIdClean = parentId ? parentId.trim() : null;
+
+    if (parentIdClean) {
+      const parentRow = await db.getFirstAsync<{ depth?: number }>(
+        `SELECT depth FROM subcategories WHERE id = ? AND storeId = ?;`,
+        [parentIdClean, storeId]
+      );
+      depth = (parentRow?.depth || 1) + 1;
+      if (depth > 5) {
+        throw new Error('Maximum subsection nesting (Level 4 under Section) reached.');
+      }
+    }
+
+    // Get highest displayOrder among siblings
+    let maxOrderSql = `SELECT MAX(displayOrder) as maxOrder FROM subcategories WHERE categoryId = ? AND storeId = ?`;
+    const maxOrderParams: any[] = [categoryId, storeId];
+    if (parentIdClean) {
+      maxOrderSql += ` AND parentId = ?;`;
+      maxOrderParams.push(parentIdClean);
+    } else {
+      maxOrderSql += ` AND (parentId IS NULL OR parentId = '');`;
+    }
+
+    const lastRow = await db.getFirstAsync<{ maxOrder: number }>(maxOrderSql, maxOrderParams);
     const displayOrder = (lastRow?.maxOrder || 0) + 1;
 
     const record: Subcategory = {
       id,
       storeId,
       categoryId,
+      parentId: parentIdClean,
+      depth,
       name: tabName.trim(),
       description: `${tabName.trim()} section`,
       displayOrder,
@@ -847,9 +880,9 @@ export class MatrixRepository {
     };
 
     await db.runAsync(
-      `INSERT INTO subcategories (id, storeId, categoryId, name, description, displayOrder, active, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);`,
-      [id, storeId, categoryId, record.name, record.description ?? null, record.displayOrder, now, now]
+      `INSERT INTO subcategories (id, storeId, categoryId, parentId, depth, name, description, displayOrder, active, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
+      [id, storeId, categoryId, record.parentId ?? null, record.depth ?? 1, record.name, record.description ?? null, record.displayOrder, now, now]
     );
 
     await SyncQueueRepository.enqueue(storeId, deviceId, 'subcategory', id, 'create', record as unknown as Record<string, unknown>);
@@ -857,7 +890,39 @@ export class MatrixRepository {
   }
 
   /**
-   * Deletes a sub-tab (subcategory) from database and cascades to its products
+   * Resolves the full breadcrumb path from the root section down to the given subcategory.
+   */
+  static async getBreadcrumbPath(
+    storeId: string,
+    subcategoryId: string
+  ): Promise<Subcategory[]> {
+    const db = await getDatabase();
+    const path: Subcategory[] = [];
+    let currentId: string | null = subcategoryId;
+    let safetyCounter = 0;
+
+    while (currentId && safetyCounter < 10) {
+      safetyCounter++;
+      const row: any = await db.getFirstAsync<any>(
+        `SELECT * FROM subcategories WHERE id = ? AND storeId = ? AND deletedAt IS NULL;`,
+        [currentId, storeId]
+      );
+      if (!row) break;
+      path.unshift({
+        ...row,
+        parentId: row.parentId ?? null,
+        depth: row.depth ?? 1,
+        active: Boolean(row.active),
+        displayOrder: row.displayOrder ?? 0,
+      });
+      currentId = row.parentId || null;
+    }
+
+    return path;
+  }
+
+  /**
+   * Deletes a sub-tab (subcategory) and recursively cascades to all nested child subcategories and their products
    */
   static async deleteSubTab(
     storeId: string,
@@ -867,12 +932,34 @@ export class MatrixRepository {
     const db = await getDatabase();
     const now = new Date().toISOString();
 
-    // 1. Cascade soft-delete variants
-    if (typeof db.getAllAsync === 'function') {
+    // 1. Recursively find all child subcategories under this node
+    const toDeleteIds: string[] = [subcategoryId];
+    let scanIdx = 0;
+    while (scanIdx < toDeleteIds.length) {
+      const currentParentId = toDeleteIds[scanIdx++];
+      try {
+        const children = await db.getAllAsync<{ id: string }>(
+          `SELECT id FROM subcategories WHERE storeId = ? AND parentId = ? AND deletedAt IS NULL;`,
+          [storeId, currentParentId]
+        );
+        if (children && children.length > 0) {
+          for (const ch of children) {
+            if (!toDeleteIds.includes(ch.id)) {
+              toDeleteIds.push(ch.id);
+            }
+          }
+        }
+      } catch {
+        // Safe fallback
+      }
+    }
+
+    // 2. Cascade soft-delete products and variants for all collected subcategories
+    for (const subId of toDeleteIds) {
       try {
         const prods = await db.getAllAsync<any>(
           `SELECT id FROM products WHERE storeId = ? AND subcategoryId = ?;`,
-          [storeId, subcategoryId]
+          [storeId, subId]
         );
         if (prods && prods.length > 0) {
           for (const p of prods) {
@@ -885,26 +972,24 @@ export class MatrixRepository {
       } catch {
         // Fallback
       }
+
+      await db.runAsync(
+        `UPDATE product_variants SET deletedAt = ?, active = 0 WHERE storeId = ? AND productId IN (SELECT id FROM products WHERE subcategoryId = ?);`,
+        [now, storeId, subId]
+      );
+
+      await db.runAsync(
+        `UPDATE products SET deletedAt = ?, active = 0 WHERE storeId = ? AND subcategoryId = ?;`,
+        [now, storeId, subId]
+      );
+
+      await db.runAsync(
+        `UPDATE subcategories SET deletedAt = ?, active = 0 WHERE id = ? AND storeId = ?;`,
+        [now, subId, storeId]
+      );
+
+      await SyncQueueRepository.enqueue(storeId, deviceId, 'subcategory', subId, 'delete', { deletedAt: now, active: false });
     }
-    await db.runAsync(
-      `UPDATE product_variants SET deletedAt = ?, active = 0 WHERE storeId = ? AND productId IN (SELECT id FROM products WHERE subcategoryId = ?);`,
-      [now, storeId, subcategoryId]
-    );
-
-    // 2. Soft-delete products
-    await db.runAsync(
-      `UPDATE products SET deletedAt = ?, active = 0 WHERE storeId = ? AND subcategoryId = ?;`,
-      [now, storeId, subcategoryId]
-    );
-
-    // 3. Soft-delete subcategory
-    await db.runAsync(
-      `UPDATE subcategories SET deletedAt = ?, active = 0 WHERE id = ? AND storeId = ?;`,
-      [now, subcategoryId, storeId]
-    );
-
-    // 4. Enqueue sync
-    await SyncQueueRepository.enqueue(storeId, deviceId, 'subcategory', subcategoryId, 'delete', { deletedAt: now, active: false });
   }
 
   /**

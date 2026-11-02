@@ -347,4 +347,63 @@ describe('MatrixRepository Utilities', () => {
     const data = await MatrixRepository.getMatrixData('store-1', 'cat-1', 'sub-1');
     expect(data.brands).toEqual(['Finolex', 'Supreme', 'Astral']);
   });
+
+  it('addSubTab supports creating child subsections with depth and enforces 4 levels under section (max depth 5)', async () => {
+    const subcats: any[] = [];
+    const mockDb = {
+      getFirstAsync: vi.fn().mockImplementation((sql: string, params: any[]) => {
+        if (sql.includes('SELECT depth FROM subcategories')) {
+          const found = subcats.find((s) => s.id === params[0]);
+          return Promise.resolve(found ? { depth: found.depth } : null);
+        }
+        if (sql.includes('SELECT MAX(displayOrder)')) {
+          return Promise.resolve({ maxOrder: subcats.length });
+        }
+        return Promise.resolve(null);
+      }),
+      runAsync: vi.fn().mockImplementation((sql: string, params: any[]) => {
+        if (sql.includes('INSERT INTO subcategories')) {
+          subcats.push({
+            id: params[0],
+            storeId: params[1],
+            categoryId: params[2],
+            parentId: params[3],
+            depth: params[4],
+            name: params[5],
+          });
+        }
+        return Promise.resolve({ changes: 1 });
+      }),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+
+    // Root section (depth 1)
+    const sec1 = await MatrixRepository.addSubTab('store-1', 'cat-1', 'dev-1', 'Water Pipes', null);
+    expect(sec1.depth).toBe(1);
+    expect(sec1.parentId).toBeNull();
+
+    // Subsection 1 (depth 2)
+    const sub1 = await MatrixRepository.addSubTab('store-1', 'cat-1', 'dev-1', 'UPVC Pipe', sec1.id);
+    expect(sub1.depth).toBe(2);
+    expect(sub1.parentId).toBe(sec1.id);
+
+    // Subsection 2 (depth 3)
+    const sub2 = await MatrixRepository.addSubTab('store-1', 'cat-1', 'dev-1', 'Schedule 80', sub1.id);
+    expect(sub2.depth).toBe(3);
+
+    // Subsection 3 (depth 4)
+    const sub3 = await MatrixRepository.addSubTab('store-1', 'cat-1', 'dev-1', '4-Metre', sub2.id);
+    expect(sub3.depth).toBe(4);
+
+    // Subsection 4 (depth 5)
+    const sub4 = await MatrixRepository.addSubTab('store-1', 'cat-1', 'dev-1', 'Threaded', sub3.id);
+    expect(sub4.depth).toBe(5);
+
+    // Exceeding depth 5 (attempting 5th level under section, depth 6) should throw
+    await expect(
+      MatrixRepository.addSubTab('store-1', 'cat-1', 'dev-1', 'Beyond Depth', sub4.id)
+    ).rejects.toThrow('Maximum subsection nesting (Level 4 under Section) reached.');
+  });
 });

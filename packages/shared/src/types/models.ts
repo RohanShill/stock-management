@@ -61,9 +61,12 @@ export interface Subcategory {
   id: string;
   storeId: string;
   categoryId: string;
+  parentId?: string | null;
+  depth?: number;
   name: string;
   description?: string;
   displayOrder: number;
+  customValues?: Record<string, any>;
   active: boolean;
   createdAt: string;
   updatedAt: string;

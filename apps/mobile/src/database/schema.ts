@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS subcategories (
   id TEXT PRIMARY KEY,
   storeId TEXT NOT NULL,
   categoryId TEXT NOT NULL,
+  parentId TEXT DEFAULT NULL,
+  depth INTEGER DEFAULT 1,
   name TEXT NOT NULL,
   description TEXT,
   displayOrder INTEGER DEFAULT 0,
@@ -46,9 +48,11 @@ CREATE TABLE IF NOT EXISTS subcategories (
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL,
   deletedAt TEXT,
-  FOREIGN KEY (categoryId) REFERENCES categories(id)
+  FOREIGN KEY (categoryId) REFERENCES categories(id),
+  FOREIGN KEY (parentId) REFERENCES subcategories(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_subcategories_cat ON subcategories(categoryId, displayOrder);
+CREATE INDEX IF NOT EXISTS idx_subcategories_parent ON subcategories(categoryId, parentId, displayOrder);
 
 -- Dynamic Custom Field Definitions
 CREATE TABLE IF NOT EXISTS custom_field_definitions (

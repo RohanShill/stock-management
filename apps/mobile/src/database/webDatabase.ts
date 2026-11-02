@@ -563,19 +563,27 @@ class WebSQLiteStore {
     for (const cond of conditions) {
       if (cond === '1=1') continue;
 
-      if (cond.toUpperCase().includes('IS NULL')) {
-        const col = cond.split(/\s+/)[0].trim().split('.').pop()!;
-        if (row[col] !== null && row[col] !== undefined) return false;
+      const cleanCond = cond.replace(/^\(+|\)+$/g, '').trim();
+
+      if (cleanCond.includes('parentId IS NULL') && cleanCond.toUpperCase().includes('OR')) {
+        const val = row['parentId'];
+        if (val !== null && val !== undefined && val !== '') return false;
         continue;
       }
 
-      if (cond.toUpperCase().includes('IS NOT NULL')) {
-        const col = cond.split(/\s+/)[0].trim().split('.').pop()!;
-        if (row[col] === null || row[col] === undefined) return false;
+      if (cleanCond.toUpperCase().includes('IS NULL')) {
+        const col = cleanCond.split(/\s+/)[0].trim().split('.').pop()!;
+        if (row[col] !== null && row[col] !== undefined && row[col] !== '') return false;
         continue;
       }
 
-      const inMatch = cond.match(/([\w.]+)\s+IN\s*\(([^)]+)\)/i);
+      if (cleanCond.toUpperCase().includes('IS NOT NULL')) {
+        const col = cleanCond.split(/\s+/)[0].trim().split('.').pop()!;
+        if (row[col] === null || row[col] === undefined || row[col] === '') return false;
+        continue;
+      }
+
+      const inMatch = cleanCond.match(/([\w.]+)\s+IN\s*\(([^)]+)\)/i);
       if (inMatch) {
         const col = inMatch[1].split('.').pop()!;
         const placeholderCount = inMatch[2].split(',').length;
@@ -585,7 +593,7 @@ class WebSQLiteStore {
         continue;
       }
 
-      const eqMatch = cond.match(/([\w.]+)\s*=\s*\?/);
+      const eqMatch = cleanCond.match(/([\w.]+)\s*=\s*\?/);
       if (eqMatch) {
         const col = eqMatch[1].split('.').pop()!;
         const expected = params[paramIdx++];
@@ -597,7 +605,7 @@ class WebSQLiteStore {
         continue;
       }
 
-      const eqLitMatch = cond.match(/([\w.]+)\s*=\s*([^\s?]+)/);
+      const eqLitMatch = cleanCond.match(/([\w.]+)\s*=\s*([^\s?]+)/);
       if (eqLitMatch) {
         const col = eqLitMatch[1].split('.').pop()!;
         const rawVal = eqLitMatch[2].replace(/^['"]|['"]$/g, '');
@@ -607,7 +615,7 @@ class WebSQLiteStore {
         continue;
       }
 
-      const likeMatch = cond.match(/([\w.]+)\s+LIKE\s+\?/i);
+      const likeMatch = cleanCond.match(/([\w.]+)\s+LIKE\s+\?/i);
       if (likeMatch) {
         const col = likeMatch[1].split('.').pop()!;
         const pattern = String(params[paramIdx++]).replace(/%/g, '.*');
