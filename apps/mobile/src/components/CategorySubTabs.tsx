@@ -11,18 +11,17 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Subcategory } from '@hardware-store/shared';
 import { useAppStore } from '../store/useAppStore.js';
-import { borderRadius, spacing, getThemeShadows } from '../theme/tokens.js';
+import { borderRadius, getThemeShadows } from '../theme/tokens.js';
 
 interface CategorySubTabsProps {
   categoryName: string;
-  subcategories: Subcategory[];
-  activeSubcategoryId: string;
-  breadcrumbPath: Subcategory[];
-  childSubcategories: Subcategory[];
+  subcategories: Subcategory[]; // Root sections (Level 1)
+  activeRootSectionId: string;
+  activeSubcategoryId: string; // The currently active node (root or child) whose matrix is displayed
+  childSubcategories: Subcategory[]; // Children of activeRootSection (Level 2)
+  level3Subcategories?: Subcategory[]; // Children of activeSubcategory (Level 3) if activeSubcategory is Level 2
+  onSelectRootSection: (sectionId: string) => void;
   onSelectSubcategory: (subcatId: string) => void;
-  onEnterChildSubcategory: (child: Subcategory) => void;
-  onSelectBreadcrumb: (index: number) => void;
-  onGoBack: () => void;
   onAddSubTab: (name: string, parentId?: string | null, isChild?: boolean) => Promise<void>;
   onDeleteSubTab?: (subcatId: string) => Promise<void> | void;
   onLongPressSubcategory?: (subcat: Subcategory) => void;
@@ -33,13 +32,12 @@ interface CategorySubTabsProps {
 export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
   categoryName,
   subcategories,
+  activeRootSectionId,
   activeSubcategoryId,
-  breadcrumbPath,
   childSubcategories,
+  level3Subcategories = [],
+  onSelectRootSection,
   onSelectSubcategory,
-  onEnterChildSubcategory,
-  onSelectBreadcrumb,
-  onGoBack,
   onAddSubTab,
   onLongPressSubcategory,
   isDarkMode,
@@ -55,9 +53,11 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
   const themeShadows = getThemeShadows(isDarkMode);
   const { showToast } = useAppStore();
 
-  const activeSubcategory = subcategories.find((s) => s.id === activeSubcategoryId);
-  const currentDepth: number = activeSubcategory?.depth ?? (breadcrumbPath.length > 0 ? (breadcrumbPath[breadcrumbPath.length - 1].depth ?? 1) : 1);
-  const isNested = breadcrumbPath.length > 1;
+  const activeRootSection = subcategories.find((s) => s.id === activeRootSectionId) || subcategories[0] || null;
+  const isViewingChild = Boolean(activeRootSection && activeSubcategoryId !== activeRootSection.id);
+  const activeLevel3 = level3Subcategories.find((s) => s.id === activeSubcategoryId);
+  const activeChild = childSubcategories.find((s) => s.id === activeSubcategoryId) ||
+    (activeLevel3 ? childSubcategories.find((s) => s.id === activeLevel3.parentId) : undefined);
 
   const openAddModal = (
     parentId: string | null = null,
@@ -76,7 +76,9 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
     if (!clean || submitting) return;
 
     // Check duplicate
-    const checkList = modalIsChild ? childSubcategories : subcategories;
+    const checkList = modalIsChild
+      ? (activeChild && modalParentId === activeChild.id ? level3Subcategories : childSubcategories)
+      : subcategories;
     if (checkList.some((s) => s.name.toLowerCase() === clean.toLowerCase())) {
       showToast(`"${clean}" already exists here.`, 'warning');
       return;
@@ -106,112 +108,24 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
         themeShadows.card,
       ]}
     >
-      {/* 1. Header Bar: Breadcrumb + Back OR Section Title */}
-      {isNested ? (
-        <View style={styles.navBar}>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={onGoBack}
-            style={[
-              styles.backBtn,
-              {
-                backgroundColor: isDarkMode ? activeColors.surface : activeColors.surfaceSubtle,
-                borderColor: activeColors.primary,
-              },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="arrow-left"
-              size={13}
-              color={activeColors.primary}
-            />
-            <Text style={[styles.backBtnText, { color: activeColors.primary }]}>
-              Back
-            </Text>
-          </TouchableOpacity>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.breadcrumbScroll}
-          >
-            {/* Category root */}
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => onSelectBreadcrumb(-1)}
-              style={styles.crumbChip}
-            >
-              <MaterialCommunityIcons
-                name="folder-outline"
-                size={12}
-                color={activeColors.textMuted}
-              />
-              <Text style={[styles.crumbText, { color: activeColors.textMuted }]}>
-                {categoryName}
-              </Text>
-            </TouchableOpacity>
-
-            {breadcrumbPath.map((node, idx) => {
-              const isLast = idx === breadcrumbPath.length - 1;
-              return (
-                <React.Fragment key={node.id}>
-                  <Text style={[styles.crumbSeparator, { color: activeColors.textMuted }]}>
-                    ›
-                  </Text>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => onSelectBreadcrumb(idx)}
-                    style={[
-                      styles.crumbChip,
-                      isLast && {
-                        backgroundColor: activeColors.primaryLight,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.crumbText,
-                        {
-                          color: isLast ? activeColors.primary : activeColors.textSecondary,
-                          fontWeight: isLast ? '700' : '500',
-                        },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {node.name}
-                    </Text>
-                  </TouchableOpacity>
-                </React.Fragment>
-              );
-            })}
-          </ScrollView>
-
-          <View
-            style={[
-              styles.levelBadge,
-              { backgroundColor: activeColors.primaryLight },
-            ]}
-          >
-            <Text style={[styles.levelBadgeText, { color: activeColors.primary }]}>
-              Lvl {currentDepth}/5
-            </Text>
-          </View>
-        </View>
-      ) : (
-        <View style={styles.topHeaderRow}>
-          <View style={styles.headerLeft}>
+      {/* ========================================================= */}
+      {/* TIER 1: MAIN SECTIONS (Level 1)                          */}
+      {/* ========================================================= */}
+      <View style={styles.tierSection}>
+        <View style={styles.tierHeader}>
+          <View style={styles.tierHeaderLeft}>
             <MaterialCommunityIcons
               name="layers-outline"
-              size={15}
+              size={14}
               color={activeColors.primary}
             />
             <Text
               style={[
-                styles.headerTitle,
+                styles.tierTitle,
                 { color: activeColors.textPrimary },
               ]}
             >
-              {categoryName.toUpperCase()} SECTIONS
+              1. MAIN SECTIONS IN {categoryName.toUpperCase()}
             </Text>
             <View
               style={[
@@ -233,60 +147,71 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
               </Text>
             </View>
           </View>
+
           <View
             style={[
-              styles.levelBadge,
+              styles.depthBadge,
               {
-                backgroundColor: isDarkMode
+                backgroundColor: !isViewingChild
+                  ? activeColors.primaryLight
+                  : isDarkMode
                   ? activeColors.surface
                   : activeColors.surfaceSubtle,
               },
             ]}
           >
-            <Text style={[styles.levelBadgeText, { color: activeColors.textMuted }]}>
+            <Text
+              style={[
+                styles.depthBadgeText,
+                {
+                  color: !isViewingChild
+                    ? activeColors.primary
+                    : activeColors.textMuted,
+                },
+              ]}
+            >
               Level 1
             </Text>
           </View>
         </View>
-      )}
 
-      {/* 2. Sibling Tabs Row (Current Level) */}
-      <View style={styles.tabsRowWrap}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabsScrollContent}
+          contentContainerStyle={styles.scrollRow}
         >
           {subcategories.map((sub) => {
-            const isActive = sub.id === activeSubcategoryId;
+            const isRootActive = sub.id === activeRootSection?.id;
             return (
               <TouchableOpacity
                 key={sub.id}
                 activeOpacity={0.75}
-                onPress={() => onSelectSubcategory(sub.id)}
+                onPress={() => onSelectRootSection(sub.id)}
                 onLongPress={() => onLongPressSubcategory?.(sub)}
                 delayLongPress={350}
                 style={[
-                  styles.tabPill,
+                  styles.mainPill,
                   {
-                    backgroundColor: isActive
+                    backgroundColor: isRootActive
                       ? activeColors.primary
                       : isDarkMode
                       ? activeColors.surface
                       : activeColors.surfaceSubtle,
-                    borderColor: isActive
+                    borderColor: isRootActive
                       ? activeColors.primary
                       : activeColors.border,
                   },
-                  isActive && themeShadows.card,
+                  isRootActive && themeShadows.card,
                 ]}
               >
-                {isActive && <View style={styles.tabActiveDot} />}
+                {isRootActive && <View style={styles.whiteDot} />}
                 <Text
                   style={[
-                    styles.tabPillText,
+                    styles.mainPillText,
                     {
-                      color: isActive ? '#FFFFFF' : activeColors.textSecondary,
+                      color: isRootActive
+                        ? '#FFFFFF'
+                        : activeColors.textSecondary,
                     },
                   ]}
                   numberOfLines={1}
@@ -297,22 +222,12 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
             );
           })}
 
-          {/* Add Sibling Button */}
+          {/* Add Main Section Button */}
           <TouchableOpacity
             activeOpacity={0.75}
-            onPress={() =>
-              openAddModal(
-                isNested
-                  ? (breadcrumbPath[breadcrumbPath.length - 1]?.parentId || null)
-                  : null,
-                isNested
-                  ? (breadcrumbPath[breadcrumbPath.length - 2]?.name || '')
-                  : '',
-                false
-              )
-            }
+            onPress={() => openAddModal(null, '', false)}
             style={[
-              styles.addPillBtn,
+              styles.addDashedBtn,
               {
                 backgroundColor: isDarkMode
                   ? activeColors.surface
@@ -323,26 +238,29 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
           >
             <MaterialCommunityIcons
               name="plus"
-              size={14}
+              size={13}
               color={activeColors.primary}
             />
             <Text
               style={[
-                styles.addPillText,
+                styles.addDashedText,
                 { color: activeColors.primary },
               ]}
             >
-              {isNested ? 'Sibling' : 'Section'}
+              Section
             </Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
 
-      {/* 3. Sub-Sections Explorer (Next Level) */}
-      {activeSubcategory && (
+      {/* ========================================================= */}
+      {/* TIER 2: SUB-SECTIONS (Level 2 under Active Root Section) */}
+      {/* ========================================================= */}
+      {activeRootSection && (
         <View
           style={[
-            styles.childContainer,
+            styles.tierSection,
+            styles.tierDivider,
             {
               borderTopColor: isDarkMode
                 ? activeColors.surface
@@ -350,8 +268,8 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
             },
           ]}
         >
-          <View style={styles.childHeaderRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1 }}>
+          <View style={styles.tierHeader}>
+            <View style={styles.tierHeaderLeft}>
               <MaterialCommunityIcons
                 name="subdirectory-arrow-right"
                 size={14}
@@ -359,182 +277,335 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
               />
               <Text
                 style={[
-                  styles.childHeading,
+                  styles.tierTitle,
                   { color: activeColors.textSecondary },
                 ]}
                 numberOfLines={1}
               >
-                Sub-sections of{' '}
-                <Text style={{ fontWeight: '700', color: activeColors.textPrimary }}>
-                  "{activeSubcategory.name}"
+                2. SUB-SECTIONS OF{' '}
+                <Text style={{ fontWeight: '800', color: activeColors.textPrimary }}>
+                  "{activeRootSection.name}"
                 </Text>
                 :
               </Text>
             </View>
-            {childSubcategories.length > 0 && currentDepth < 5 && (
-              <Text style={[styles.childHint, { color: activeColors.textMuted }]}>
-                Tap to enter
+
+            <View
+              style={[
+                styles.depthBadge,
+                {
+                  backgroundColor: isViewingChild && !activeLevel3
+                    ? activeColors.primaryLight
+                    : isDarkMode
+                    ? activeColors.surface
+                    : activeColors.surfaceSubtle,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.depthBadgeText,
+                  {
+                    color: isViewingChild && !activeLevel3
+                      ? activeColors.primary
+                      : activeColors.textMuted,
+                  },
+                ]}
+              >
+                Level 2
               </Text>
-            )}
+            </View>
           </View>
 
-          {childSubcategories.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.childScrollContent}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.scrollRow}
+          >
+            {/* Option A: Direct Section Stock */}
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => onSelectSubcategory(activeRootSection.id)}
+              style={[
+                styles.subPill,
+                !isViewingChild && styles.subPillActiveHighlight,
+                {
+                  backgroundColor: !isViewingChild
+                    ? activeColors.primaryLight
+                    : isDarkMode
+                    ? activeColors.surface
+                    : activeColors.surfaceSubtle,
+                  borderColor: !isViewingChild
+                    ? activeColors.primary
+                    : activeColors.border,
+                },
+              ]}
             >
-              {childSubcategories.map((child) => (
+              <MaterialCommunityIcons
+                name="package-variant-closed"
+                size={13}
+                color={!isViewingChild ? activeColors.primary : activeColors.textMuted}
+              />
+              <Text
+                style={[
+                  styles.subPillText,
+                  {
+                    color: !isViewingChild
+                      ? activeColors.primary
+                      : activeColors.textSecondary,
+                    fontWeight: !isViewingChild ? '800' : '600',
+                  },
+                ]}
+              >
+                {!isViewingChild ? `✓ Main: ${activeRootSection.name}` : `Main: ${activeRootSection.name}`}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Child Sub-sections (Level 2) */}
+            {childSubcategories.map((child) => {
+              const isThisChildDirectlyActive = child.id === activeSubcategoryId;
+              const isThisChildBranchActive = activeLevel3?.parentId === child.id;
+              const isHighlighted = isThisChildDirectlyActive || isThisChildBranchActive;
+
+              return (
                 <TouchableOpacity
                   key={child.id}
                   activeOpacity={0.75}
-                  onPress={() => onEnterChildSubcategory(child)}
+                  onPress={() => onSelectSubcategory(child.id)}
                   onLongPress={() => onLongPressSubcategory?.(child)}
                   delayLongPress={350}
                   style={[
-                    styles.childCard,
+                    styles.subPill,
+                    isHighlighted && styles.subPillActiveHighlight,
                     {
-                      backgroundColor: isDarkMode
+                      backgroundColor: isThisChildDirectlyActive
+                        ? activeColors.primary
+                        : isThisChildBranchActive
+                        ? activeColors.primaryLight
+                        : isDarkMode
                         ? activeColors.surface
-                        : '#FFFFFF',
-                      borderColor: activeColors.border,
+                        : activeColors.surfaceSubtle,
+                      borderColor: isHighlighted
+                        ? activeColors.primary
+                        : activeColors.border,
                     },
+                    isThisChildDirectlyActive && themeShadows.card,
                   ]}
                 >
                   <MaterialCommunityIcons
-                    name="folder-outline"
-                    size={12}
-                    color={activeColors.primary}
-                    style={{ marginRight: 4 }}
+                    name={isThisChildDirectlyActive ? 'check' : isThisChildBranchActive ? 'folder-open' : 'folder-outline'}
+                    size={13}
+                    color={
+                      isThisChildDirectlyActive
+                        ? '#FFFFFF'
+                        : isThisChildBranchActive
+                        ? activeColors.primary
+                        : activeColors.primary
+                    }
                   />
                   <Text
                     style={[
-                      styles.childCardName,
-                      { color: activeColors.textPrimary },
+                      styles.subPillText,
+                      {
+                        color: isThisChildDirectlyActive
+                          ? '#FFFFFF'
+                          : isThisChildBranchActive
+                          ? activeColors.primary
+                          : activeColors.textPrimary,
+                        fontWeight: isHighlighted ? '800' : '600',
+                      },
                     ]}
                     numberOfLines={1}
                   >
                     {child.name}
                   </Text>
-                  <MaterialCommunityIcons
-                    name="chevron-right"
-                    size={13}
-                    color={activeColors.textMuted}
-                    style={{ marginLeft: 2 }}
-                  />
                 </TouchableOpacity>
-              ))}
+              );
+            })}
 
-              {currentDepth < 5 && (
-                <TouchableOpacity
-                  activeOpacity={0.75}
-                  onPress={() =>
-                    openAddModal(activeSubcategory.id, activeSubcategory.name, true)
-                  }
-                  style={[
-                    styles.addChildCardBtn,
-                    {
-                      backgroundColor: isDarkMode
-                        ? activeColors.surface
-                        : activeColors.surfaceSubtle,
-                      borderColor: activeColors.primary,
-                    },
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    name="plus"
-                    size={13}
-                    color={activeColors.primary}
-                  />
-                  <Text
-                    style={[
-                      styles.addChildCardText,
-                      { color: activeColors.primary },
-                    ]}
-                  >
-                    Sub-section
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </ScrollView>
-          ) : (
-            /* Clean, informative card when no child subsections exist */
-            <View style={styles.emptyChildWrap}>
-              {currentDepth < 5 ? (
-                <TouchableOpacity
-                  activeOpacity={0.75}
-                  onPress={() =>
-                    openAddModal(activeSubcategory.id, activeSubcategory.name, true)
-                  }
-                  style={[
-                    styles.emptyAddBtn,
-                    {
-                      backgroundColor: isDarkMode
-                        ? activeColors.surface
-                        : activeColors.surfaceSubtle,
-                      borderColor: activeColors.border,
-                    },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.emptyIconCircle,
-                      { backgroundColor: activeColors.primaryLight },
-                    ]}
-                  >
-                    <MaterialCommunityIcons
-                      name="plus"
-                      size={14}
-                      color={activeColors.primary}
-                    />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 8 }}>
-                    <Text
-                      style={[
-                        styles.emptyAddTitle,
-                        { color: activeColors.primary },
-                      ]}
-                    >
-                      + Add Sub-section inside "{activeSubcategory.name}"
-                    </Text>
-                    <Text
-                      style={[
-                        styles.emptyAddSub,
-                        { color: activeColors.textMuted },
-                      ]}
-                    >
-                      e.g. UPVC, Schedule 80, Thickness (Or enter stock in matrix below)
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ) : (
-                <View
-                  style={[
-                    styles.maxLevelPill,
-                    { backgroundColor: activeColors.surfaceSubtle },
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    name="check-circle-outline"
-                    size={14}
-                    color={activeColors.textMuted}
-                  />
-                  <Text
-                    style={[
-                      styles.maxLevelText,
-                      { color: activeColors.textMuted },
-                    ]}
-                  >
-                    Max nesting level 5 reached — Manage stock in matrix below
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
+            {/* Add Sub-section Button */}
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() =>
+                openAddModal(activeRootSection.id, activeRootSection.name, true)
+              }
+              style={[
+                styles.addDashedBtn,
+                {
+                  backgroundColor: isDarkMode
+                    ? activeColors.surface
+                    : activeColors.surfaceSubtle,
+                  borderColor: activeColors.primary,
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="plus"
+                size={13}
+                color={activeColors.primary}
+              />
+              <Text
+                style={[
+                  styles.addDashedText,
+                  { color: activeColors.primary },
+                ]}
+              >
+                Sub-section
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
       )}
 
-      {/* Modal for Adding New Section or Nested Sub-Section */}
+      {/* ========================================================= */}
+      {/* TIER 3: NESTED SUB-SECTIONS (Level 3 under active Level 2) */}
+      {/* ========================================================= */}
+      {isViewingChild && activeChild && (
+        <View
+          style={[
+            styles.tierSection,
+            styles.tierDivider,
+            {
+              borderTopColor: isDarkMode
+                ? activeColors.surface
+                : activeColors.border,
+            },
+          ]}
+        >
+          <View style={styles.tierHeader}>
+            <View style={styles.tierHeaderLeft}>
+              <MaterialCommunityIcons
+                name="subdirectory-arrow-right"
+                size={14}
+                color={activeColors.primary}
+              />
+              <Text
+                style={[
+                  styles.tierTitle,
+                  { color: activeColors.textSecondary },
+                ]}
+                numberOfLines={1}
+              >
+                3. NESTED SUB-SECTIONS OF{' '}
+                <Text style={{ fontWeight: '800', color: activeColors.textPrimary }}>
+                  "{activeChild.name}"
+                </Text>
+                :
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.depthBadge,
+                {
+                  backgroundColor: activeLevel3
+                    ? activeColors.primaryLight
+                    : isDarkMode
+                    ? activeColors.surface
+                    : activeColors.surfaceSubtle,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.depthBadgeText,
+                  {
+                    color: activeLevel3
+                      ? activeColors.primary
+                      : activeColors.textMuted,
+                  },
+                ]}
+              >
+                Level 3
+              </Text>
+            </View>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.scrollRow}
+          >
+            {level3Subcategories.map((l3) => {
+              const isL3Active = l3.id === activeSubcategoryId;
+              return (
+                <TouchableOpacity
+                  key={l3.id}
+                  activeOpacity={0.75}
+                  onPress={() => onSelectSubcategory(l3.id)}
+                  onLongPress={() => onLongPressSubcategory?.(l3)}
+                  delayLongPress={350}
+                  style={[
+                    styles.subPill,
+                    {
+                      backgroundColor: isL3Active
+                        ? activeColors.primary
+                        : isDarkMode
+                        ? activeColors.surface
+                        : activeColors.surfaceSubtle,
+                      borderColor: isL3Active
+                        ? activeColors.primary
+                        : activeColors.border,
+                    },
+                    isL3Active && themeShadows.card,
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name={isL3Active ? 'check' : 'folder-outline'}
+                    size={13}
+                    color={isL3Active ? '#FFFFFF' : activeColors.primary}
+                  />
+                  <Text
+                    style={[
+                      styles.subPillText,
+                      {
+                        color: isL3Active
+                          ? '#FFFFFF'
+                          : activeColors.textPrimary,
+                        fontWeight: isL3Active ? '800' : '600',
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {l3.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+
+            {/* Add Level 3 Button */}
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => openAddModal(activeChild.id, activeChild.name, true)}
+              style={[
+                styles.addDashedBtn,
+                {
+                  backgroundColor: isDarkMode
+                    ? activeColors.surface
+                    : activeColors.surfaceSubtle,
+                  borderColor: activeColors.primary,
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="plus"
+                size={13}
+                color={activeColors.primary}
+              />
+              <Text
+                style={[
+                  styles.addDashedText,
+                  { color: activeColors.primary },
+                ]}
+              >
+                Level 3 Sub
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Modal for Adding New Section or Sub-Section */}
       <Modal
         visible={modalVisible}
         transparent
@@ -573,9 +644,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                   ]}
                 >
                   {modalIsChild
-                    ? `Add Sub-Section inside "${modalParentName || activeSubcategory?.name}"`
-                    : isNested
-                    ? `Add Sibling Sub-Section`
+                    ? `Add Sub-Section inside "${modalParentName || activeRootSection?.name}"`
                     : `Add New Section in ${categoryName}`}
                 </Text>
                 <Text
@@ -585,8 +654,8 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                   ]}
                 >
                   {modalIsChild
-                    ? 'e.g. UPVC Pipe, Schedule 80, 4-Metre, etc.'
-                    : 'e.g. Water Supply Pipes, Drainage Pipes, Fittings'}
+                    ? 'e.g. UPVC Pipe, Schedule 80, Thickness, etc.'
+                    : 'e.g. Water Supply Pipes, Drainage, Fittings'}
                 </Text>
               </View>
             </View>
@@ -653,8 +722,6 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                     ? 'Creating...'
                     : modalIsChild
                     ? '+ Add Sub-Section'
-                    : isNested
-                    ? '+ Add Sibling'
                     : '+ Create Section'}
                 </Text>
               </TouchableOpacity>
@@ -674,75 +741,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
   },
-  navBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  tierSection: {
+    paddingVertical: 8,
     paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 6,
-    gap: 8,
   },
-  backBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    gap: 4,
+  tierDivider: {
+    borderTopWidth: 1,
   },
-  backBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  breadcrumbScroll: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    flexGrow: 1,
-  },
-  crumbChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: borderRadius.sm,
-    gap: 3,
-  },
-  crumbText: {
-    fontSize: 12,
-  },
-  crumbSeparator: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginHorizontal: 1,
-  },
-  levelBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: borderRadius.full,
-  },
-  levelBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  topHeaderRow: {
+  tierHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 6,
+    marginBottom: 6,
   },
-  headerLeft: {
+  tierHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
+    flex: 1,
   },
-  headerTitle: {
+  tierTitle: {
     fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   countBadge: {
     paddingHorizontal: 6,
@@ -753,16 +774,21 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
-  tabsRowWrap: {
-    paddingBottom: 8,
+  depthBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
   },
-  tabsScrollContent: {
-    paddingHorizontal: 12,
-    gap: 8,
+  depthBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  scrollRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
-  tabPill: {
+  mainPill: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
@@ -770,121 +796,54 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
     borderWidth: 1,
   },
-  tabActiveDot: {
+  mainPillActive: {
+    // shadow handled by token
+  },
+  whiteDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: '#FFFFFF',
     marginRight: 6,
   },
-  tabPillText: {
+  mainPillText: {
     fontSize: 12,
     fontWeight: '700',
   },
-  addPillBtn: {
+  subPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    gap: 3,
-  },
-  addPillText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  childContainer: {
-    borderTopWidth: 1,
-    paddingTop: 8,
-    paddingBottom: 10,
     paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    gap: 5,
   },
-  childHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
+  subPillActiveHighlight: {
+    borderWidth: 1.5,
   },
-  childHeading: {
+  subPillText: {
     fontSize: 11,
-    fontWeight: '500',
   },
-  childHint: {
-    fontSize: 10,
-    fontStyle: 'italic',
-  },
-  childScrollContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  childCard: {
+  addDashedBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-  },
-  childCardName: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  addChildCardBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: borderRadius.full,
     borderWidth: 1,
     borderStyle: 'dashed',
     gap: 3,
   },
-  addChildCardText: {
+  addDashedText: {
     fontSize: 11,
     fontWeight: '700',
   },
-  emptyChildWrap: {
-    marginTop: 2,
+  tier2Wrap: {
+    paddingTop: 8,
   },
-  emptyAddBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-  },
-  emptyIconCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyAddTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  emptyAddSub: {
-    fontSize: 10,
-    marginTop: 1,
-  },
-  maxLevelPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: borderRadius.full,
-    gap: 5,
-    alignSelf: 'flex-start',
-  },
-  maxLevelText: {
-    fontSize: 10,
-    fontStyle: 'italic',
+  tier3Wrap: {
+    paddingTop: 8,
   },
   modalBackdrop: {
     flex: 1,
