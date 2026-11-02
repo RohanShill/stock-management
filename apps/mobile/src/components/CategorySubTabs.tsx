@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Modal,
   TextInput,
-  Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Subcategory } from '@hardware-store/shared';
@@ -42,7 +41,6 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
   onSelectBreadcrumb,
   onGoBack,
   onAddSubTab,
-  onDeleteSubTab,
   onLongPressSubcategory,
   isDarkMode,
   activeColors,
@@ -58,6 +56,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
 
   const activeSubcategory = subcategories.find((s) => s.id === activeSubcategoryId);
   const currentDepth: number = activeSubcategory?.depth ?? (breadcrumbPath.length > 0 ? (breadcrumbPath[breadcrumbPath.length - 1].depth ?? 1) : 1);
+  const isNested = breadcrumbPath.length > 1;
 
   const openAddModal = (parentId: string | null = null, parentName: string = '') => {
     setModalParentId(parentId);
@@ -91,89 +90,87 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
   };
 
   return (
-    <View style={styles.container}>
-      {/* 1. Breadcrumb Path Bar (Shown when user has drilled down into subsections) */}
-      {breadcrumbPath.length > 0 && (
-        <View style={styles.breadcrumbContainer}>
+    <View
+      style={[
+        styles.cardContainer,
+        {
+          backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#FFFFFF',
+          borderColor: activeColors.border,
+        },
+        themeShadows.card,
+      ]}
+    >
+      {/* 1. Header Bar: Breadcrumb + Back OR Section Title */}
+      {isNested ? (
+        <View style={styles.navBar}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={onGoBack}
+            style={[
+              styles.backBtn,
+              {
+                backgroundColor: isDarkMode ? activeColors.surface : activeColors.surfaceSubtle,
+                borderColor: activeColors.primary,
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="arrow-left"
+              size={13}
+              color={activeColors.primary}
+            />
+            <Text style={[styles.backBtnText, { color: activeColors.primary }]}>
+              Back
+            </Text>
+          </TouchableOpacity>
+
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.breadcrumbContent}
+            contentContainerStyle={styles.breadcrumbScroll}
           >
-            {/* Back button */}
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={onGoBack}
-              style={[
-                styles.backBtn,
-                {
-                  backgroundColor: isDarkMode
-                    ? activeColors.surfaceElevated
-                    : activeColors.surfaceSubtle,
-                  borderColor: activeColors.border,
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="arrow-left"
-                size={14}
-                color={activeColors.primary}
-              />
-              <Text style={[styles.backBtnText, { color: activeColors.primary }]}>
-                Back
-              </Text>
-            </TouchableOpacity>
-
-            {/* Root Category */}
+            {/* Category root */}
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => onSelectBreadcrumb(-1)}
-              style={styles.breadcrumbItem}
+              style={styles.crumbChip}
             >
               <MaterialCommunityIcons
                 name="folder-outline"
-                size={14}
+                size={12}
                 color={activeColors.textMuted}
               />
-              <Text style={[styles.breadcrumbText, { color: activeColors.textMuted }]}>
+              <Text style={[styles.crumbText, { color: activeColors.textMuted }]}>
                 {categoryName}
               </Text>
             </TouchableOpacity>
 
-            {/* Parent Trail */}
             {breadcrumbPath.map((node, idx) => {
               const isLast = idx === breadcrumbPath.length - 1;
               return (
                 <React.Fragment key={node.id}>
-                  <MaterialCommunityIcons
-                    name="chevron-right"
-                    size={14}
-                    color={activeColors.textMuted}
-                    style={{ marginHorizontal: 2 }}
-                  />
+                  <Text style={[styles.crumbSeparator, { color: activeColors.textMuted }]}>
+                    ›
+                  </Text>
                   <TouchableOpacity
                     activeOpacity={0.7}
                     onPress={() => onSelectBreadcrumb(idx)}
                     style={[
-                      styles.breadcrumbItem,
+                      styles.crumbChip,
                       isLast && {
                         backgroundColor: activeColors.primaryLight,
-                        paddingHorizontal: 8,
-                        paddingVertical: 3,
-                        borderRadius: borderRadius.sm,
                       },
                     ]}
                   >
                     <Text
                       style={[
-                        styles.breadcrumbText,
+                        styles.crumbText,
                         {
-                          color: isLast
-                            ? activeColors.primary
-                            : activeColors.textSecondary,
+                          color: isLast ? activeColors.primary : activeColors.textSecondary,
                           fontWeight: isLast ? '700' : '500',
                         },
                       ]}
+                      numberOfLines={1}
                     >
                       {node.name}
                     </Text>
@@ -182,95 +179,172 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
               );
             })}
           </ScrollView>
+
+          <View
+            style={[
+              styles.levelBadge,
+              { backgroundColor: activeColors.primaryLight },
+            ]}
+          >
+            <Text style={[styles.levelBadgeText, { color: activeColors.primary }]}>
+              Lvl {currentDepth}/5
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.topHeaderRow}>
+          <View style={styles.headerLeft}>
+            <MaterialCommunityIcons
+              name="layers-outline"
+              size={15}
+              color={activeColors.primary}
+            />
+            <Text
+              style={[
+                styles.headerTitle,
+                { color: activeColors.textPrimary },
+              ]}
+            >
+              {categoryName.toUpperCase()} SECTIONS
+            </Text>
+            <View
+              style={[
+                styles.countBadge,
+                {
+                  backgroundColor: isDarkMode
+                    ? activeColors.surface
+                    : activeColors.surfaceSubtle,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.countText,
+                  { color: activeColors.textSecondary },
+                ]}
+              >
+                {subcategories.length}
+              </Text>
+            </View>
+          </View>
+          <View
+            style={[
+              styles.levelBadge,
+              {
+                backgroundColor: isDarkMode
+                  ? activeColors.surface
+                  : activeColors.surfaceSubtle,
+              },
+            ]}
+          >
+            <Text style={[styles.levelBadgeText, { color: activeColors.textMuted }]}>
+              Level 1
+            </Text>
+          </View>
         </View>
       )}
 
-      {/* 2. Sibling Sub-Tabs Row at Current Level */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {subcategories.map((sub) => {
-          const isActive = sub.id === activeSubcategoryId;
-          return (
-            <TouchableOpacity
-              key={sub.id}
-              activeOpacity={0.75}
-              onPress={() => onSelectSubcategory(sub.id)}
-              onLongPress={() => onLongPressSubcategory?.(sub)}
-              delayLongPress={350}
-              style={[
-                styles.tabChip,
-                {
-                  backgroundColor: isActive
-                    ? activeColors.primary
-                    : isDarkMode
-                    ? activeColors.surfaceElevated
-                    : activeColors.surface,
-                  borderColor: isActive
-                    ? activeColors.primary
-                    : activeColors.border,
-                },
-                isActive && themeShadows.card,
-              ]}
-            >
-              {isActive && <View style={styles.activeDot} />}
-              <Text
+      {/* 2. Sibling Tabs Row (Current Level) */}
+      <View style={styles.tabsRowWrap}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabsScrollContent}
+        >
+          {subcategories.map((sub) => {
+            const isActive = sub.id === activeSubcategoryId;
+            return (
+              <TouchableOpacity
+                key={sub.id}
+                activeOpacity={0.75}
+                onPress={() => onSelectSubcategory(sub.id)}
+                onLongPress={() => onLongPressSubcategory?.(sub)}
+                delayLongPress={350}
                 style={[
-                  styles.tabText,
+                  styles.tabPill,
                   {
-                    color: isActive ? '#FFFFFF' : activeColors.textSecondary,
+                    backgroundColor: isActive
+                      ? activeColors.primary
+                      : isDarkMode
+                      ? activeColors.surface
+                      : activeColors.surfaceSubtle,
+                    borderColor: isActive
+                      ? activeColors.primary
+                      : activeColors.border,
                   },
+                  isActive && themeShadows.card,
                 ]}
               >
-                {sub.name.toUpperCase()}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+                {isActive && <View style={styles.tabActiveDot} />}
+                <Text
+                  style={[
+                    styles.tabPillText,
+                    {
+                      color: isActive ? '#FFFFFF' : activeColors.textSecondary,
+                    },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {sub.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
 
-        {/* Add Sibling Tab Button */}
-        {breadcrumbPath.length === 0 ? (
+          {/* Add Sibling Button */}
           <TouchableOpacity
             activeOpacity={0.75}
-            onPress={() => openAddModal(null, '')}
+            onPress={() =>
+              openAddModal(
+                isNested
+                  ? (breadcrumbPath[breadcrumbPath.length - 1]?.parentId || null)
+                  : null,
+                isNested
+                  ? (breadcrumbPath[breadcrumbPath.length - 2]?.name || '')
+                  : ''
+              )
+            }
             style={[
-              styles.addTabChip,
+              styles.addPillBtn,
               {
                 backgroundColor: isDarkMode
-                  ? activeColors.surfaceElevated
-                  : activeColors.surface,
-                borderColor: activeColors.primaryBorder || activeColors.border,
+                  ? activeColors.surface
+                  : activeColors.surfaceSubtle,
+                borderColor: activeColors.primary,
               },
             ]}
           >
             <MaterialCommunityIcons
               name="plus"
-              size={16}
+              size={14}
               color={activeColors.primary}
             />
             <Text
               style={[
-                styles.addTabText,
+                styles.addPillText,
                 { color: activeColors.primary },
               ]}
             >
-              SECTION
+              {isNested ? 'Sibling' : 'Section'}
             </Text>
           </TouchableOpacity>
-        ) : null}
-      </ScrollView>
+        </ScrollView>
+      </View>
 
-      {/* 3. Child Sub-Sections Row (Shown for the active section if depth < 5) */}
+      {/* 3. Sub-Sections Explorer (Next Level) */}
       {activeSubcategory && (
-        <View style={styles.childSectionStrip}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.childScrollContent}
-          >
-            <View style={styles.childPrefix}>
+        <View
+          style={[
+            styles.childContainer,
+            {
+              borderTopColor: isDarkMode
+                ? activeColors.surface
+                : activeColors.border,
+            },
+          ]}
+        >
+          <View style={styles.childHeaderRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1 }}>
               <MaterialCommunityIcons
                 name="subdirectory-arrow-right"
                 size={14}
@@ -278,105 +352,182 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
               />
               <Text
                 style={[
-                  styles.childPrefixText,
-                  { color: activeColors.textMuted },
+                  styles.childHeading,
+                  { color: activeColors.textSecondary },
                 ]}
+                numberOfLines={1}
               >
-                Sub-Sections:
+                Sub-sections of{' '}
+                <Text style={{ fontWeight: '700', color: activeColors.textPrimary }}>
+                  "{activeSubcategory.name}"
+                </Text>
+                :
               </Text>
             </View>
-
-            {/* Existing Child Subcategories */}
-            {childSubcategories.map((child) => (
-              <TouchableOpacity
-                key={child.id}
-                activeOpacity={0.75}
-                onPress={() => onEnterChildSubcategory(child)}
-                onLongPress={() => onLongPressSubcategory?.(child)}
-                delayLongPress={350}
-                style={[
-                  styles.childChip,
-                  {
-                    backgroundColor: isDarkMode
-                      ? activeColors.surfaceElevated
-                      : activeColors.surfaceSubtle,
-                    borderColor: activeColors.border,
-                  },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="folder-outline"
-                  size={12}
-                  color={activeColors.textSecondary}
-                  style={{ marginRight: 4 }}
-                />
-                <Text
-                  style={[
-                    styles.childChipText,
-                    { color: activeColors.textPrimary },
-                  ]}
-                >
-                  {child.name}
-                </Text>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={14}
-                  color={activeColors.textMuted}
-                />
-              </TouchableOpacity>
-            ))}
-
-            {/* Add Child Sub-Section Button (Allowed up to depth 4 under section = level 5 total) */}
-            {currentDepth < 5 ? (
-              <TouchableOpacity
-                activeOpacity={0.75}
-                onPress={() => openAddModal(activeSubcategory.id, activeSubcategory.name)}
-                style={[
-                  styles.addChildBtn,
-                  {
-                    backgroundColor: isDarkMode
-                      ? activeColors.surfaceElevated
-                      : activeColors.surface,
-                    borderColor: activeColors.primary,
-                  },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="plus"
-                  size={14}
-                  color={activeColors.primary}
-                />
-                <Text
-                  style={[
-                    styles.addChildBtnText,
-                    { color: activeColors.primary },
-                  ]}
-                >
-                  SUB-SECTION
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <View
-                style={[
-                  styles.maxDepthBadge,
-                  { backgroundColor: activeColors.surfaceSubtle },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.maxDepthText,
-                    { color: activeColors.textMuted },
-                  ]}
-                >
-                  (Max Level Reached)
-                </Text>
-              </View>
+            {childSubcategories.length > 0 && currentDepth < 5 && (
+              <Text style={[styles.childHint, { color: activeColors.textMuted }]}>
+                Tap to enter
+              </Text>
             )}
-          </ScrollView>
+          </View>
+
+          {childSubcategories.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.childScrollContent}
+            >
+              {childSubcategories.map((child) => (
+                <TouchableOpacity
+                  key={child.id}
+                  activeOpacity={0.75}
+                  onPress={() => onEnterChildSubcategory(child)}
+                  onLongPress={() => onLongPressSubcategory?.(child)}
+                  delayLongPress={350}
+                  style={[
+                    styles.childCard,
+                    {
+                      backgroundColor: isDarkMode
+                        ? activeColors.surface
+                        : '#FFFFFF',
+                      borderColor: activeColors.border,
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="folder-outline"
+                    size={12}
+                    color={activeColors.primary}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text
+                    style={[
+                      styles.childCardName,
+                      { color: activeColors.textPrimary },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {child.name}
+                  </Text>
+                  <MaterialCommunityIcons
+                    name="chevron-right"
+                    size={13}
+                    color={activeColors.textMuted}
+                    style={{ marginLeft: 2 }}
+                  />
+                </TouchableOpacity>
+              ))}
+
+              {currentDepth < 5 && (
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  onPress={() =>
+                    openAddModal(activeSubcategory.id, activeSubcategory.name)
+                  }
+                  style={[
+                    styles.addChildCardBtn,
+                    {
+                      backgroundColor: isDarkMode
+                        ? activeColors.surface
+                        : activeColors.surfaceSubtle,
+                      borderColor: activeColors.primary,
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="plus"
+                    size={13}
+                    color={activeColors.primary}
+                  />
+                  <Text
+                    style={[
+                      styles.addChildCardText,
+                      { color: activeColors.primary },
+                    ]}
+                  >
+                    Sub-section
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
+          ) : (
+            /* Clean, informative card when no child subsections exist */
+            <View style={styles.emptyChildWrap}>
+              {currentDepth < 5 ? (
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  onPress={() =>
+                    openAddModal(activeSubcategory.id, activeSubcategory.name)
+                  }
+                  style={[
+                    styles.emptyAddBtn,
+                    {
+                      backgroundColor: isDarkMode
+                        ? activeColors.surface
+                        : activeColors.surfaceSubtle,
+                      borderColor: activeColors.border,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.emptyIconCircle,
+                      { backgroundColor: activeColors.primaryLight },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="plus"
+                      size={14}
+                      color={activeColors.primary}
+                    />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 8 }}>
+                    <Text
+                      style={[
+                        styles.emptyAddTitle,
+                        { color: activeColors.primary },
+                      ]}
+                    >
+                      + Add Sub-section inside "{activeSubcategory.name}"
+                    </Text>
+                    <Text
+                      style={[
+                        styles.emptyAddSub,
+                        { color: activeColors.textMuted },
+                      ]}
+                    >
+                      e.g. UPVC, Schedule 80, Thickness (Or enter stock in matrix below)
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <View
+                  style={[
+                    styles.maxLevelPill,
+                    { backgroundColor: activeColors.surfaceSubtle },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="check-circle-outline"
+                    size={14}
+                    color={activeColors.textMuted}
+                  />
+                  <Text
+                    style={[
+                      styles.maxLevelText,
+                      { color: activeColors.textMuted },
+                    ]}
+                  >
+                    Max nesting level 5 reached — Manage stock in matrix below
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
         </View>
       )}
 
-      {/* Modal for adding new section or child sub-section */}
+      {/* Modal for Adding New Section or Nested Sub-Section */}
       <Modal
         visible={modalVisible}
         transparent
@@ -425,8 +576,8 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                   ]}
                 >
                   {modalParentName
-                    ? 'Create a nested subsection (e.g. Schedule 80, UPVC, etc.)'
-                    : 'e.g. PVC Valves, Solvent Cement, Teflon etc.'}
+                    ? 'e.g. UPVC Pipe, Schedule 80, 4-Metre, etc.'
+                    : 'e.g. Water Supply Pipes, Drainage Pipes, Fittings'}
                 </Text>
               </View>
             </View>
@@ -505,133 +656,222 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
 };
 
 const styles = StyleSheet.create({
-  container: {
-    paddingVertical: 4,
+  cardContainer: {
+    marginHorizontal: 16,
+    marginVertical: 4,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
-  breadcrumbContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 6,
-  },
-  breadcrumbContent: {
+  navBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 6,
+    gap: 8,
   },
   backBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: borderRadius.full,
     borderWidth: 1,
     gap: 4,
-    marginRight: 6,
   },
   backBtnText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
-  breadcrumbItem: {
+  breadcrumbScroll: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 2,
+    gap: 4,
+    flexGrow: 1,
+  },
+  crumbChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: borderRadius.sm,
     gap: 3,
   },
-  breadcrumbText: {
+  crumbText: {
     fontSize: 12,
   },
-  scrollContent: {
-    paddingHorizontal: 16,
+  crumbSeparator: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginHorizontal: 1,
+  },
+  levelBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: borderRadius.full,
+  },
+  levelBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  topHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 6,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  countBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: borderRadius.full,
+  },
+  countText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  tabsRowWrap: {
+    paddingBottom: 8,
+  },
+  tabsScrollContent: {
+    paddingHorizontal: 12,
     gap: 8,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  tabChip: {
+  tabPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: borderRadius.full,
     borderWidth: 1,
   },
-  activeDot: {
+  tabActiveDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: '#FFFFFF',
     marginRight: 6,
   },
-  tabText: {
+  tabPillText: {
     fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.4,
+    fontWeight: '700',
   },
-  addTabChip: {
+  addPillBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: borderRadius.full,
     borderWidth: 1,
     borderStyle: 'dashed',
-    gap: 4,
+    gap: 3,
   },
-  addTabText: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.4,
+  addPillText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
-  childSectionStrip: {
-    marginTop: 6,
-    paddingHorizontal: 16,
+  childContainer: {
+    borderTopWidth: 1,
+    paddingTop: 8,
+    paddingBottom: 10,
+    paddingHorizontal: 12,
+  },
+  childHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  childHeading: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  childHint: {
+    fontSize: 10,
+    fontStyle: 'italic',
   },
   childScrollContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
-  childPrefix: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginRight: 2,
-  },
-  childPrefixText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  childChip: {
+  childCard: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: borderRadius.full,
     borderWidth: 1,
   },
-  childChipText: {
+  childCardName: {
     fontSize: 11,
     fontWeight: '600',
   },
-  addChildBtn: {
+  addChildCardBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     borderRadius: borderRadius.full,
     borderWidth: 1,
     borderStyle: 'dashed',
-    gap: 2,
+    gap: 3,
   },
-  addChildBtnText: {
-    fontSize: 10,
+  addChildCardText: {
+    fontSize: 11,
     fontWeight: '700',
   },
-  maxDepthBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
+  emptyChildWrap: {
+    marginTop: 2,
   },
-  maxDepthText: {
+  emptyAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
+  emptyIconCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyAddTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  emptyAddSub: {
+    fontSize: 10,
+    marginTop: 1,
+  },
+  maxLevelPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: borderRadius.full,
+    gap: 5,
+    alignSelf: 'flex-start',
+  },
+  maxLevelText: {
     fontSize: 10,
     fontStyle: 'italic',
   },
@@ -658,30 +898,32 @@ const styles = StyleSheet.create({
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 18,
+    marginBottom: 20,
   },
   modalIconWrap: {
     width: 48,
     height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
+    borderRadius: 14,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   modalTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
+    lineHeight: 22,
   },
   modalSubtitle: {
     fontSize: 12,
     marginTop: 2,
+    lineHeight: 16,
   },
   input: {
-    borderWidth: 1.5,
-    borderRadius: 14,
+    borderRadius: borderRadius.md,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    fontSize: 15,
-    marginBottom: 20,
+    fontSize: 14,
+    marginBottom: 24,
+    borderWidth: 1,
   },
   modalActions: {
     flexDirection: 'row',
@@ -689,8 +931,8 @@ const styles = StyleSheet.create({
   },
   btnCancel: {
     flex: 1,
-    height: 46,
-    borderRadius: 14,
+    paddingVertical: 12,
+    borderRadius: borderRadius.md,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -700,15 +942,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   btnConfirm: {
-    flex: 1.3,
-    height: 46,
-    borderRadius: 14,
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: borderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   btnConfirmText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
   },
 });
