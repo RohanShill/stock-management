@@ -30,6 +30,8 @@ type HistoryItem = StockMovement & {
   size?: string;
   unit: string;
   brand?: string;
+  sellingPricePaise?: number;
+  priceDisplay?: string | null;
 };
 
 type TimeFilterMode = 'all' | 'day' | 'range' | 'month' | 'year';
@@ -45,6 +47,57 @@ const HistoryCard = React.memo<HistoryCardProps>(({ item, isDarkMode, activeColo
   const isSale = item.movementType === 'sale' || item.quantityChangeBase < 0;
   const absQty = Math.abs(item.quantityChangeBase);
 
+  // 1. Resolve unit rate and total transaction amount
+  let rateDisplay = '';
+  let unitPriceInRupees = 0;
+
+  if (item.priceDisplay && item.priceDisplay.trim()) {
+    const rawStr = item.priceDisplay.trim();
+    rateDisplay = rawStr.startsWith('₹') ? rawStr : `₹${rawStr}`;
+    const numMatch = rawStr.match(/(\d+(?:\.\d+)?)/);
+    if (numMatch) {
+      unitPriceInRupees = parseFloat(numMatch[1]);
+    }
+  } else if (item.sellingPricePaise && item.sellingPricePaise > 0) {
+    unitPriceInRupees = item.sellingPricePaise / 100;
+    rateDisplay = `₹${unitPriceInRupees.toLocaleString('en-IN')}${item.unit ? ` / ${item.unit}` : ''}`;
+  }
+
+  const hasPrice = unitPriceInRupees > 0 || !!rateDisplay;
+  const totalAmount = unitPriceInRupees > 0 ? absQty * unitPriceInRupees : null;
+
+  // 2. Resolve clean product / brand / size without duplicate text
+  const brandName = item.brand?.trim() || '';
+  const sizeText = (item.size?.trim() || item.variantName?.trim() || '')
+    .replace(new RegExp(`^${brandName}\\s*`, 'i'), '')
+    .trim();
+  const rawProdName = (item.productName || '').replace(/\s+Items?$/i, '').trim();
+
+  let title = brandName || rawProdName || (isSale ? 'Sold Item' : 'Inventory Item');
+  let subtitle = '';
+
+  if (brandName) {
+    if (sizeText) {
+      subtitle =
+        rawProdName && rawProdName.toLowerCase() !== brandName.toLowerCase()
+          ? `${rawProdName} • ${sizeText}`
+          : sizeText;
+    } else if (rawProdName && rawProdName.toLowerCase() !== brandName.toLowerCase()) {
+      subtitle = rawProdName;
+    }
+  } else if (sizeText) {
+    subtitle = sizeText;
+  }
+
+  // 3. Filter out auto-generated boilerplate notes
+  const rawNote = (item.notes || item.reason || '').trim();
+  const isBoilerplate =
+    !rawNote ||
+    rawNote.toLowerCase() === 'sale' ||
+    rawNote.toLowerCase() === 'stock in' ||
+    /^(restocked|sold)\s+\d+.*pc\s+of/i.test(rawNote);
+  const customNote = !isBoilerplate ? rawNote : null;
+
   return (
     <Surface
       style={[
@@ -55,8 +108,8 @@ const HistoryCard = React.memo<HistoryCardProps>(({ item, isDarkMode, activeColo
         },
       ]}
     >
+      {/* 1. Header: Icon + Title/Size on left, Quantity + Action Badge on right */}
       <View style={styles.cardHeaderRow}>
-        {/* Left: Icon & Product info */}
         <View style={styles.cardInfoLeft}>
           <View
             style={[
@@ -68,7 +121,7 @@ const HistoryCard = React.memo<HistoryCardProps>(({ item, isDarkMode, activeColo
           >
             <MaterialCommunityIcons
               name={isSale ? 'arrow-down-bold' : 'arrow-up-bold'}
-              size={20}
+              size={18}
               color={isSale ? '#DC2626' : '#16A34A'}
             />
           </View>
@@ -78,46 +131,31 @@ const HistoryCard = React.memo<HistoryCardProps>(({ item, isDarkMode, activeColo
               style={[styles.prodName, { color: activeColors.textPrimary }]}
               numberOfLines={1}
             >
-              {item.productName}
+              {title}
             </Text>
-            <View style={styles.badgeRow}>
-              <View
-                style={[
-                  styles.variantBadge,
-                  { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.variantBadgeText,
-                    { color: activeColors.textSecondary },
-                  ]}
-                >
-                  {item.variantName || item.size || 'Standard'}
-                </Text>
-              </View>
-              {item.brand ? (
+            {subtitle ? (
+              <View style={styles.subtitleRow}>
                 <View
                   style={[
-                    styles.brandBadge,
-                    { backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF' },
+                    styles.sizePill,
+                    { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' },
                   ]}
                 >
                   <Text
                     style={[
-                      styles.brandBadgeText,
-                      { color: activeColors.primary },
+                      styles.sizePillText,
+                      { color: activeColors.textSecondary },
                     ]}
+                    numberOfLines={1}
                   >
-                    {item.brand}
+                    {subtitle}
                   </Text>
                 </View>
-              ) : null}
-            </View>
+              </View>
+            ) : null}
           </View>
         </View>
 
-        {/* Right: Quantity Change */}
         <View style={styles.cardInfoRight}>
           <Text
             style={[
@@ -147,7 +185,54 @@ const HistoryCard = React.memo<HistoryCardProps>(({ item, isDarkMode, activeColo
         </View>
       </View>
 
-      {/* Transition & Note Footer */}
+      {/* 2. Middle Row: Price / Rate & Total Amount */}
+      <View
+        style={[
+          styles.priceRow,
+          {
+            backgroundColor: isDarkMode ? '#0F172A' : '#F8FAFC',
+            borderColor: isDarkMode ? '#1E293B' : '#E2E8F0',
+          },
+        ]}
+      >
+        <View style={styles.priceItemLeft}>
+          <MaterialCommunityIcons
+            name="tag-outline"
+            size={13}
+            color={hasPrice ? activeColors.primary : activeColors.textMuted}
+          />
+          <Text style={[styles.priceLabel, { color: activeColors.textMuted }]}>
+            Rate:
+          </Text>
+          <Text
+            style={[
+              styles.priceValue,
+              { color: hasPrice ? activeColors.textPrimary : activeColors.textMuted },
+            ]}
+            numberOfLines={1}
+          >
+            {rateDisplay || 'Not set'}
+          </Text>
+        </View>
+
+        {totalAmount !== null && totalAmount > 0 ? (
+          <View style={styles.priceItemRight}>
+            <Text style={[styles.totalLabel, { color: activeColors.textMuted }]}>
+              Total:
+            </Text>
+            <Text
+              style={[
+                styles.totalValue,
+                { color: isSale ? '#DC2626' : '#16A34A' },
+              ]}
+            >
+              ₹{Math.round(totalAmount).toLocaleString('en-IN')}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+
+      {/* 3. Footer: Balance and Relative Date/Time */}
       <View
         style={[
           styles.cardFooter,
@@ -156,13 +241,13 @@ const HistoryCard = React.memo<HistoryCardProps>(({ item, isDarkMode, activeColo
       >
         <View style={styles.balanceRow}>
           <Text style={[styles.balanceLabel, { color: activeColors.textMuted }]}>
-            Balance:
+            Stock:
           </Text>
           <Text
             style={[styles.balanceValues, { color: activeColors.textSecondary }]}
             numberOfLines={1}
           >
-            {item.balanceBeforeBase} {item.unit} ➔{' '}
+            {item.balanceBeforeBase} ➔{' '}
             <Text style={{ fontWeight: '700', color: activeColors.textPrimary }}>
               {item.balanceAfterBase} {item.unit}
             </Text>
@@ -170,31 +255,36 @@ const HistoryCard = React.memo<HistoryCardProps>(({ item, isDarkMode, activeColo
         </View>
 
         <View style={styles.timeRow}>
-          <MaterialCommunityIcons name="calendar-outline" size={12} color={activeColors.textMuted} />
+          <MaterialCommunityIcons
+            name="calendar-outline"
+            size={12}
+            color={activeColors.textMuted}
+          />
           <Text style={[styles.timeText, { color: activeColors.textMuted }]}>
             {formatTimestamp(item.createdAt)}
           </Text>
         </View>
       </View>
 
-      {item.reason || item.notes ? (
+      {/* 4. Real User Custom Note (only if user provided one) */}
+      {customNote ? (
         <View
           style={[
             styles.notesRow,
-            { backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC' },
+            { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' },
           ]}
         >
           <MaterialCommunityIcons
             name="note-text-outline"
             size={12}
-            color={activeColors.textMuted}
-            style={{ marginRight: 4 }}
+            color={activeColors.primary}
+            style={{ marginRight: 5 }}
           />
           <Text
             style={[styles.notesText, { color: activeColors.textSecondary }]}
             numberOfLines={2}
           >
-            Note: {item.reason || item.notes}
+            {customNote}
           </Text>
         </View>
       ) : null}
@@ -571,11 +661,18 @@ export default function HistoryScreen() {
   };
 
   // Active filter status
-  const isAnyFilterActive = timeFilterMode !== 'all' || filterType !== 'all';
-  const activeFilterCount = (timeFilterMode !== 'all' ? 1 : 0) + (filterType !== 'all' ? 1 : 0);
+  const hasSearch = searchQuery.trim().length > 0;
+  const isAnyFilterActive = timeFilterMode !== 'all' || filterType !== 'all' || hasSearch;
+  const activeFilterCount =
+    (timeFilterMode !== 'all' ? 1 : 0) +
+    (filterType !== 'all' ? 1 : 0) +
+    (hasSearch ? 1 : 0);
 
   const getActiveFilterSummary = () => {
     const parts: string[] = [];
+    if (hasSearch) {
+      parts.push(`"${searchQuery.trim()}"`);
+    }
     if (timeFilterMode === 'day') {
       const now = new Date();
       const isToday =
@@ -645,16 +742,32 @@ export default function HistoryScreen() {
         if (item.movementType === 'sale' || Number(item.quantityChangeBase) < 0) return false;
       }
 
-      // 3. Search Query
+      // 3. Search Query: tokenized multi-word matching across all relevant fields
       if (searchQuery.trim()) {
-        const query = searchQuery.trim().toLowerCase();
-        const matchProduct = (item.productName || '').toLowerCase().includes(query);
-        const matchVariant = (item.variantName || '').toLowerCase().includes(query);
-        const matchBrand = (item.brand || '').toLowerCase().includes(query);
-        const matchReason = (item.reason || '').toLowerCase().includes(query);
-        const matchNotes = (item.notes || '').toLowerCase().includes(query);
-        if (!matchProduct && !matchVariant && !matchBrand && !matchReason && !matchNotes) {
-          return false;
+        const terms = searchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if (terms.length > 0) {
+          let priceStr = '';
+          if (item.priceDisplay) priceStr += ` ${item.priceDisplay}`;
+          if (item.sellingPricePaise && item.sellingPricePaise > 0) {
+            const rupees = item.sellingPricePaise / 100;
+            priceStr += ` ₹${rupees} ${rupees}`;
+          }
+
+          const combined = [
+            item.productName || '',
+            item.variantName || '',
+            item.size || '',
+            item.brand || '',
+            item.unit || '',
+            item.reason || '',
+            item.notes || '',
+            priceStr,
+          ].join(' ').toLowerCase();
+
+          // Every search term must match somewhere in the item's combined text
+          if (!terms.every((term) => combined.includes(term))) {
+            return false;
+          }
         }
       }
 
@@ -753,14 +866,29 @@ export default function HistoryScreen() {
       }
 
       if (query && query.trim()) {
-        const q = query.trim().toLowerCase();
-        const matchProduct = (item.productName || '').toLowerCase().includes(q);
-        const matchVariant = (item.variantName || '').toLowerCase().includes(q);
-        const matchBrand = (item.brand || '').toLowerCase().includes(q);
-        const matchReason = (item.reason || '').toLowerCase().includes(q);
-        const matchNotes = (item.notes || '').toLowerCase().includes(query);
-        if (!matchProduct && !matchVariant && !matchBrand && !matchReason && !matchNotes) {
-          return false;
+        const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if (terms.length > 0) {
+          let priceStr = '';
+          if (item.priceDisplay) priceStr += ` ${item.priceDisplay}`;
+          if (item.sellingPricePaise && item.sellingPricePaise > 0) {
+            const rupees = item.sellingPricePaise / 100;
+            priceStr += ` ₹${rupees} ${rupees}`;
+          }
+
+          const combined = [
+            item.productName || '',
+            item.variantName || '',
+            item.size || '',
+            item.brand || '',
+            item.unit || '',
+            item.reason || '',
+            item.notes || '',
+            priceStr,
+          ].join(' ').toLowerCase();
+
+          if (!terms.every((term) => combined.includes(term))) {
+            return false;
+          }
         }
       }
       return true;
@@ -853,9 +981,35 @@ export default function HistoryScreen() {
         const variantText = escapeHtml(item.size || item.variantName || 'Standard');
         const brandText = escapeHtml(item.brand || '-');
         const unitText = escapeHtml(item.unit || 'pcs');
-        const reasonText = escapeHtml(item.reason || item.notes || '-');
         const balanceBefore = Number(item.balanceBeforeBase) || 0;
         const balanceAfter = Number(item.balanceAfterBase) || 0;
+
+        // Rate & Total calculation
+        let rateDisplay = '-';
+        let totalDisplay = '-';
+        let rateNum = 0;
+
+        if (item.priceDisplay && item.priceDisplay.trim()) {
+          rateDisplay = escapeHtml(item.priceDisplay.trim());
+          const m = rateDisplay.match(/(\d+(?:\.\d+)?)/);
+          if (m) rateNum = parseFloat(m[1]);
+        } else if (item.sellingPricePaise && item.sellingPricePaise > 0) {
+          rateNum = item.sellingPricePaise / 100;
+          rateDisplay = `₹${rateNum.toLocaleString('en-IN')}`;
+        }
+
+        if (rateNum > 0) {
+          totalDisplay = `₹${Math.round(absQty * rateNum).toLocaleString('en-IN')}`;
+        }
+
+        // Clean user note without boilerplate
+        const rawNote = (item.notes || item.reason || '').trim();
+        const isBoilerplate =
+          !rawNote ||
+          rawNote.toLowerCase() === 'sale' ||
+          rawNote.toLowerCase() === 'stock in' ||
+          /^(restocked|sold)\s+\d+.*pc\s+of/i.test(rawNote);
+        const reasonText = !isBoilerplate ? escapeHtml(rawNote) : '-';
 
         return `
           <tr>
@@ -872,6 +1026,8 @@ export default function HistoryScreen() {
             <td class="${isSale ? 'qty-sale' : 'qty-restock'}" style="text-align: right;">
               ${isSale ? '-' : '+'}${absQty} ${unitText}
             </td>
+            <td style="text-align: right; color: #334155;">${rateDisplay}</td>
+            <td style="text-align: right; font-weight: 700; color: ${isSale ? '#DC2626' : '#16A34A'};">${totalDisplay}</td>
             <td style="text-align: center; color: #475569; font-size: 10px;">
               ${balanceBefore} &rarr; <strong>${balanceAfter}</strong>
             </td>
@@ -1078,10 +1234,12 @@ export default function HistoryScreen() {
               <th>Item / Product</th>
               <th>Variant / Size</th>
               <th>Brand</th>
-              <th style="width: 60px;">Type</th>
-              <th style="width: 65px; text-align: right;">Qty</th>
+              <th style="width: 55px;">Type</th>
+              <th style="width: 60px; text-align: right;">Qty</th>
+              <th style="width: 65px; text-align: right;">Rate</th>
+              <th style="width: 75px; text-align: right;">Total (₹)</th>
               <th style="width: 75px; text-align: center;">Balance</th>
-              <th>Notes / Ref</th>
+              <th>Notes</th>
             </tr>
           </thead>
           <tbody>
@@ -1222,17 +1380,12 @@ export default function HistoryScreen() {
     try {
       const d = new Date(isoDate);
       if (isNaN(d.getTime())) return isoDate;
-      const dateStr = d.toLocaleDateString('en-IN', {
+
+      return d.toLocaleDateString('en-IN', {
         day: 'numeric',
         month: 'short',
         year: 'numeric',
       });
-      const timeStr = d.toLocaleTimeString('en-IN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      });
-      return `${dateStr}, ${timeStr}`;
     } catch {
       return isoDate;
     }
@@ -1351,9 +1504,10 @@ export default function HistoryScreen() {
         <View style={styles.searchAndFilterSection}>
           <View style={styles.searchAndFilterRow}>
             <Searchbar
-              placeholder="Search product, note..."
+              placeholder="Search product, brand, size, note..."
               value={searchQuery}
               onChangeText={setSearchQuery}
+              onClearIconPress={() => setSearchQuery('')}
               style={[
                 styles.searchbar,
                 {
@@ -2301,10 +2455,13 @@ const styles = StyleSheet.create({
   },
   listContent: {
     gap: spacing.sm,
+    maxWidth: 960,
+    width: '100%',
+    alignSelf: 'center',
   },
   historyCard: {
     borderRadius: 16,
-    padding: 14,
+    padding: 13,
     marginHorizontal: spacing.lg,
     borderWidth: 1,
     ...shadows.card,
@@ -2312,7 +2469,7 @@ const styles = StyleSheet.create({
   cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
   cardInfoLeft: {
     flexDirection: 'row',
@@ -2322,9 +2479,9 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   iconBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -2335,28 +2492,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  badgeRow: {
+  subtitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 5,
-    marginTop: 4,
+    marginTop: 3,
   },
-  variantBadge: {
+  sizePill: {
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 6,
+    alignSelf: 'flex-start',
   },
-  variantBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  brandBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  brandBadgeText: {
+  sizePillText: {
     fontSize: 11,
     fontWeight: '600',
   },
@@ -2378,7 +2525,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
-    marginTop: 4,
+    marginTop: 3,
   },
   typeBadgeText: {
     fontSize: 10,
@@ -2391,11 +2538,48 @@ const styles = StyleSheet.create({
   typeBadgeTextRestock: {
     color: '#16A34A',
   },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 9,
+  },
+  priceItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+  },
+  priceLabel: {
+    fontSize: 11.5,
+    fontWeight: '500',
+  },
+  priceValue: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  priceItemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  totalLabel: {
+    fontSize: 11.5,
+    fontWeight: '500',
+  },
+  totalValue: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
   cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
     gap: 8,
@@ -2418,7 +2602,7 @@ const styles = StyleSheet.create({
   timeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
     flexShrink: 0,
   },
   timeText: {
@@ -2428,9 +2612,9 @@ const styles = StyleSheet.create({
   notesRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 7,
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 6,
   },
   notesText: {

@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Modal,
   TextInput,
+  useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Subcategory } from '@hardware-store/shared';
@@ -64,6 +65,8 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
 
   const themeShadows = getThemeShadows(isDarkMode);
   const { showToast } = useAppStore();
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 600;
 
   // If hierarchyTiers is provided by parent, use it directly.
   // Otherwise, construct fallback tiers from subcategories, childSubcategories, etc.
@@ -147,6 +150,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
       style={[
         styles.cardContainer,
         {
+          marginHorizontal: isTablet ? 20 : 14,
           backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#FFFFFF',
           borderColor: activeColors.border,
         },
@@ -161,12 +165,13 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
           <View style={styles.minimizedLeft}>
             <MaterialCommunityIcons
               name="layers-outline"
-              size={14}
+              size={15}
               color={activeColors.primary}
             />
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              style={{ flex: 1 }}
               contentContainerStyle={styles.crumbScroll}
             >
               {crumbs.map((crumb, idx) => {
@@ -199,6 +204,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                             fontWeight: isLast ? '800' : '600',
                           },
                         ]}
+                        numberOfLines={1}
                       >
                         {crumb.name}
                       </Text>
@@ -220,7 +226,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
               },
             ]}
           >
-            <MaterialCommunityIcons name="chevron-down" size={15} color={activeColors.primary} />
+            <MaterialCommunityIcons name="chevron-down" size={14} color={activeColors.primary} />
             <Text style={[styles.toggleBtnText, { color: activeColors.primary }]}>
               Expand
             </Text>
@@ -287,8 +293,14 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Render All Dynamic Hierarchy Tiers */}
-          {tiers.map((tier, tierIdx) => {
+          {/* Render All Dynamic Hierarchy Tiers in a contained scroll area so it never crushes the table */}
+          <ScrollView
+            style={{ maxHeight: isTablet ? 320 : 135 }}
+            showsVerticalScrollIndicator={true}
+            nestedScrollEnabled={true}
+            bounces={false}
+          >
+            {tiers.map((tier, tierIdx) => {
             const isRootTier = tier.parent === null;
             return (
               <View
@@ -334,51 +346,8 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.scrollRow}
+                  nestedScrollEnabled={true}
                 >
-                  {/* If not root, render Main Section direct stock pill */}
-                  {!isRootTier && tier.parent && (
-                    <TouchableOpacity
-                      activeOpacity={0.75}
-                      onPress={() => onSelectSubcategory(tier.parent!.id)}
-                      style={[
-                        styles.subPill,
-                        activeSubcategoryId === tier.parent.id && styles.subPillActiveHighlight,
-                        {
-                          backgroundColor: activeSubcategoryId === tier.parent.id
-                            ? activeColors.primary
-                            : isDarkMode
-                            ? activeColors.surface
-                            : activeColors.surfaceSubtle,
-                          borderColor: activeSubcategoryId === tier.parent.id
-                            ? activeColors.primary
-                            : activeColors.border,
-                        },
-                        activeSubcategoryId === tier.parent.id && themeShadows.card,
-                      ]}
-                    >
-                      <MaterialCommunityIcons
-                        name="package-variant-closed"
-                        size={13}
-                        color={activeSubcategoryId === tier.parent.id ? '#FFFFFF' : activeColors.textMuted}
-                      />
-                      <Text
-                        style={[
-                          styles.subPillText,
-                          {
-                            color: activeSubcategoryId === tier.parent.id
-                              ? '#FFFFFF'
-                              : activeColors.textSecondary,
-                            fontWeight: activeSubcategoryId === tier.parent.id ? '800' : '600',
-                          },
-                        ]}
-                      >
-                        {activeSubcategoryId === tier.parent.id
-                          ? `• Main: ${tier.parent.name}`
-                          : `Main: ${tier.parent.name}`}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-
                   {/* Sibling Items at this tier */}
                   {tier.items.map((item) => {
                     const isItemActive = item.id === activeSubcategoryId;
@@ -396,6 +365,8 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                           isRootTier ? styles.mainPill : styles.subPill,
                           isHighlighted && styles.subPillActiveHighlight,
                           {
+                            paddingHorizontal: isTablet ? (isRootTier ? 16 : 13) : (isRootTier ? 12 : 10),
+                            paddingVertical: isTablet ? (isRootTier ? 8 : 7) : (isRootTier ? 6 : 5),
                             backgroundColor: isItemActive
                               ? activeColors.primary
                               : isItemInPath
@@ -414,7 +385,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                         {!isRootTier && (
                           <MaterialCommunityIcons
                             name={isItemActive ? 'check' : isItemInPath ? 'folder-open' : 'folder-outline'}
-                            size={13}
+                            size={isTablet ? 15 : 13}
                             color={
                               isItemActive
                                 ? '#FFFFFF'
@@ -428,6 +399,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                           style={[
                             isRootTier ? styles.mainPillText : styles.subPillText,
                             {
+                              fontSize: isTablet ? (isRootTier ? 13.5 : 12.5) : (isRootTier ? 12 : 11),
                               color: isItemActive
                                 ? '#FFFFFF'
                                 : isItemInPath
@@ -444,44 +416,52 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                     );
                   })}
 
-                  {/* Add Button for this tier */}
-                  <TouchableOpacity
-                    activeOpacity={0.75}
-                    onPress={() =>
-                      openAddModal(
-                        tier.parent ? tier.parent.id : null,
-                        tier.parent ? tier.parent.name : '',
-                        !isRootTier
-                      )
-                    }
-                    style={[
-                      styles.addDashedBtn,
-                      {
-                        backgroundColor: isDarkMode
-                          ? activeColors.surface
-                          : activeColors.surfaceSubtle,
-                        borderColor: activeColors.primary,
-                      },
-                    ]}
-                  >
-                    <MaterialCommunityIcons
-                      name="plus"
-                      size={13}
-                      color={activeColors.primary}
-                    />
-                    <Text
+                  {/* Add Button for this tier: only show if depth < 5 (Max 4 Subsections) */}
+                  {(!tier.parent || (tier.parent.depth ?? 1) < 5) && (
+                    <TouchableOpacity
+                      activeOpacity={0.75}
+                      onPress={() =>
+                        openAddModal(
+                          tier.parent ? tier.parent.id : null,
+                          tier.parent ? tier.parent.name : '',
+                          !isRootTier
+                        )
+                      }
                       style={[
-                        styles.addDashedText,
-                        { color: activeColors.primary },
+                        styles.addDashedBtn,
+                        {
+                          paddingHorizontal: isTablet ? 12 : 9,
+                          paddingVertical: isTablet ? 7 : 5,
+                          backgroundColor: isDarkMode
+                            ? activeColors.surface
+                            : activeColors.surfaceSubtle,
+                          borderColor: activeColors.primary,
+                        },
                       ]}
                     >
-                      {isRootTier ? 'Section' : 'Sub-section'}
-                    </Text>
-                  </TouchableOpacity>
+                      <MaterialCommunityIcons
+                        name="plus"
+                        size={isTablet ? 15 : 13}
+                        color={activeColors.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.addDashedText,
+                          {
+                            fontSize: isTablet ? 12.5 : 11,
+                            color: activeColors.primary,
+                          },
+                        ]}
+                      >
+                        {isRootTier ? 'Section' : 'Sub-section'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </ScrollView>
               </View>
             );
           })}
+          </ScrollView>
         </View>
       )}
 
@@ -625,38 +605,42 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   minimizedLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
     gap: 6,
+    overflow: 'hidden',
+    marginRight: 6,
   },
   crumbScroll: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
+    paddingRight: 10,
   },
   crumbItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
   },
   crumbSeparator: {
     fontSize: 12,
     fontWeight: '700',
+    marginHorizontal: 1,
   },
   crumbChip: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: borderRadius.full,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: 'transparent',
   },
   crumbText: {
-    fontSize: 11,
+    fontSize: 11.5,
   },
   topHeaderBar: {
     flexDirection: 'row',
@@ -689,19 +673,19 @@ const styles = StyleSheet.create({
   toggleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 3,
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 3.5,
     borderRadius: borderRadius.full,
     borderWidth: 1,
-    marginLeft: 6,
+    flexShrink: 0,
   },
   toggleBtnText: {
     fontSize: 10,
     fontWeight: '700',
   },
   tierSection: {
-    paddingVertical: 5,
+    paddingVertical: 3.5,
     paddingHorizontal: 12,
   },
   tierDivider: {
@@ -711,7 +695,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   tierHeaderLeft: {
     flexDirection: 'row',
@@ -787,7 +771,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 460,
     borderRadius: 24,
     padding: 24,
     borderWidth: 1,

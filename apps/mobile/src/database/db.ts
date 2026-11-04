@@ -1,9 +1,10 @@
 import * as SQLite from 'expo-sqlite';
 import { SQL_CREATE_TABLES } from './schema.js';
-import { isDemoMode, DEMO_DB_NAME } from '../demo/demoConfig.js';
-import { seedDemoDataIfEmpty } from '../demo/demoSeed.js';
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
+let dbInitPromise: Promise<SQLite.SQLiteDatabase> | null = null;
+
+const CURRENT_DB_VERSION = 5;
 
 async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   const safeAlterQueries = [
@@ -16,6 +17,7 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
     'ALTER TABLE products ADD COLUMN imageUrl TEXT;',
     'ALTER TABLE products ADD COLUMN customValues TEXT;',
     'ALTER TABLE product_variants ADD COLUMN customValues TEXT;',
+    'ALTER TABLE product_variants ADD COLUMN priceDisplay TEXT;',
     'ALTER TABLE product_variants ADD COLUMN displayOrder INTEGER DEFAULT 0;',
     'ALTER TABLE subcategories ADD COLUMN customValues TEXT;',
     'ALTER TABLE customers ADD COLUMN email TEXT;',
@@ -84,12 +86,10 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
      );`,
   ];
 
-  for (const query of cleanupQueries) {
-    try {
-      await db.execAsync(query);
-    } catch {
-      // Safe to ignore if tables not ready yet
-    }
+  try {
+    await db.execAsync(cleanupQueries.join('\n'));
+  } catch {
+    // Safe to ignore if tables not ready yet
   }
 }
 
@@ -97,36 +97,74 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (dbInstance) {
     return dbInstance;
   }
-
-  const dbFileName = 'manju_hardware_store.db';
-  dbInstance = await SQLite.openDatabaseAsync(dbFileName);
-
-  // Enable WAL mode, fast synchronous writes, in-memory temp tables, and page cache
-  await dbInstance.execAsync('PRAGMA journal_mode = WAL;');
-  await dbInstance.execAsync('PRAGMA foreign_keys = ON;');
-  await dbInstance.execAsync('PRAGMA synchronous = NORMAL;');
-  await dbInstance.execAsync('PRAGMA cache_size = -64000;');
-  await dbInstance.execAsync('PRAGMA temp_store = MEMORY;');
-
-  // 1. Run migrations first if tables already exist from previous app version
-  try {
-    await runVersionedMigrations(dbInstance);
-  } catch {
-    // Fresh DB where tables not created yet; safe to ignore
+  if (dbInitPromise) {
+    return dbInitPromise;
   }
 
-  // 2. Run initial schema migration
-  await dbInstance.execAsync(SQL_CREATE_TABLES);
+  dbInitPromise = (async () => {
+    const dbFileName = 'manju_hardware_store.db';
+    const db = await SQLite.openDatabaseAsync(dbFileName);
 
-  // 3. Run non-destructive column migrations to ensure all tables get latest columns/indexes
-  await runVersionedMigrations(dbInstance);
+    // 1. High performance SQLite configuration in a single roundtrip
+    await db.execAsync(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA foreign_keys = ON;
+      PRAGMA synchronous = NORMAL;
+      PRAGMA cache_size = -64000;
+      PRAGMA temp_store = MEMORY;
+    `);
 
-  return dbInstance;
+    // 2. Read schema version using PRAGMA user_version
+    let userVersion = 0;
+    try {
+      const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version;');
+      userVersion = Number(row?.user_version ?? 0);
+    } catch {
+      userVersion = 0;
+    }
+
+    // 3. FAST PATH: If already at or above current schema version, skip all migration & schema checks!
+    if (userVersion >= CURRENT_DB_VERSION) {
+      dbInstance = db;
+      return db;
+    }
+
+    // 4. Check if tables exist
+    let hasTables = false;
+    try {
+      const tableCheck = await db.getFirstAsync<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='categories' LIMIT 1;"
+      );
+      hasTables = Boolean(tableCheck?.name);
+    } catch {
+      hasTables = false;
+    }
+
+    if (!hasTables) {
+      // Fresh DB: create all tables with current schema directly
+      await db.execAsync(SQL_CREATE_TABLES);
+    } else {
+      // Existing DB with older version: run migrations once
+      await runVersionedMigrations(db);
+    }
+
+    // Mark current DB version so future launches are instantaneous (0ms migration overhead)
+    await db.execAsync(`PRAGMA user_version = ${CURRENT_DB_VERSION};`);
+
+    dbInstance = db;
+    return db;
+  })();
+
+  return dbInitPromise;
 }
 
 export async function resetDatabase(): Promise<void> {
-  const db = await getDatabase();
+  dbInstance = null;
+  dbInitPromise = null;
+  const dbFileName = 'manju_hardware_store.db';
+  const db = await SQLite.openDatabaseAsync(dbFileName);
   await db.execAsync(`
+    PRAGMA user_version = 0;
     DROP TABLE IF EXISTS sync_conflicts;
     DROP TABLE IF EXISTS sync_metadata;
     DROP TABLE IF EXISTS sync_queue;
@@ -147,4 +185,6 @@ export async function resetDatabase(): Promise<void> {
     DROP TABLE IF EXISTS stores;
   `);
   await db.execAsync(SQL_CREATE_TABLES);
+  await db.execAsync(`PRAGMA user_version = ${CURRENT_DB_VERSION};`);
+  dbInstance = db;
 }

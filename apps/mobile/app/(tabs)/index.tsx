@@ -17,6 +17,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppStore } from '../../src/store/useAppStore.js';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
 import { InventoryRepository } from '../../src/database/repositories/inventoryRepository.js';
+import { getDatabase } from '../../src/database/db.js';
 import { lightColors, darkColors, colors, spacing, borderRadius, shadows, getThemeShadows } from '../../src/theme/tokens.js';
 import { StockSuccessModal, StockSuccessInfo } from '../../src/components/StockSuccessModal.js';
 
@@ -25,6 +26,9 @@ interface RestockItem {
   productId: string;
   productName: string;
   variantName: string;
+  size?: string;
+  sku?: string;
+  barcode?: string;
   brand?: string;
   imageUrl?: string;
   categoryName?: string;
@@ -34,6 +38,7 @@ interface RestockItem {
   isOutOfStock: boolean;
   rackLocation?: string;
   sellingPricePaise?: number;
+  priceDisplay?: string | null;
 }
 
 interface StockStats {
@@ -386,21 +391,19 @@ export default function HomeScreen() {
   const loadData = useCallback(async () => {
     try {
       const storeId = store?.id || 'store-1';
-      const [products, categories] = await Promise.all([
+      const db = await getDatabase();
+      const [products, categories, movementRows] = await Promise.all([
         ProductRepository.getProductsWithVariants(storeId),
         ProductRepository.getCategories(storeId),
+        db.getAllAsync<{ variantId: string }>(
+          `SELECT DISTINCT variantId FROM stock_movements WHERE storeId = ?;`,
+          [storeId]
+        ),
       ]);
 
       const catMap = new Map<string, string>();
       categories.forEach((c) => catMap.set(c.id, c.name));
 
-      // Get set of variant IDs that have recorded stock movements
-      const { getDatabase } = await import('../../src/database/db.js');
-      const db = await getDatabase();
-      const movementRows = await db.getAllAsync<{ variantId: string }>(
-        `SELECT DISTINCT variantId FROM stock_movements WHERE storeId = ?;`,
-        [storeId]
-      );
       const movedVariantIds = new Set((movementRows || []).map((m) => m.variantId));
 
       let totalUnits = 0;
@@ -434,6 +437,9 @@ export default function HomeScreen() {
             productId: p.id,
             productName: p.name,
             variantName: v.name || 'Standard',
+            size: v.size,
+            sku: v.sku,
+            barcode: v.barcode,
             brand: p.brand,
             imageUrl: p.imageUrl,
             categoryName: catMap.get(p.categoryId) || 'Hardware',
@@ -443,6 +449,7 @@ export default function HomeScreen() {
             isOutOfStock: isOut,
             rackLocation: v.rackLocation,
             sellingPricePaise: v.sellingPricePaise,
+            priceDisplay: v.priceDisplay,
           };
 
           allList.push(itemObj);
@@ -578,7 +585,13 @@ export default function HomeScreen() {
     const terms = query.split(/\s+/).filter(Boolean);
     const results: RestockItem[] = [];
     for (const item of allSelectableItems) {
-      const searchTarget = `${item.productName} ${item.variantName} ${item.brand || ''} ${item.categoryName || ''} ${item.rackLocation || ''}`.toLowerCase();
+      let priceStr = '';
+      if (item.priceDisplay) priceStr += ` ${item.priceDisplay}`;
+      if (item.sellingPricePaise && item.sellingPricePaise > 0) {
+        const r = item.sellingPricePaise / 100;
+        priceStr += ` ₹${r} ${r}`;
+      }
+      const searchTarget = `${item.productName} ${item.variantName} ${item.size || ''} ${item.sku || ''} ${item.barcode || ''} ${item.brand || ''} ${item.categoryName || ''} ${item.rackLocation || ''}${priceStr}`.toLowerCase();
       if (terms.every((term) => searchTarget.includes(term))) {
         results.push(item);
         if (results.length >= 50) break; // Capped at 50 for super fast rendering
@@ -591,7 +604,13 @@ export default function HomeScreen() {
     if (!itemSearchQuery.trim()) return allSelectableItems.slice(0, 15);
     const terms = itemSearchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return allSelectableItems.filter((i) => {
-      const target = `${i.productName} ${i.variantName} ${i.brand || ''} ${i.categoryName || ''}`.toLowerCase();
+      let priceStr = '';
+      if (i.priceDisplay) priceStr += ` ${i.priceDisplay}`;
+      if (i.sellingPricePaise && i.sellingPricePaise > 0) {
+        const r = i.sellingPricePaise / 100;
+        priceStr += ` ₹${r} ${r}`;
+      }
+      const target = `${i.productName} ${i.variantName} ${i.size || ''} ${i.sku || ''} ${i.barcode || ''} ${i.brand || ''} ${i.categoryName || ''} ${i.rackLocation || ''}${priceStr}`.toLowerCase();
       return terms.every((t) => target.includes(t));
     });
   }, [allSelectableItems, itemSearchQuery]);
@@ -1328,6 +1347,9 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.lg,
     paddingBottom: 110,
+    maxWidth: 960,
+    width: '100%',
+    alignSelf: 'center',
   },
 
   // 1. Header Card
@@ -1806,6 +1828,9 @@ const styles = StyleSheet.create({
   // Dialog Styles
   dialog: {
     borderRadius: borderRadius.xl,
+    maxWidth: 520,
+    width: '92%',
+    alignSelf: 'center',
   },
   dialogTitle: {
     fontSize: 18,

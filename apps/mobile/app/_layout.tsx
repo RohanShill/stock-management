@@ -84,12 +84,12 @@ export default function RootLayout() {
       setLastSyncTime(status.lastSyncTime);
     });
 
-    // Failsafe timer so splash screen never hangs for more than 2.5 seconds
+    // Failsafe timer so splash screen never hangs for more than 1.2 seconds
     const timer = setTimeout(() => {
       if (isMounted) {
         setAppIsReady(true);
       }
-    }, 2500);
+    }, 1200);
 
     return () => {
       isMounted = false;

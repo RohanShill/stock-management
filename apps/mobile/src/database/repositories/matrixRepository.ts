@@ -11,6 +11,8 @@ export interface MatrixCellData {
   currentStock: number;
   sellingPricePaise: number;
   purchasePricePaise: number;
+  priceDisplay?: string | null;
+  hasStockHistory?: boolean;
 }
 
 export interface MatrixGridData {
@@ -239,6 +241,24 @@ export class MatrixRepository {
       productIds
     );
 
+    // Query variantIds that have movement history in stock_movements
+    const movedVariantIds = new Set<string>();
+    try {
+      if (typeof db.getAllAsync === 'function') {
+        const movementRows = await db.getAllAsync<{ variantId: string }>(
+          `SELECT DISTINCT variantId FROM stock_movements WHERE storeId = ?;`,
+          [storeId]
+        );
+        if (Array.isArray(movementRows)) {
+          movementRows.forEach((m) => {
+            if (m.variantId) movedVariantIds.add(m.variantId);
+          });
+        }
+      }
+    } catch {
+      // Fallback if stock_movements query is unsupported in mocks
+    }
+
     const prodMap = new Map<string, any>();
     productRows.forEach((p) => prodMap.set(p.id, p));
 
@@ -272,15 +292,21 @@ export class MatrixRepository {
       brandSet.add(brand);
       sizeSet.add(size);
 
+      const stock = Number(v.currentStock) || 0;
+      const opening = Number(v.openingStock) || 0;
+      const hasHistory = stock > 0 || opening > 0 || movedVariantIds.has(v.id);
+
       const cellKey = `${size}___${brand.toLowerCase()}`;
       cells[cellKey] = {
         variantId: v.id,
         productId: prod.id,
         brand: brand,
         size: size,
-        currentStock: Number(v.currentStock) || 0,
+        currentStock: stock,
         sellingPricePaise: Number(v.sellingPricePaise) || 0,
         purchasePricePaise: Number(v.purchasePricePaise) || 0,
+        priceDisplay: v.priceDisplay ? String(v.priceDisplay).trim() : null,
+        hasStockHistory: Boolean(hasHistory),
       };
     }
 
@@ -1076,25 +1102,44 @@ export class MatrixRepository {
   }
 
   /**
-   * Updates variant selling or purchase price in paise
+   * Updates variant selling or purchase price in paise and optional custom priceDisplay string
    */
   static async updateVariantPrice(
     variantId: string,
     mode: 'sell' | 'purchase',
-    pricePaise: number
+    pricePaise: number,
+    storeId?: string,
+    deviceId?: string,
+    priceDisplay?: string | null
   ): Promise<void> {
     const db = await getDatabase();
     const now = new Date().toISOString();
+    const cleanDisplay = priceDisplay !== undefined && priceDisplay !== null ? priceDisplay.trim() : null;
+
     if (mode === 'sell') {
-      await db.runAsync(
-        `UPDATE product_variants SET sellingPricePaise = ?, updatedAt = ? WHERE id = ?;`,
-        [pricePaise, now, variantId]
-      );
+      if (cleanDisplay !== null) {
+        await db.runAsync(
+          `UPDATE product_variants SET sellingPricePaise = ?, priceDisplay = ?, updatedAt = ? WHERE id = ?;`,
+          [pricePaise, cleanDisplay, now, variantId]
+        );
+      } else {
+        await db.runAsync(
+          `UPDATE product_variants SET sellingPricePaise = ?, updatedAt = ? WHERE id = ?;`,
+          [pricePaise, now, variantId]
+        );
+      }
     } else {
       await db.runAsync(
         `UPDATE product_variants SET purchasePricePaise = ?, updatedAt = ? WHERE id = ?;`,
         [pricePaise, now, variantId]
       );
+    }
+
+    if (storeId && deviceId) {
+      const payload: any = mode === 'sell'
+        ? { sellingPricePaise: pricePaise, ...(cleanDisplay !== null ? { priceDisplay: cleanDisplay } : {}) }
+        : { purchasePricePaise: pricePaise };
+      await SyncQueueRepository.enqueue(storeId, deviceId, 'product_variant', variantId, 'update', payload).catch(() => {});
     }
   }
 }

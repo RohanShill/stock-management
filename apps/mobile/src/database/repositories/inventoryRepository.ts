@@ -193,7 +193,9 @@ export class InventoryRepository {
              p.brand AS brand,
              p.baseUnit AS unit,
              v.name AS variantName,
-             v.size AS size
+             v.size AS size,
+             v.sellingPricePaise AS sellingPricePaise,
+             v.priceDisplay AS priceDisplay
            FROM stock_movements sm
            LEFT JOIN product_variants v ON sm.variantId = v.id
            LEFT JOIN products p ON v.productId = p.id
@@ -218,6 +220,8 @@ export class InventoryRepository {
               size: sm.size,
               unit: sm.unit || 'pcs',
               brand: sm.brand,
+              sellingPricePaise: Number(sm.sellingPricePaise || 0),
+              priceDisplay: sm.priceDisplay ? String(sm.priceDisplay).trim() : null,
             };
           });
         }
@@ -259,7 +263,7 @@ export class InventoryRepository {
     const variantPlaceholders = variantIds.map(() => '?').join(',');
     const variants = variantIds.length > 0 && typeof db.getAllAsync === 'function'
       ? await db.getAllAsync<any>(
-          `SELECT id, productId, name, size FROM product_variants WHERE id IN (${variantPlaceholders});`,
+          `SELECT id, productId, name, size, sellingPricePaise, priceDisplay FROM product_variants WHERE id IN (${variantPlaceholders});`,
           variantIds
         )
       : [];
@@ -295,6 +299,8 @@ export class InventoryRepository {
         size: v?.size,
         unit: p?.baseUnit || 'pcs',
         brand: p?.brand,
+        sellingPricePaise: Number(v?.sellingPricePaise || 0),
+        priceDisplay: v?.priceDisplay ? String(v?.priceDisplay).trim() : null,
       };
     });
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MatrixCellData } from '../database/repositories/matrixRepository.js';
 import { borderRadius, getThemeShadows } from '../theme/tokens.js';
@@ -10,6 +10,7 @@ interface MatrixActionBarProps {
   selectedBrand: string;
   onStockIn: () => void;
   onSell: () => void;
+  onPricePress?: () => void;
   isDarkMode: boolean;
   activeColors: any;
 }
@@ -20,18 +21,39 @@ export const MatrixActionBar: React.FC<MatrixActionBarProps> = React.memo(({
   selectedBrand,
   onStockIn,
   onSell,
+  onPricePress,
   isDarkMode,
   activeColors,
 }) => {
   const themeShadows = getThemeShadows(isDarkMode);
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 600;
+
   const isSelected = Boolean(selectedCell || (selectedSize && selectedBrand));
   const currentStock = selectedCell ? selectedCell.currentStock : 0;
+  const sellingPricePaise = selectedCell ? (selectedCell.sellingPricePaise || 0) : 0;
+  const priceRupees = sellingPricePaise > 0 ? (sellingPricePaise / 100) : 0;
+  const customDisplay = selectedCell?.priceDisplay ? selectedCell.priceDisplay.trim() : '';
+
+  let formattedPrice = '';
+  if (customDisplay) {
+    formattedPrice = customDisplay.startsWith('₹') || customDisplay.toLowerCase().startsWith('rs')
+      ? customDisplay
+      : `₹${customDisplay}`;
+  } else if (priceRupees > 0) {
+    formattedPrice = `₹${Number.isInteger(priceRupees) ? priceRupees : priceRupees.toFixed(2)}`;
+  }
+  const hasPrice = Boolean(formattedPrice);
 
   return (
     <View
       style={[
         styles.container,
         {
+          width: isTablet ? Math.min(width - 40, 780) : undefined,
+          alignSelf: isTablet ? 'center' : 'stretch',
+          marginHorizontal: isTablet ? 0 : 14,
+          padding: isTablet ? 15 : 12,
           backgroundColor: activeColors.surface,
           borderColor: activeColors.border,
         },
@@ -46,56 +68,120 @@ export const MatrixActionBar: React.FC<MatrixActionBarProps> = React.memo(({
               <Text
                 style={[
                   styles.itemTitle,
-                  { color: activeColors.textPrimary },
+                  {
+                    fontSize: isTablet ? 17 : 15,
+                    color: activeColors.textPrimary,
+                  },
                 ]}
                 numberOfLines={1}
               >
                 {selectedSize} • {selectedBrand}
               </Text>
             </View>
-            <View
-              style={[
-                styles.stockPill,
-                {
-                  backgroundColor: currentStock > 0
-                    ? isDarkMode
-                      ? '#064E3B'
-                      : '#ECFDF5'
-                    : isDarkMode
-                    ? '#7F1D1D'
-                    : '#FEF2F2',
-                },
-              ]}
-            >
-              <Text
+            <View style={styles.pillsRow}>
+              {(() => {
+                const hasHistory = Boolean(selectedCell?.hasStockHistory);
+                const isOutOfStock = hasHistory && currentStock === 0;
+
+                const bg = currentStock > 0
+                  ? (isDarkMode ? '#064E3B' : '#ECFDF5')
+                  : isOutOfStock
+                  ? (isDarkMode ? '#7F1D1D' : '#FEF2F2')
+                  : (isDarkMode ? '#1E293B' : '#F1F5F9');
+
+                const textColor = currentStock > 0
+                  ? (isDarkMode ? '#34D399' : '#059669')
+                  : isOutOfStock
+                  ? (isDarkMode ? '#F87171' : '#DC2626')
+                  : activeColors.textSecondary;
+
+                const label = currentStock > 0
+                  ? `Stock: ${currentStock}`
+                  : isOutOfStock
+                  ? 'Stock: 0'
+                  : 'Stock: -';
+
+                return (
+                  <View
+                    style={[
+                      styles.stockPill,
+                      {
+                        paddingHorizontal: isTablet ? 12 : 10,
+                        paddingVertical: isTablet ? 5 : 4,
+                        backgroundColor: bg,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.stockPillText,
+                        {
+                          fontSize: isTablet ? 13.5 : 12.5,
+                          color: textColor,
+                        },
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </View>
+                );
+              })()}
+
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={onPricePress || onStockIn}
                 style={[
-                  styles.stockPillText,
+                  styles.pricePill,
                   {
-                    color: currentStock > 0
+                    paddingHorizontal: isTablet ? 12 : 10,
+                    paddingVertical: isTablet ? 5 : 4,
+                    backgroundColor: hasPrice
                       ? isDarkMode
-                        ? '#34D399'
-                        : '#059669'
+                        ? '#1E1B4B'
+                        : '#EEF2FF'
                       : isDarkMode
-                      ? '#F87171'
-                      : '#DC2626',
+                      ? activeColors.surfaceSubtle
+                      : '#F8FAFC',
+                    borderColor: hasPrice
+                      ? isDarkMode
+                        ? '#4338CA'
+                        : '#C7D2FE'
+                      : activeColors.border,
                   },
                 ]}
               >
-                Stock: {currentStock}
-              </Text>
+                <Text
+                  style={[
+                    styles.pricePillText,
+                    {
+                      fontSize: isTablet ? 13.5 : 12.5,
+                      color: hasPrice
+                        ? isDarkMode
+                          ? '#A5B4FC'
+                          : '#4338CA'
+                        : activeColors.textMuted,
+                    },
+                  ]}
+                >
+                  {hasPrice ? formattedPrice : '+ Price'}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         ) : (
           <View style={styles.promptWrap}>
             <MaterialCommunityIcons
               name="gesture-tap"
-              size={18}
+              size={isTablet ? 20 : 18}
               color={activeColors.textMuted}
             />
             <Text
               style={[
                 styles.promptText,
-                { color: activeColors.textMuted },
+                {
+                  fontSize: isTablet ? 14.5 : 13,
+                  color: activeColors.textMuted,
+                },
               ]}
             >
               Tap any cell in the table to manage stock
@@ -114,6 +200,7 @@ export const MatrixActionBar: React.FC<MatrixActionBarProps> = React.memo(({
           style={[
             styles.actionButton,
             {
+              paddingVertical: isTablet ? 14 : 12,
               backgroundColor: isSelected
                 ? isDarkMode
                   ? '#059669'
@@ -131,13 +218,14 @@ export const MatrixActionBar: React.FC<MatrixActionBarProps> = React.memo(({
         >
           <MaterialCommunityIcons
             name="plus-circle-outline"
-            size={20}
+            size={isTablet ? 22 : 20}
             color={isSelected ? '#FFFFFF' : activeColors.textMuted}
           />
           <Text
             style={[
               styles.actionButtonText,
               {
+                fontSize: isTablet ? 17 : 16,
                 color: isSelected ? '#FFFFFF' : activeColors.textMuted,
                 fontWeight: '800',
               },
@@ -155,6 +243,7 @@ export const MatrixActionBar: React.FC<MatrixActionBarProps> = React.memo(({
           style={[
             styles.actionButton,
             {
+              paddingVertical: isTablet ? 14 : 12,
               backgroundColor: isSelected
                 ? isDarkMode
                   ? '#DC2626'
@@ -172,13 +261,14 @@ export const MatrixActionBar: React.FC<MatrixActionBarProps> = React.memo(({
         >
           <MaterialCommunityIcons
             name="cart-arrow-down"
-            size={20}
+            size={isTablet ? 22 : 20}
             color={isSelected ? '#FFFFFF' : activeColors.textMuted}
           />
           <Text
             style={[
               styles.actionButtonText,
               {
+                fontSize: isTablet ? 17 : 16,
                 color: isSelected ? '#FFFFFF' : activeColors.textMuted,
                 fontWeight: '800',
               },
@@ -202,29 +292,46 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   infoRow: {
-    marginBottom: 10,
+    marginBottom: 8,
   },
   selectedWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    width: '100%',
   },
   badgeLabel: {
     flex: 1,
-    marginRight: 8,
+    marginRight: 6,
   },
   itemTitle: {
     fontSize: 15,
     fontWeight: '800',
     letterSpacing: -0.2,
   },
+  pillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
+  },
   stockPill: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: borderRadius.full,
   },
   stockPillText: {
-    fontSize: 13,
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  pricePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  pricePillText: {
+    fontSize: 12.5,
     fontWeight: '700',
   },
   promptWrap: {
@@ -240,8 +347,8 @@ const styles = StyleSheet.create({
   },
   buttonsRow: {
     flexDirection: 'row',
-    gap: 12,
-    justifyContent: 'flex-end',
+    gap: 10,
+    width: '100%',
   },
   actionButton: {
     flex: 1,

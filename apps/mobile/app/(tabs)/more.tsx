@@ -9,6 +9,7 @@ import {
   Platform,
   Alert,
   StatusBar as RNStatusBar,
+  TextInput as RNTextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -46,6 +47,35 @@ export default function SettingsScreen() {
   const [categorySubcategories, setCategorySubcategories] = useState<Record<string, Subcategory[]>>({});
   const [loading, setLoading] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [expandedCatIds, setExpandedCatIds] = useState<Set<string>>(new Set());
+  const [catSearchQuery, setCatSearchQuery] = useState('');
+
+  const toggleExpandCategory = (catId: string) => {
+    setExpandedCatIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(catId)) {
+        next.delete(catId);
+      } else {
+        next.add(catId);
+      }
+      return next;
+    });
+  };
+
+  const allExpanded =
+    categories.length > 0 && categories.every((c) => expandedCatIds.has(c.id));
+
+  const handleToggleExpandAll = () => {
+    if (allExpanded) {
+      setExpandedCatIds(new Set());
+    } else {
+      setExpandedCatIds(new Set(categories.map((c) => c.id)));
+    }
+  };
+
+  const filteredCategories = categories.filter((c) =>
+    c.name.toLowerCase().includes(catSearchQuery.trim().toLowerCase())
+  );
 
   // Add / Edit Category Dialog
   const [catDialogVisible, setCatDialogVisible] = useState(false);
@@ -619,14 +649,76 @@ export default function SettingsScreen() {
 
       {/* 4. Categories Management */}
       <View style={[styles.sectionHeaderRow, { marginTop: spacing.lg }]}>
-        <Text style={[styles.sectionTitle, { color: activeColors.textPrimary }]}>
-          Categories ({categories.length})
-        </Text>
+        <View style={styles.catHeaderLeft}>
+          <Text style={[styles.sectionTitle, { color: activeColors.textPrimary }]}>
+            Categories ({categories.length})
+          </Text>
+          {categories.length > 1 && (
+            <TouchableOpacity
+              onPress={handleToggleExpandAll}
+              style={[
+                styles.expandAllBtn,
+                {
+                  backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#EEF2FF',
+                },
+              ]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Text style={[styles.expandAllText, { color: activeColors.primary }]}>
+                {allExpanded ? 'Collapse All' : 'Expand All'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
         <TouchableOpacity style={styles.addCategoryBtn} onPress={handleOpenAddCategory}>
           <MaterialCommunityIcons name="plus" size={14} color="#FFFFFF" />
           <Text style={styles.addCategoryBtnText}>Add Category</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Category Search Input (for stores with many categories) */}
+      {categories.length >= 3 && (
+        <View
+          style={[
+            styles.catSearchContainer,
+            {
+              backgroundColor: activeColors.surface,
+              borderColor: activeColors.border,
+            },
+          ]}
+        >
+          <MaterialCommunityIcons
+            name="magnify"
+            size={18}
+            color={activeColors.textSecondary}
+            style={{ marginRight: 6 }}
+          />
+          <RNTextInput
+            value={catSearchQuery}
+            onChangeText={setCatSearchQuery}
+            placeholder="Search categories..."
+            placeholderTextColor={activeColors.textMuted}
+            style={[
+              styles.catSearchInput,
+              {
+                color: activeColors.textPrimary,
+              },
+            ]}
+          />
+          {catSearchQuery.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setCatSearchQuery('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialCommunityIcons
+                name="close-circle"
+                size={16}
+                color={activeColors.textMuted}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       <Surface
         style={[
@@ -637,93 +729,218 @@ export default function SettingsScreen() {
           },
         ]}
       >
-        {categories.map((cat, idx) => (
-          <View key={cat.id}>
-            <View style={styles.catItemRow}>
-              <View
-                style={[
-                  styles.catIconCircle,
-                  { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="shape-outline"
-                  size={18}
-                  color={activeColors.primary}
-                />
-              </View>
-              <Text style={[styles.catItemName, { color: activeColors.textPrimary }]}>
-                {cat.name}
-              </Text>
-
-              <View style={styles.catItemActions}>
-                <TouchableOpacity
-                  onPress={() => handleOpenEditCategory(cat)}
-                  style={styles.catActionIcon}
-                >
-                  <MaterialCommunityIcons
-                    name="pencil-outline"
-                    size={18}
-                    color={activeColors.textSecondary}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleDeleteCategory(cat)}
-                  style={styles.catActionIcon}
-                >
-                  <MaterialCommunityIcons name="trash-can-outline" size={18} color="#DC2626" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Sub-tabs / Sections under this Category */}
-            {categorySubcategories[cat.id] && categorySubcategories[cat.id].length > 0 && (
-              <View style={styles.subcatsContainer}>
-                <Text style={[styles.subcatsLabel, { color: activeColors.textMuted }]}>
-                  Sections / Tabs:
-                </Text>
-                <View style={styles.subcatsChipsRow}>
-                  {categorySubcategories[cat.id].map((sub) => (
-                    <View
-                      key={sub.id}
-                      style={[
-                        styles.subcatChip,
-                        {
-                          backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#F8FAFC',
-                          borderColor: activeColors.border,
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.subcatChipText, { color: activeColors.textPrimary }]}>
-                        {sub.name}
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => handleDeleteSubcategory(sub)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        style={styles.subcatDeleteBtn}
-                      >
-                        <MaterialCommunityIcons
-                          name="trash-can-outline"
-                          size={14}
-                          color="#EF4444"
-                        />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {idx !== categories.length - 1 && (
-              <Divider
-                style={[
-                  styles.divider,
-                  { backgroundColor: isDarkMode ? '#1F2937' : '#F1F5F9' },
-                ]}
-              />
-            )}
+        {categories.length === 0 ? (
+          <View style={styles.catEmptyState}>
+            <MaterialCommunityIcons
+              name="shape-outline"
+              size={32}
+              color={activeColors.textMuted}
+            />
+            <Text style={[styles.catEmptyText, { color: activeColors.textMuted }]}>
+              No categories added yet. Tap '+ Add Category' to get started.
+            </Text>
           </View>
-        ))}
+        ) : filteredCategories.length === 0 ? (
+          <View style={styles.catEmptyState}>
+            <MaterialCommunityIcons
+              name="magnify-close"
+              size={28}
+              color={activeColors.textMuted}
+            />
+            <Text style={[styles.catEmptyText, { color: activeColors.textMuted }]}>
+              No categories found matching "{catSearchQuery.trim()}"
+            </Text>
+            <TouchableOpacity
+              style={styles.catClearSearchBtn}
+              onPress={() => setCatSearchQuery('')}
+            >
+              <Text style={[styles.catClearSearchText, { color: activeColors.primary }]}>
+                Clear Search
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          filteredCategories.map((cat, idx) => {
+            const isExpanded = expandedCatIds.has(cat.id);
+            const subs = categorySubcategories[cat.id] || [];
+            const subCount = subs.length;
+
+            return (
+              <View key={cat.id}>
+                <TouchableOpacity
+                  style={styles.catItemRow}
+                  activeOpacity={0.7}
+                  onPress={() => toggleExpandCategory(cat.id)}
+                >
+                  <View
+                    style={[
+                      styles.catIconCircle,
+                      { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="shape-outline"
+                      size={18}
+                      color={activeColors.primary}
+                    />
+                  </View>
+
+                  <View style={styles.catInfoCol}>
+                    <View style={styles.catTitleRow}>
+                      <Text
+                        style={[styles.catItemName, { color: activeColors.textPrimary }]}
+                        numberOfLines={1}
+                      >
+                        {cat.name}
+                      </Text>
+                      <View
+                        style={[
+                          styles.catCountBadge,
+                          {
+                            backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#F1F5F9',
+                            borderColor: activeColors.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.catCountBadgeText, { color: activeColors.textSecondary }]}
+                        >
+                          {subCount} {subCount === 1 ? 'section' : 'sections'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.catItemSubtitle, { color: activeColors.textMuted }]}>
+                      {isExpanded ? 'Tap to collapse' : 'Tap to manage sections'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.catItemActions}>
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        handleOpenEditCategory(cat);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                      style={styles.catActionIcon}
+                    >
+                      <MaterialCommunityIcons
+                        name="pencil-outline"
+                        size={18}
+                        color={activeColors.textSecondary}
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        handleDeleteCategory(cat);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                      style={styles.catActionIcon}
+                    >
+                      <MaterialCommunityIcons name="trash-can-outline" size={18} color="#DC2626" />
+                    </TouchableOpacity>
+                    <View style={styles.catChevron}>
+                      <MaterialCommunityIcons
+                        name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                        size={20}
+                        color={activeColors.textSecondary}
+                      />
+                    </View>
+                  </View>
+                </TouchableOpacity>
+
+                {/* Sub-tabs / Sections under this Category (Collapsible & Scroll-limited) */}
+                {isExpanded && (
+                  <View
+                    style={[
+                      styles.subcatsContainer,
+                      {
+                        backgroundColor: isDarkMode ? '#0F172A' : '#F8FAFC',
+                        borderColor: isDarkMode ? '#1E293B' : '#E2E8F0',
+                      },
+                    ]}
+                  >
+                    <View style={styles.subcatsHeaderRow}>
+                      <View style={styles.subcatsTitleGroup}>
+                        <MaterialCommunityIcons
+                          name="view-grid-outline"
+                          size={13}
+                          color={activeColors.primary}
+                        />
+                        <Text style={[styles.subcatsLabel, { color: activeColors.textSecondary }]}>
+                          Sections / Tabs ({subCount})
+                        </Text>
+                      </View>
+                      {subCount > 0 && (
+                        <Text style={[styles.subcatsHint, { color: activeColors.textMuted }]}>
+                          Tap 🗑 to remove tab
+                        </Text>
+                      )}
+                    </View>
+
+                    {subCount > 0 ? (
+                      <ScrollView
+                        style={styles.subcatsScrollView}
+                        nestedScrollEnabled={true}
+                        showsVerticalScrollIndicator={true}
+                      >
+                        <View style={styles.subcatsChipsRow}>
+                          {subs.map((sub) => (
+                            <View
+                              key={sub.id}
+                              style={[
+                                styles.subcatChip,
+                                {
+                                  backgroundColor: isDarkMode ? activeColors.surface : '#FFFFFF',
+                                  borderColor: isDarkMode ? '#334155' : '#CBD5E1',
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[styles.subcatChipText, { color: activeColors.textPrimary }]}
+                                numberOfLines={1}
+                              >
+                                {sub.name}
+                              </Text>
+                              <TouchableOpacity
+                                onPress={() => handleDeleteSubcategory(sub)}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                style={styles.subcatDeleteBtn}
+                              >
+                                <MaterialCommunityIcons
+                                  name="trash-can-outline"
+                                  size={14}
+                                  color="#EF4444"
+                                />
+                              </TouchableOpacity>
+                            </View>
+                          ))}
+                        </View>
+                      </ScrollView>
+                    ) : (
+                      <View style={styles.subcatEmptyNotice}>
+                        <Text
+                          style={[styles.subcatEmptyNoticeText, { color: activeColors.textMuted }]}
+                        >
+                          No sections created yet for this category.
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {idx !== filteredCategories.length - 1 && (
+                  <Divider
+                    style={[
+                      styles.divider,
+                      { backgroundColor: isDarkMode ? '#1F2937' : '#F1F5F9' },
+                    ]}
+                  />
+                )}
+              </View>
+            );
+          })
+        )}
       </Surface>
 
       {/* 5. Data & Export */}
@@ -957,6 +1174,34 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
+  catHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  expandAllBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: borderRadius.full,
+  },
+  expandAllText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  catSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: 10,
+    height: 38,
+    marginBottom: spacing.sm,
+  },
+  catSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    paddingVertical: 0,
+  },
   addCategoryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1009,24 +1254,54 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   catIconCircle: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
     borderRadius: borderRadius.sm,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: spacing.sm,
+    marginRight: 10,
+  },
+  catInfoCol: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  catTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
   },
   catItemName: {
-    flex: 1,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
+    maxWidth: 160,
+  },
+  catCountBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  catCountBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  catItemSubtitle: {
+    fontSize: 11,
+    marginTop: 2,
   },
   catItemActions: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 6,
   },
   catActionIcon: {
     padding: 6,
+  },
+  catChevron: {
+    padding: 4,
+    marginLeft: 2,
   },
 
   // Menu Rows (Data & Export)
@@ -1103,26 +1378,46 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   subcatsContainer: {
-    paddingLeft: spacing.lg + 28,
-    paddingRight: spacing.md,
-    paddingBottom: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    padding: spacing.sm + 2,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    gap: 8,
+  },
+  subcatsHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  subcatsTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
   },
   subcatsLabel: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  subcatsHint: {
+    fontSize: 10,
+    fontStyle: 'italic',
+  },
+  subcatsScrollView: {
+    maxHeight: 160,
   },
   subcatsChipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+    paddingVertical: 2,
   },
   subcatChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: borderRadius.full,
     borderWidth: 1,
@@ -1134,5 +1429,32 @@ const styles = StyleSheet.create({
   },
   subcatDeleteBtn: {
     padding: 2,
+  },
+  subcatEmptyNotice: {
+    paddingVertical: 6,
+  },
+  subcatEmptyNoticeText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+  catEmptyState: {
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  catEmptyText: {
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  catClearSearchBtn: {
+    marginTop: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  catClearSearchText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

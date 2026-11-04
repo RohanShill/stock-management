@@ -110,20 +110,6 @@ export class ProductRepository {
   ): Promise<Array<Product & { variants: ProductVariant[] }>> {
     const db = await getDatabase();
 
-    // 1. Fetch active categories and subcategories
-    const [activeCats, activeSubs] = await Promise.all([
-      db.getAllAsync<any>(
-        `SELECT id FROM categories WHERE storeId = ? AND deletedAt IS NULL AND active = 1;`,
-        [storeId]
-      ),
-      db.getAllAsync<any>(
-        `SELECT id FROM subcategories WHERE storeId = ? AND deletedAt IS NULL AND active = 1;`,
-        [storeId]
-      ),
-    ]);
-    const activeCatIds = new Set((activeCats || []).map((c: any) => c.id));
-    const activeSubIds = new Set((activeSubs || []).map((s: any) => s.id));
-
     let sql = `SELECT * FROM products WHERE storeId = ? AND deletedAt IS NULL AND active = 1`;
     const params: any[] = [storeId];
 
@@ -143,8 +129,23 @@ export class ProductRepository {
     }
     sql += ` ORDER BY name ASC;`;
 
-    const rawProducts = await db.getAllAsync<any>(sql, params);
+    // 1. Fetch active categories, active subcategories, and raw products concurrently
+    const [activeCats, activeSubs, rawProducts] = await Promise.all([
+      db.getAllAsync<any>(
+        `SELECT id FROM categories WHERE storeId = ? AND deletedAt IS NULL AND active = 1;`,
+        [storeId]
+      ),
+      db.getAllAsync<any>(
+        `SELECT id FROM subcategories WHERE storeId = ? AND deletedAt IS NULL AND active = 1;`,
+        [storeId]
+      ),
+      db.getAllAsync<any>(sql, params),
+    ]);
+
     if (!rawProducts || rawProducts.length === 0) return [];
+
+    const activeCatIds = new Set((activeCats || []).map((c: any) => c.id));
+    const activeSubIds = new Set((activeSubs || []).map((s: any) => s.id));
 
     // Filter out products belonging to deleted categories/subcategories or dummy demo data
     const isDummyProduct = (p: any): boolean => {

@@ -276,16 +276,32 @@ export default function SalesScreen() {
     }
   };
 
-  // Search filtering for products
-  const filteredProducts = products.filter((p) => {
-    if (!productSearch.trim()) return true;
-    const q = productSearch.toLowerCase();
-    return (
-      p.name.toLowerCase().includes(q) ||
-      (p.brand && p.brand.toLowerCase().includes(q)) ||
-      p.variants.some((v) => v.name.toLowerCase().includes(q) || v.sku.toLowerCase().includes(q))
-    );
-  });
+  // Intelligent tokenized search filtering for products & variants
+  const filteredProducts = useMemo(() => {
+    const raw = productSearch.trim().toLowerCase();
+    if (!raw) return products;
+
+    const terms = raw.split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return products;
+
+    return products.filter((p) => {
+      // 1. Check if the product itself (name + brand) matches all terms
+      const prodTarget = `${p.name} ${p.brand || ''}`.toLowerCase();
+      if (terms.every((t) => prodTarget.includes(t))) return true;
+
+      // 2. Check if any variant (combined with product info) matches all terms
+      return p.variants.some((v) => {
+        let priceStr = '';
+        if (v.priceDisplay) priceStr += ` ${v.priceDisplay}`;
+        if (v.sellingPricePaise && v.sellingPricePaise > 0) {
+          const r = v.sellingPricePaise / 100;
+          priceStr += ` ₹${r} ${r}`;
+        }
+        const combined = `${p.name} ${p.brand || ''} ${v.name} ${v.size || ''} ${v.sku} ${v.barcode || ''}${priceStr}`.toLowerCase();
+        return terms.every((t) => combined.includes(t));
+      });
+    });
+  }, [products, productSearch]);
 
   return (
     <View style={[styles.container, { backgroundColor: activeColors.background }]}>
@@ -305,9 +321,10 @@ export default function SalesScreen() {
           <Text style={[styles.headerTitle, { color: activeColors.textPrimary }]}>New Bill / Sale</Text>
         </View>
         <Searchbar
-          placeholder="Search products or SKU to bill..."
+          placeholder="Search product, brand, size, or SKU..."
           onChangeText={setProductSearch}
           value={productSearch}
+          onClearIconPress={() => setProductSearch('')}
           style={[styles.searchBar, { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9' }]}
           inputStyle={[styles.searchInput, { color: activeColors.textPrimary }]}
           iconColor={activeColors.textSecondary}

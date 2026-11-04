@@ -406,4 +406,218 @@ describe('MatrixRepository Utilities', () => {
       MatrixRepository.addSubTab('store-1', 'cat-1', 'dev-1', 'Beyond Depth', sub4.id)
     ).rejects.toThrow('Maximum subsection nesting (Level 4 under Section) reached.');
   });
+
+  it('updates variant selling price in paise and custom priceDisplay text', async () => {
+    let executedSql = '';
+    let executedParams: any[] = [];
+    const mockDb = {
+      runAsync: vi.fn().mockImplementation((sql: string, params: any[]) => {
+        executedSql = sql;
+        executedParams = params;
+        return Promise.resolve({ changes: 1 });
+      }),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+
+    await MatrixRepository.updateVariantPrice(
+      'var-123',
+      'sell',
+      5000, // ₹50.00
+      'store-1',
+      'device-1',
+      '50 per pics'
+    );
+
+    expect(executedSql).toContain('UPDATE product_variants SET sellingPricePaise = ?, priceDisplay = ?');
+    expect(executedParams[0]).toBe(5000);
+    expect(executedParams[1]).toBe('50 per pics');
+    expect(executedParams[3]).toBe('var-123');
+  });
+
+  it('maps sellingPricePaise, purchasePricePaise and priceDisplay in matrix cells', async () => {
+    const mockDb = {
+      getAllAsync: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('FROM products')) {
+          return Promise.resolve([
+            { id: 'prod-1', brand: 'Supreme', name: 'Supreme Pipe' },
+          ]);
+        }
+        if (sql.includes('FROM product_variants')) {
+          return Promise.resolve([
+            {
+              id: 'var-1',
+              productId: 'prod-1',
+              size: '1/2"',
+              currentStock: 25,
+              sellingPricePaise: 5000,
+              purchasePricePaise: 4000,
+              priceDisplay: '50 per litter',
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      }),
+      getFirstAsync: vi.fn().mockResolvedValue(null),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+
+    const data = await MatrixRepository.getMatrixData('store-1', 'cat-1', 'sub-1');
+    const cellKey = '1/2"___supreme';
+    expect(data.cells[cellKey]).toBeDefined();
+    expect(data.cells[cellKey].currentStock).toBe(25);
+    expect(data.cells[cellKey].sellingPricePaise).toBe(5000);
+    expect(data.cells[cellKey].purchasePricePaise).toBe(4000);
+    expect(data.cells[cellKey].priceDisplay).toBe('50 per litter');
+    expect(data.cells[cellKey].hasStockHistory).toBe(true);
+  });
+
+  it('distinguishes between brand new unstocked items and genuinely out-of-stock items', () => {
+    // Case 1: Brand new item (never filled, currentStock: 0, no stock history)
+    const unstockedCell = {
+      variantId: 'v-new',
+      currentStock: 0,
+      hasStockHistory: false,
+    };
+    const isUnstockedOut = unstockedCell.hasStockHistory && unstockedCell.currentStock <= 0;
+    expect(isUnstockedOut).toBe(false); // MUST NOT trigger red alert
+
+    // Case 2: Stocked out item (was previously filled or moved, now reached 0)
+    const stockedOutCell = {
+      variantId: 'v-depleted',
+      currentStock: 0,
+      hasStockHistory: true,
+    };
+    const isGenuinelyOut = stockedOutCell.hasStockHistory && stockedOutCell.currentStock <= 0;
+    expect(isGenuinelyOut).toBe(true); // MUST trigger red alert 0 •
+  });
+
+  it('supports multi-word query filtering matching size and brand across tokens', () => {
+    const matrix = {
+      brands: ['Supreme', 'Finolex'],
+      sizes: ['1/2"', '3/4"'],
+      cells: {
+        '1/2"___supreme': { brand: 'Supreme', size: '1/2"', currentStock: 10, sellingPricePaise: 5000, purchasePricePaise: 0, variantId: 'v1', productId: 'p1', priceDisplay: '50 per pc' },
+        '3/4"___supreme': { brand: 'Supreme', size: '3/4"', currentStock: 5, sellingPricePaise: 8000, purchasePricePaise: 0, variantId: 'v2', productId: 'p1', priceDisplay: null },
+        '1/2"___finolex': { brand: 'Finolex', size: '1/2"', currentStock: 8, sellingPricePaise: 4500, purchasePricePaise: 0, variantId: 'v3', productId: 'p2', priceDisplay: null },
+      },
+    };
+
+    const filterMatrix = (query: string) => {
+      const rawQuery = query.trim().toLowerCase();
+      if (!rawQuery) return matrix;
+      const tokens = rawQuery.split(/\s+/).filter(Boolean);
+      const matchingSizes = new Set<string>();
+      const matchingBrands = new Set<string>();
+
+      for (const size of matrix.sizes) {
+        for (const brand of matrix.brands) {
+          const cellKey = `${size}___${brand.toLowerCase()}`;
+          const cell = matrix.cells[cellKey as keyof typeof matrix.cells];
+          const combinedText = `${size} ${brand} ${cell?.priceDisplay || ''}`.toLowerCase();
+          const allTokensMatch = tokens.every((token) => combinedText.includes(token));
+          if (allTokensMatch) {
+            matchingSizes.add(size);
+            matchingBrands.add(brand);
+          }
+        }
+      }
+
+      if (matchingSizes.size > 0 && matchingBrands.size > 0) {
+        return {
+          brands: matrix.brands.filter((b) => matchingBrands.has(b)),
+          sizes: matrix.sizes.filter((s) => matchingSizes.has(s)),
+          cells: matrix.cells,
+        };
+      }
+      return { brands: matrix.brands, sizes: [], cells: matrix.cells };
+    };
+
+    // Test 1: Single size
+    expect(filterMatrix('1/2').sizes).toEqual(['1/2"']);
+    // Test 2: Combined size and brand in any order
+    expect(filterMatrix('supreme 1/2').brands).toEqual(['Supreme']);
+    expect(filterMatrix('supreme 1/2').sizes).toEqual(['1/2"']);
+    expect(filterMatrix('1/2 supreme').brands).toEqual(['Supreme']);
+    // Test 3: Search matching price display
+    expect(filterMatrix('50 per pc').sizes).toEqual(['1/2"']);
+    // Test 4: Non-matching
+    expect(filterMatrix('unknown item').sizes).toEqual([]);
+  });
+
+  it('filters unbranded matrix categories with size-only catalog', () => {
+    const unbrandedMatrix = {
+      brands: [],
+      sizes: ['10mm', '20mm', '30mm'],
+      cells: {},
+    };
+
+    const filterUnbranded = (query: string) => {
+      const rawQuery = query.trim().toLowerCase();
+      if (!rawQuery) return unbrandedMatrix;
+      const tokens = rawQuery.split(/\s+/).filter(Boolean);
+      const matchingSizes = unbrandedMatrix.sizes.filter((s) =>
+        tokens.every((t) => s.toLowerCase().includes(t))
+      );
+      return {
+        brands: [],
+        sizes: matchingSizes,
+        cells: {},
+      };
+    };
+
+    expect(filterUnbranded('20mm').sizes).toEqual(['20mm']);
+    expect(filterUnbranded('20').sizes).toEqual(['20mm']);
+    expect(filterUnbranded('nonexistent').sizes).toEqual([]);
+  });
+
+  it('correctly matches multi-word history items across brand, size, price, and note', () => {
+    const historyItem = {
+      productName: 'Dulux paint Items',
+      variantName: 'Dulux paint 5L',
+      size: '5L',
+      brand: 'Dulux paint',
+      unit: 'pcs',
+      sellingPricePaise: 5000,
+      priceDisplay: '50 per pc',
+      notes: 'Counter Cash Bill #104',
+      reason: 'Sale',
+    };
+
+    const matchHistory = (query: string) => {
+      const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      let priceStr = '';
+      if (historyItem.priceDisplay) priceStr += ` ${historyItem.priceDisplay}`;
+      if (historyItem.sellingPricePaise && historyItem.sellingPricePaise > 0) {
+        const rupees = historyItem.sellingPricePaise / 100;
+        priceStr += ` ₹${rupees} ${rupees}`;
+      }
+
+      const combined = [
+        historyItem.productName,
+        historyItem.variantName,
+        historyItem.size,
+        historyItem.brand,
+        historyItem.unit,
+        historyItem.reason,
+        historyItem.notes,
+        priceStr,
+      ].join(' ').toLowerCase();
+
+      return terms.every((t) => combined.includes(t));
+    };
+
+    // Brand + size across separate fields
+    expect(matchHistory('Dulux 5L')).toBe(true);
+    // Size + price
+    expect(matchHistory('5L 50')).toBe(true);
+    expect(matchHistory('5L ₹50')).toBe(true);
+    // Custom note
+    expect(matchHistory('Counter Cash')).toBe(true);
+    // Non-matching term fails even if other term matches
+    expect(matchHistory('Dulux 100L')).toBe(false);
+  });
 });

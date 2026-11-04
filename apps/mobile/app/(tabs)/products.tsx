@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   StatusBar as RNStatusBar,
   TextInput,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Portal, Dialog, Searchbar } from 'react-native-paper';
@@ -45,6 +46,9 @@ export default function ProductsScreen() {
   }>();
 
   const { store, deviceId, isDarkMode, showToast, showConfirm } = useAppStore();
+  const { width, height } = useWindowDimensions();
+  const isTablet = width >= 600;
+
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web'
     ? 0
@@ -82,8 +86,16 @@ export default function ProductsScreen() {
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [selectedBrand, setSelectedBrand] = useState<string>('');
 
+  // Category and Subcategory references to prevent race conditions and unnecessary re-triggers
+  const isInitializedRef = useRef(false);
+  const selectedCategoryIdRef = useRef(selectedCategoryId);
+  selectedCategoryIdRef.current = selectedCategoryId;
+  const activeSubcategoryIdRef = useRef(activeSubcategoryId);
+  activeSubcategoryIdRef.current = activeSubcategoryId;
+
   // Quick Stock / Sell Modal State
   const [actionModalMode, setActionModalMode] = useState<'add' | 'sell' | null>(null);
+  const [actionInitialFocus, setActionInitialFocus] = useState<'qty' | 'price'>('qty');
   const [actionQty, setActionQty] = useState('');
   const [actionPriceRs, setActionPriceRs] = useState('');
   const [actionNote, setActionNote] = useState('');
@@ -263,9 +275,13 @@ export default function ProductsScreen() {
       activeId: path[0]?.id || roots[0].id,
     });
 
-    // Subsequent tiers along path
+    // Subsequent tiers along path (maximum 4 subsection levels: Depth 1 Root + Depths 2, 3, 4, 5)
     for (let i = 0; i < path.length; i++) {
       const parentNode = path[i];
+      const tierDepth = i + 2;
+      // Do not allow creating or showing tiers beyond Depth 5 (Level 1 Root + 4 Subsection levels)
+      if (tierDepth > 5) break;
+
       const children = await MatrixRepository.ensureDefaultSubTabs(
         storeId,
         catId,
@@ -278,10 +294,11 @@ export default function ProductsScreen() {
         ? nextNodeInPath.id
         : (effectiveSubId === parentNode.id ? null : effectiveSubId);
 
-      // Always show tier if it has children OR if this parentNode is the active leaf node
-      if (children.length > 0 || parentNode.id === effectiveSubId) {
+      // Only show tier if it has children OR if this parentNode is active AND can have children (depth < 5)
+      const canParentHaveChildren = (parentNode.depth ?? 1) < 5;
+      if (children.length > 0 || (parentNode.id === effectiveSubId && canParentHaveChildren)) {
         tiers.push({
-          depth: i + 2,
+          depth: tierDepth,
           parent: parentNode,
           items: children,
           activeId: tierActiveId,
@@ -359,6 +376,8 @@ export default function ProductsScreen() {
       } catch (e) {
         console.error('Error initializing products screen:', e);
         if (isMounted) setLoading(false);
+      } finally {
+        isInitializedRef.current = true;
       }
     };
 
@@ -369,10 +388,16 @@ export default function ProductsScreen() {
   }, []);
 
   /**
-   * Keep screen in sync when switching tabs (e.g. if a restock happened on Home or section changed)
+   * Keep screen in sync when returning from other tabs (e.g. if restocked on Home or sale in History)
+   * Prevents race conditions and double-triggers on category clicks.
    */
   useFocusEffect(
     useCallback(() => {
+      // If it's the initial screen mount, init() handles it cleanly
+      if (!isInitializedRef.current) {
+        return;
+      }
+
       let isMounted = true;
       const syncOnFocus = async () => {
         try {
@@ -382,15 +407,15 @@ export default function ProductsScreen() {
           setCategories(freshCats);
 
           if (freshCats && freshCats.length > 0) {
-            const currentCatId = selectedCategoryId && freshCats.some((c) => c.id === selectedCategoryId)
-              ? selectedCategoryId
+            const currentCatId = selectedCategoryIdRef.current && freshCats.some((c) => c.id === selectedCategoryIdRef.current)
+              ? selectedCategoryIdRef.current
               : freshCats[0].id;
 
-            if (currentCatId !== selectedCategoryId) {
+            if (currentCatId !== selectedCategoryIdRef.current) {
               setSelectedCategoryId(currentCatId);
             }
 
-            const { effectiveSubId } = await refreshHierarchy(currentCatId, activeSubcategoryId);
+            const { effectiveSubId } = await refreshHierarchy(currentCatId, activeSubcategoryIdRef.current);
             if (effectiveSubId && isMounted) {
               await loadMatrix(currentCatId, effectiveSubId, undefined, undefined, true);
             }
@@ -404,7 +429,7 @@ export default function ProductsScreen() {
       return () => {
         isMounted = false;
       };
-    }, [store?.id, selectedCategoryId, refreshHierarchy, loadMatrix])
+    }, [store?.id, refreshHierarchy, loadMatrix])
   );
 
   /**
@@ -707,13 +732,40 @@ export default function ProductsScreen() {
   const handleOpenStockIn = useCallback(() => {
     if (!selectedSize || !selectedBrand) return;
     setActionModalMode('add');
+    setActionInitialFocus('qty');
     setActionQty('');
     setActionNote('');
-    setActionPriceRs(
-      selectedCell?.purchasePricePaise
-        ? (selectedCell.purchasePricePaise / 100).toString()
-        : ''
-    );
+    const customDisplay = selectedCell?.priceDisplay ? selectedCell.priceDisplay.trim() : '';
+    if (customDisplay) {
+      setActionPriceRs(customDisplay);
+    } else if (selectedCell?.sellingPricePaise) {
+      setActionPriceRs((selectedCell.sellingPricePaise / 100).toString());
+    } else if (selectedCell?.purchasePricePaise) {
+      setActionPriceRs((selectedCell.purchasePricePaise / 100).toString());
+    } else {
+      setActionPriceRs('');
+    }
+  }, [selectedSize, selectedBrand, selectedCell]);
+
+  /**
+   * Open Price Setup Modal directly (e.g. from "+ Price" / price pill click)
+   */
+  const handleOpenPrice = useCallback(() => {
+    if (!selectedSize || !selectedBrand) return;
+    setActionModalMode('add');
+    setActionInitialFocus('price');
+    setActionQty('');
+    setActionNote('');
+    const customDisplay = selectedCell?.priceDisplay ? selectedCell.priceDisplay.trim() : '';
+    if (customDisplay) {
+      setActionPriceRs(customDisplay);
+    } else if (selectedCell?.sellingPricePaise) {
+      setActionPriceRs((selectedCell.sellingPricePaise / 100).toString());
+    } else if (selectedCell?.purchasePricePaise) {
+      setActionPriceRs((selectedCell.purchasePricePaise / 100).toString());
+    } else {
+      setActionPriceRs('');
+    }
   }, [selectedSize, selectedBrand, selectedCell]);
 
   /**
@@ -722,13 +774,17 @@ export default function ProductsScreen() {
   const handleOpenSell = useCallback(() => {
     if (!selectedSize || !selectedBrand) return;
     setActionModalMode('sell');
+    setActionInitialFocus('qty');
     setActionQty('');
     setActionNote('');
-    setActionPriceRs(
-      selectedCell?.sellingPricePaise
-        ? (selectedCell.sellingPricePaise / 100).toString()
-        : ''
-    );
+    const customDisplay = selectedCell?.priceDisplay ? selectedCell.priceDisplay.trim() : '';
+    if (customDisplay) {
+      setActionPriceRs(customDisplay);
+    } else if (selectedCell?.sellingPricePaise) {
+      setActionPriceRs((selectedCell.sellingPricePaise / 100).toString());
+    } else {
+      setActionPriceRs('');
+    }
   }, [selectedSize, selectedBrand, selectedCell]);
 
   /**
@@ -737,15 +793,26 @@ export default function ProductsScreen() {
   const handleConfirmStockAction = async () => {
     if (!actionModalMode || submittingAction) return;
     const numQty = parseFloat(actionQty);
-    if (isNaN(numQty) || numQty <= 0) {
-      showToast('Please enter a valid quantity', 'warning');
-      return;
-    }
+    const hasValidQty = !isNaN(numQty) && numQty > 0;
+    const rawPriceStr = actionPriceRs.trim();
+    const hasPrice = Boolean(rawPriceStr);
 
-    const currentStock = selectedCell ? selectedCell.currentStock : 0;
-    if (actionModalMode === 'sell' && numQty > currentStock) {
-      showToast(`Not enough stock. Available: ${currentStock}`, 'warning');
-      return;
+    if (actionModalMode === 'sell') {
+      if (!hasValidQty) {
+        showToast('Please enter quantity to sell', 'warning');
+        return;
+      }
+      const currentStock = selectedCell ? selectedCell.currentStock : 0;
+      if (numQty > currentStock) {
+        showToast(`Not enough stock. Available: ${currentStock}`, 'warning');
+        return;
+      }
+    } else {
+      // In Stock In / Add mode, allow updating quantity, price, or both
+      if (!hasValidQty && !hasPrice) {
+        showToast('Please enter quantity or price', 'warning');
+        return;
+      }
     }
 
     try {
@@ -777,38 +844,61 @@ export default function ProductsScreen() {
         throw new Error('Could not resolve item variant');
       }
 
-      const reason = actionModalMode === 'sell'
-        ? (actionNote.trim() || `Sold ${numQty} pc of ${selectedSize} ${selectedBrand}`)
-        : (actionNote.trim() || `Restocked ${numQty} pc of ${selectedSize} ${selectedBrand}`);
+      // 1. Adjust stock only if a valid quantity (> 0) was entered
+      if (hasValidQty) {
+        const reason = actionModalMode === 'sell'
+          ? (actionNote.trim() || 'Sale')
+          : (actionNote.trim() || 'Stock In');
 
-      await InventoryRepository.adjustStock(
-        variantId,
-        numQty,
-        'piece',
-        actionModalMode === 'sell' ? 'sale' : 'increase',
-        reason,
-        storeId,
-        deviceId
-      );
+        await InventoryRepository.adjustStock(
+          variantId,
+          numQty,
+          'piece',
+          actionModalMode === 'sell' ? 'sale' : 'increase',
+          reason,
+          storeId,
+          deviceId
+        );
+      }
 
-      // Save custom price if updated by user
-      if (actionPriceRs && !isNaN(parseFloat(actionPriceRs)) && parseFloat(actionPriceRs) > 0) {
-        const paise = Math.round(parseFloat(actionPriceRs) * 100);
+      // 2. Save custom price if updated by user (supports custom text like "50 per pics", "50 per litter")
+      if (hasPrice) {
+        let paise = 0;
+        const numMatch = rawPriceStr.match(/(\d+(?:\.\d+)?)/);
+        if (numMatch) {
+          paise = Math.round(parseFloat(numMatch[1]) * 100);
+        }
         await MatrixRepository.updateVariantPrice(
           variantId,
-          actionModalMode === 'sell' ? 'sell' : 'purchase',
-          paise
+          'sell',
+          paise,
+          storeId,
+          deviceId,
+          rawPriceStr
         );
       }
 
       setActionModalMode(null);
       await loadMatrix(selectedCategoryId, activeSubcategoryId, selectedSize, selectedBrand);
-      showToast(
-        actionModalMode === 'sell'
-          ? `Sold ${numQty} pc successfully!`
-          : `Added +${numQty} pc to stock!`,
-        'success'
-      );
+
+      // Feedback Toast
+      if (hasValidQty && hasPrice) {
+        showToast(
+          actionModalMode === 'sell'
+            ? `Sold ${numQty} pc & updated price!`
+            : `Added +${numQty} pc & updated price!`,
+          'success'
+        );
+      } else if (hasValidQty) {
+        showToast(
+          actionModalMode === 'sell'
+            ? `Sold ${numQty} pc successfully!`
+            : `Added +${numQty} pc to stock!`,
+          'success'
+        );
+      } else {
+        showToast(`Updated price to "${rawPriceStr}"!`, 'success');
+      }
     } catch (e: any) {
       console.error('Error confirming stock action:', e);
       showToast(e?.message || 'Failed to update stock', 'error');
@@ -1069,6 +1159,10 @@ export default function ProductsScreen() {
                 setSelectedCategoryId('');
                 setSubcategories([]);
                 setMatrixData({ brands: [], sizes: [], cells: {} });
+                setSelectedCell(null);
+                setSelectedCellKey(null);
+                setSelectedSize('');
+                setSelectedBrand('');
               }
             }
             showToast(`Category "${item.name}" deleted`, 'info');
@@ -1080,6 +1174,10 @@ export default function ProductsScreen() {
               await loadMatrix(selectedCategoryId, effectiveSubId);
             } else {
               setMatrixData({ brands: [], sizes: [], cells: {} });
+              setSelectedCell(null);
+              setSelectedCellKey(null);
+              setSelectedSize('');
+              setSelectedBrand('');
             }
             showToast(`Section "${item.name}" deleted`, 'info');
           }
@@ -1091,26 +1189,83 @@ export default function ProductsScreen() {
     });
   };
 
-  // Filtered matrix based on search query
+  // Filtered matrix based on intelligent multi-word token search
   const filteredMatrix = useMemo(() => {
-    if (!searchQuery.trim()) return matrixData;
-    const query = searchQuery.trim().toLowerCase();
+    const rawQuery = searchQuery.trim().toLowerCase();
+    if (!rawQuery) return matrixData;
 
-    // Filter matching brands or sizes
-    const matchedSizes = matrixData.sizes.filter((s) => s.toLowerCase().includes(query));
-    const matchedBrands = matrixData.brands.filter((b) => b.toLowerCase().includes(query));
+    const tokens = rawQuery.split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return matrixData;
 
-    if (matchedSizes.length === 0 && matchedBrands.length === 0) {
+    const matchingSizes = new Set<string>();
+    const matchingBrands = new Set<string>();
+
+    // 1. If brands exist, check cell-level and brand/size combinations
+    if (matrixData.brands.length > 0) {
+      for (const size of matrixData.sizes) {
+        for (const brand of matrixData.brands) {
+          const cleanSize = size.trim();
+          const cleanBrand = brand.trim();
+          const cellKey = `${cleanSize}___${cleanBrand.toLowerCase()}`;
+          const cell = matrixData.cells[cellKey];
+
+          let priceTokens = '';
+          if (cell?.priceDisplay) {
+            priceTokens += ` ${cell.priceDisplay}`;
+          }
+          if (cell?.sellingPricePaise && cell.sellingPricePaise > 0) {
+            const rupees = cell.sellingPricePaise / 100;
+            priceTokens += ` ₹${rupees} ${rupees}`;
+          }
+          const stockStr = cell ? ` ${cell.currentStock}` : '';
+
+          const combinedText = `${cleanSize} ${cleanBrand}${priceTokens}${stockStr}`.toLowerCase();
+
+          // Cell matches if EVERY token appears somewhere in the combined size/brand/price/stock
+          if (tokens.every((token) => combinedText.includes(token))) {
+            matchingSizes.add(size);
+            matchingBrands.add(brand);
+          }
+        }
+      }
+    } else {
+      // 2. Unbranded categories (only sizes)
+      for (const size of matrixData.sizes) {
+        const cleanSize = size.trim().toLowerCase();
+        if (tokens.every((token) => cleanSize.includes(token))) {
+          matchingSizes.add(size);
+        }
+      }
+    }
+
+    // 3. Fallback: check sizes and brands individually if no direct cell combination matched
+    if (matchingSizes.size === 0 && matchingBrands.size === 0) {
+      const sizeMatches = matrixData.sizes.filter((s) =>
+        tokens.every((token) => s.toLowerCase().includes(token))
+      );
+      const brandMatches = matrixData.brands.filter((b) =>
+        tokens.every((token) => b.toLowerCase().includes(token))
+      );
+
+      if (sizeMatches.length > 0 || brandMatches.length > 0) {
+        return {
+          brands: brandMatches.length > 0 ? brandMatches : matrixData.brands,
+          sizes: sizeMatches.length > 0 ? sizeMatches : matrixData.sizes,
+          cells: matrixData.cells,
+        };
+      }
+
+      // No matches at all for this query
       return {
-        brands: matrixData.brands,
+        brands: [],
         sizes: [],
         cells: matrixData.cells,
       };
     }
 
     return {
-      brands: matchedBrands.length > 0 ? matchedBrands : matrixData.brands,
-      sizes: matchedSizes.length > 0 ? matchedSizes : matrixData.sizes,
+      brands: matrixData.brands.filter((b) => matchingBrands.has(b)),
+      sizes: matrixData.sizes.filter((s) => matchingSizes.has(s)),
       cells: matrixData.cells,
     };
   }, [matrixData, searchQuery]);
@@ -1125,6 +1280,7 @@ export default function ProductsScreen() {
             backgroundColor: activeColors.surface,
             borderBottomColor: activeColors.border,
             paddingTop: topInset + 4,
+            paddingHorizontal: isTablet ? 20 : 16,
           },
           themeShadows.card,
         ]}
@@ -1139,7 +1295,10 @@ export default function ProductsScreen() {
             <Text
               style={[
                 styles.storeTitle,
-                { color: activeColors.textPrimary },
+                {
+                  fontSize: isTablet ? 18 : 16,
+                  color: activeColors.textPrimary,
+                },
               ]}
               numberOfLines={1}
             >
@@ -1167,6 +1326,8 @@ export default function ProductsScreen() {
                 style={[
                   styles.categoryPill,
                   {
+                    paddingHorizontal: isTablet ? 18 : 14,
+                    paddingVertical: isTablet ? 9 : 7,
                     backgroundColor: isSelected
                       ? activeColors.primary
                       : isDarkMode
@@ -1182,6 +1343,7 @@ export default function ProductsScreen() {
                   style={[
                     styles.categoryPillText,
                     {
+                      fontSize: isTablet ? 14 : 13,
                       color: isSelected ? '#FFFFFF' : activeColors.textSecondary,
                     },
                   ]}
@@ -1199,6 +1361,8 @@ export default function ProductsScreen() {
             style={[
               styles.addCategoryPill,
               {
+                paddingHorizontal: isTablet ? 16 : 12,
+                paddingVertical: isTablet ? 9 : 7,
                 backgroundColor: isDarkMode
                   ? activeColors.surfaceElevated
                   : activeColors.surface,
@@ -1208,13 +1372,16 @@ export default function ProductsScreen() {
           >
             <MaterialCommunityIcons
               name="plus"
-              size={16}
+              size={isTablet ? 18 : 16}
               color={activeColors.primary}
             />
             <Text
               style={[
                 styles.addCategoryPillText,
-                { color: activeColors.primary },
+                {
+                  fontSize: isTablet ? 13 : 12,
+                  color: activeColors.primary,
+                },
               ]}
             >
               CATEGORY
@@ -1273,23 +1440,25 @@ export default function ProductsScreen() {
           />
 
           {/* 3. Search Filter Bar (Optional quick lookup) */}
-          <View style={styles.searchWrap}>
+          <View style={[styles.searchWrap, { paddingHorizontal: isTablet ? 20 : 16 }]}>
             <Searchbar
-              placeholder={`Search ${activeCategory?.name || 'items'} by size or brand...`}
+              placeholder={`Search ${activeCategory?.name || 'items'} by size, brand, price...`}
               onChangeText={setSearchQuery}
               value={searchQuery}
+              onClearIconPress={() => setSearchQuery('')}
               style={[
                 styles.searchbar,
                 {
+                  height: isTablet ? 42 : 36,
                   backgroundColor: isDarkMode
                     ? activeColors.surfaceElevated
                     : activeColors.surfaceSubtle,
                 },
               ]}
               inputStyle={{
-                fontSize: 13,
+                fontSize: isTablet ? 14 : 13,
                 color: activeColors.textPrimary,
-                minHeight: 36,
+                minHeight: isTablet ? 40 : 36,
               }}
               placeholderTextColor={activeColors.textMuted}
               iconColor={activeColors.textSecondary}
@@ -1298,19 +1467,17 @@ export default function ProductsScreen() {
 
           {/* 3.1 Compact Scope Indicator (Zero wasted screen space) */}
           {activeSubcategory && (
-            <View style={styles.scopeWrap}>
+            <View style={[styles.scopeWrap, { paddingHorizontal: isTablet ? 20 : 16 }]}>
               <View style={styles.scopeLeft}>
                 <MaterialCommunityIcons
-                  name={breadcrumbPath.length > 1 ? 'folder-table-outline' : 'table-large'}
-                  size={14}
+                  name={breadcrumbPath.length > 1 ? 'folder-outline' : 'table-large'}
+                  size={isTablet ? 16 : 14}
                   color={activeColors.primary}
                 />
-                <Text style={[styles.scopeLabel, { color: activeColors.textSecondary }]}>
-                  Stock Matrix:{' '}
+                <Text style={[styles.scopeLabel, { fontSize: isTablet ? 12.5 : 11, color: activeColors.textSecondary }]}>
+                  Matrix:{' '}
                   <Text style={[styles.scopeTarget, { color: activeColors.primary }]}>
-                    {breadcrumbPath.length > 1
-                      ? breadcrumbPath.map((p) => p.name).join(' › ')
-                      : activeSubcategory.name}
+                    {activeSubcategory.name}
                   </Text>
                 </Text>
                 {breadcrumbPath.length > 1 && (
@@ -1323,13 +1490,13 @@ export default function ProductsScreen() {
                       },
                     ]}
                   >
-                    <Text style={[styles.subBadgeTextCompact, { color: activeColors.primary }]}>
+                    <Text style={[styles.subBadgeTextCompact, { fontSize: isTablet ? 11 : 10, color: activeColors.primary }]}>
                       Level {breadcrumbPath.length}
                     </Text>
                   </View>
                 )}
               </View>
-              <Text style={[styles.scopeCounts, { color: activeColors.textMuted }]}>
+              <Text style={[styles.scopeCounts, { fontSize: isTablet ? 12.5 : 11, color: activeColors.textMuted }]}>
                 {matrixData.brands.length} Brands • {matrixData.sizes.length} Sizes
               </Text>
             </View>
@@ -1381,6 +1548,8 @@ export default function ProductsScreen() {
                 isDarkMode={isDarkMode}
                 activeColors={activeColors}
                 emptyLabel={activeCategory?.name || 'Items'}
+                searchQuery={searchQuery}
+                onClearSearch={() => setSearchQuery('')}
               />
             )}
           </View>
@@ -1393,6 +1562,7 @@ export default function ProductsScreen() {
               selectedBrand={selectedBrand}
               onStockIn={handleOpenStockIn}
               onSell={handleOpenSell}
+              onPricePress={handleOpenPrice}
               isDarkMode={isDarkMode}
               activeColors={activeColors}
             />
@@ -1428,6 +1598,10 @@ export default function ProductsScreen() {
                         ? isDarkMode
                           ? '#450A0A'
                           : '#FEE2E2'
+                        : actionInitialFocus === 'price'
+                        ? isDarkMode
+                          ? '#1E1B4B'
+                          : '#EEF2FF'
                         : isDarkMode
                         ? '#064E3B'
                         : '#DCFCE7',
@@ -1435,9 +1609,21 @@ export default function ProductsScreen() {
                 ]}
               >
                 <MaterialCommunityIcons
-                  name={actionModalMode === 'sell' ? 'arrow-up-bold' : 'arrow-down-bold'}
+                  name={
+                    actionModalMode === 'sell'
+                      ? 'arrow-up-bold'
+                      : actionInitialFocus === 'price'
+                      ? 'tag-outline'
+                      : 'arrow-down-bold'
+                  }
                   size={24}
-                  color={actionModalMode === 'sell' ? '#DC2626' : '#059669'}
+                  color={
+                    actionModalMode === 'sell'
+                      ? '#DC2626'
+                      : actionInitialFocus === 'price'
+                      ? '#4F46E5'
+                      : '#059669'
+                  }
                 />
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
@@ -1445,11 +1631,20 @@ export default function ProductsScreen() {
                   style={[
                     styles.modalTitle,
                     {
-                      color: actionModalMode === 'sell' ? '#DC2626' : '#059669',
+                      color:
+                        actionModalMode === 'sell'
+                          ? '#DC2626'
+                          : actionInitialFocus === 'price'
+                          ? '#4F46E5'
+                          : '#059669',
                     },
                   ]}
                 >
-                  {actionModalMode === 'sell' ? 'Sell Item (Stock Out)' : 'Stock In (Add Inventory)'}
+                  {actionModalMode === 'sell'
+                    ? 'Sell Item (Stock Out)'
+                    : actionInitialFocus === 'price'
+                    ? 'Update Price / Rate'
+                    : 'Stock In (Add Inventory)'}
                 </Text>
                 <Text
                   style={[
@@ -1457,7 +1652,11 @@ export default function ProductsScreen() {
                     { color: activeColors.textMuted },
                   ]}
                 >
-                  {actionModalMode === 'sell' ? 'Deduct stock on sale' : 'Add inventory to stock'}
+                  {actionModalMode === 'sell'
+                    ? 'Deduct stock on sale'
+                    : actionInitialFocus === 'price'
+                    ? 'Set selling price or rate for this item'
+                    : 'Add inventory to stock'}
                 </Text>
               </View>
             </View>
@@ -1515,25 +1714,77 @@ export default function ProductsScreen() {
                   color: activeColors.textPrimary,
                   borderColor:
                     actionModalMode === 'sell' &&
-                    parseInt(actionQty || '0', 10) > (selectedCell?.currentStock || 0)
+                    parseFloat(actionQty || '0') > (selectedCell?.currentStock || 0)
                       ? '#DC2626'
                       : activeColors.border,
                 },
               ]}
               keyboardType="numeric"
-              placeholder="0"
+              placeholder={actionModalMode === 'sell' ? '0' : '0 (optional if only setting price)'}
               placeholderTextColor={activeColors.textMuted}
               value={actionQty}
               onChangeText={setActionQty}
-              autoFocus
+              autoFocus={actionInitialFocus === 'qty'}
             />
 
             {actionModalMode === 'sell' &&
-              parseInt(actionQty || '0', 10) > (selectedCell?.currentStock || 0) && (
+              parseFloat(actionQty || '0') > (selectedCell?.currentStock || 0) && (
                 <Text style={styles.stockWarningText}>
                   ⚠️ Quantity exceeds available stock ({selectedCell?.currentStock || 0} pcs)
                 </Text>
               )}
+
+            {/* Price / Rate Input (Placed directly between Quantity and Note as requested) */}
+            <Text
+              style={[
+                styles.inputLabel,
+                { color: activeColors.textPrimary, marginTop: 10 },
+              ]}
+            >
+              {actionModalMode === 'sell' ? 'Selling Price (₹):' : 'Price / Rate (₹):'}
+            </Text>
+            <TextInput
+              style={[
+                styles.actionInput,
+                {
+                  backgroundColor: isDarkMode
+                    ? activeColors.surfaceElevated
+                    : activeColors.surfaceSubtle,
+                  color: activeColors.textPrimary,
+                  borderColor: activeColors.border,
+                },
+              ]}
+              keyboardType="default"
+              placeholder="e.g. 50 per pics, 120 per litter"
+              placeholderTextColor={activeColors.textMuted}
+              value={actionPriceRs}
+              onChangeText={setActionPriceRs}
+              autoFocus={actionInitialFocus === 'price'}
+            />
+
+            {actionModalMode === 'sell' &&
+              parseFloat(actionQty || '0') > 0 &&
+              parseFloat(actionPriceRs.match(/(\d+(?:\.\d+)?)/)?.[1] || '0') > 0 && (
+              <View
+                style={[
+                  styles.totalAmountBanner,
+                  {
+                    backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9',
+                    borderColor: isDarkMode ? '#334155' : '#E2E8F0',
+                  },
+                ]}
+              >
+                <Text style={[styles.totalAmountLabel, { color: activeColors.textSecondary }]}>
+                  Total Sale Amount:
+                </Text>
+                <Text style={[styles.totalAmountValue, { color: activeColors.primary }]}>
+                  ₹{(
+                    parseFloat(actionQty) *
+                    parseFloat(actionPriceRs.match(/(\d+(?:\.\d+)?)/)![1])
+                  ).toFixed(2)}
+                </Text>
+              </View>
+            )}
 
             <Text
               style={[
@@ -1560,12 +1811,16 @@ export default function ProductsScreen() {
               onChangeText={setActionNote}
             />
 
-            <View style={[styles.modalActions, { marginTop: 18 }]}>
+            <View style={[styles.modalActions, { marginTop: 20 }]}>
               <TouchableOpacity
                 onPress={() => setActionModalMode(null)}
+                activeOpacity={0.7}
                 style={[
                   styles.btnCancel,
-                  { borderColor: activeColors.border },
+                  {
+                    borderColor: activeColors.border,
+                    backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#FFFFFF',
+                  },
                 ]}
               >
                 <Text
@@ -1573,41 +1828,73 @@ export default function ProductsScreen() {
                     styles.btnCancelText,
                     { color: activeColors.textSecondary },
                   ]}
+                  numberOfLines={1}
                 >
                   Cancel
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={handleConfirmStockAction}
-                disabled={
-                  submittingAction ||
-                  !actionQty.trim() ||
-                  parseFloat(actionQty) <= 0 ||
-                  (actionModalMode === 'sell' && parseFloat(actionQty) > (selectedCell?.currentStock || 0))
+              {(() => {
+                const numQty = parseFloat(actionQty);
+                const hasValidQty = !isNaN(numQty) && numQty > 0;
+                const hasPrice = Boolean(actionPriceRs.trim());
+                const isSell = actionModalMode === 'sell';
+                const currentStock = selectedCell?.currentStock || 0;
+
+                const isExceedingStock = isSell && hasValidQty && numQty > currentStock;
+                const isFormValid = isSell ? (hasValidQty && !isExceedingStock) : (hasValidQty || hasPrice);
+                const isDisabled = submittingAction || !isFormValid;
+
+                let btnLabel = isSell ? 'Confirm Sell' : 'Confirm Stock';
+                if (submittingAction) {
+                  btnLabel = 'Saving...';
+                } else if (!hasValidQty && hasPrice) {
+                  btnLabel = 'Save Price';
+                } else if (isSell) {
+                  btnLabel = 'Confirm Sell';
+                } else {
+                  btnLabel = 'Confirm Stock';
                 }
-                style={[
-                  styles.btnConfirm,
-                  {
-                    backgroundColor:
-                      !actionQty.trim() ||
-                      parseFloat(actionQty) <= 0 ||
-                      (actionModalMode === 'sell' && parseFloat(actionQty) > (selectedCell?.currentStock || 0))
-                        ? activeColors.border
-                        : actionModalMode === 'sell'
-                        ? '#DC2626'
-                        : '#059669',
-                  },
-                ]}
-              >
-                <Text style={styles.btnConfirmText}>
-                  {submittingAction
-                    ? 'Processing...'
-                    : actionModalMode === 'sell'
-                    ? 'Confirm Sell Out'
-                    : 'Confirm Stock In'}
-                </Text>
-              </TouchableOpacity>
+
+                return (
+                  <TouchableOpacity
+                    onPress={handleConfirmStockAction}
+                    disabled={isDisabled}
+                    activeOpacity={0.8}
+                    style={[
+                      styles.btnConfirm,
+                      {
+                        backgroundColor: isDisabled
+                          ? (isDarkMode ? '#334155' : '#E2E8F0')
+                          : isSell
+                          ? '#DC2626'
+                          : !hasValidQty && hasPrice
+                          ? '#4F46E5'
+                          : '#059669',
+                      },
+                    ]}
+                  >
+                    <View style={styles.btnConfirmInner}>
+                      {!submittingAction && (
+                        <MaterialCommunityIcons
+                          name={isSell ? 'cart-arrow-right' : (!hasValidQty && hasPrice ? 'tag-check' : 'check-circle')}
+                          size={18}
+                          color={isDisabled ? activeColors.textMuted : '#FFFFFF'}
+                        />
+                      )}
+                      <Text
+                        style={[
+                          styles.btnConfirmText,
+                          isDisabled && { color: activeColors.textMuted },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {btnLabel}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })()}
             </View>
           </View>
         </View>
@@ -1958,8 +2245,8 @@ export default function ProductsScreen() {
                 />
               </TouchableOpacity>
 
-              {/* 1.5 Add Sub-section Option (Available for any section/sub-section) */}
-              {manageTarget?.type === 'section' && (
+              {/* 1.5 Add Sub-section Option (Available if less than max 4 subsections: depth < 5) */}
+              {manageTarget?.type === 'section' && ((manageTarget.item as Subcategory).depth ?? 1) < 5 && (
                 <TouchableOpacity
                   activeOpacity={0.75}
                   onPress={() => {
@@ -2404,20 +2691,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   searchWrap: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingHorizontal: 16,
+    paddingTop: 3,
+    paddingBottom: 2,
   },
   searchbar: {
-    height: 38,
-    borderRadius: borderRadius.lg,
+    height: 36,
+    borderRadius: borderRadius.md,
   },
   scopeWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 3,
-    marginBottom: 4,
+    paddingTop: 2,
+    paddingBottom: 3,
   },
   scopeLeft: {
     flexDirection: 'row',
@@ -2498,6 +2786,25 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 8,
   },
+  totalAmountBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  totalAmountLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  totalAmountValue: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
   noteInput: {
     borderWidth: 1,
     borderRadius: borderRadius.lg,
@@ -2534,7 +2841,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 460,
     borderRadius: 24,
     padding: 24,
     borderWidth: 1,
@@ -2578,27 +2885,37 @@ const styles = StyleSheet.create({
   },
   btnCancel: {
     flex: 1,
-    height: 46,
+    height: 48,
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 8,
   },
   btnCancelText: {
     fontSize: 14,
     fontWeight: '600',
+    textAlign: 'center',
   },
   btnConfirm: {
-    flex: 1.3,
-    height: 46,
+    flex: 1.4,
+    height: 48,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  btnConfirmInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
   btnConfirmText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
+    textAlign: 'center',
   },
   emptyCategoriesWrap: {
     flex: 1,
@@ -2641,7 +2958,7 @@ const styles = StyleSheet.create({
   },
   actionSheetCard: {
     width: '100%',
-    maxWidth: 420,
+    maxWidth: 500,
     borderRadius: 24,
     padding: 20,
     borderWidth: 1,

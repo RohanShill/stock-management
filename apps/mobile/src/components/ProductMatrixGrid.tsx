@@ -8,6 +8,7 @@ import {
   Modal,
   TextInput,
   Alert,
+  useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MatrixCellData, MatrixGridData } from '../database/repositories/matrixRepository.js';
@@ -29,11 +30,13 @@ interface ProductMatrixGridProps {
   isDarkMode: boolean;
   activeColors: any;
   emptyLabel?: string;
+  searchQuery?: string;
+  onClearSearch?: () => void;
 }
 
 const ROW_HEADER_WIDTH = 98;
 const COLUMN_WIDTH = 95;
-const CELL_HEIGHT = 56;
+const CELL_HEIGHT = 62;
 const HEADER_HEIGHT = 48;
 
 interface MatrixCellProps {
@@ -44,6 +47,9 @@ interface MatrixCellProps {
   isSelected: boolean;
   isDarkMode: boolean;
   activeColors: any;
+  columnWidth?: number;
+  cellHeight?: number;
+  isTablet?: boolean;
   onSelect: (cellKey: string, cell: MatrixCellData | null, size: string, brand: string) => void;
 }
 
@@ -55,11 +61,48 @@ const MatrixCell = React.memo<MatrixCellProps>(({
   isSelected,
   isDarkMode,
   activeColors,
+  columnWidth,
+  cellHeight,
+  isTablet,
   onSelect,
 }) => {
+  const cellW = columnWidth ?? COLUMN_WIDTH;
+  const cellH = cellHeight ?? CELL_HEIGHT;
   const stock = cellData ? cellData.currentStock : 0;
   const hasStock = stock > 0;
   const isLow = hasStock && stock <= 5;
+  const hasHistory = Boolean(cellData?.hasStockHistory);
+  // An item is genuinely OUT OF STOCK only if it was previously stocked/has movement history and is now 0!
+  const isOutOfStock = Boolean(cellData) && hasHistory && stock <= 0;
+  const sellingPricePaise = cellData ? (cellData.sellingPricePaise || 0) : 0;
+  const priceRupees = sellingPricePaise > 0 ? (sellingPricePaise / 100) : 0;
+  const customDisplay = cellData?.priceDisplay ? cellData.priceDisplay.trim() : '';
+
+  let formattedPrice = '';
+  if (customDisplay) {
+    formattedPrice = customDisplay.startsWith('₹') || customDisplay.toLowerCase().startsWith('rs')
+      ? customDisplay
+      : `₹${customDisplay}`;
+  } else if (priceRupees > 0) {
+    formattedPrice = `₹${Number.isInteger(priceRupees) ? priceRupees : priceRupees.toFixed(2)}`;
+  }
+  const hasPrice = Boolean(formattedPrice);
+
+  let cellBg = activeColors.surface;
+  let cellBorder = activeColors.border;
+  let cellBorderWidth = 1;
+
+  if (isSelected) {
+    cellBg = isDarkMode ? '#312E81' : '#EEF2FF';
+    cellBorder = activeColors.primary;
+    cellBorderWidth = 2;
+  } else if (isOutOfStock) {
+    cellBg = isDarkMode ? '#2A0808' : '#FEF2F2';
+    cellBorder = isDarkMode ? '#7F1D1D' : '#FECACA';
+  } else if (isLow) {
+    cellBg = isDarkMode ? '#2B1705' : '#FFFBEB';
+    cellBorder = isDarkMode ? '#78350F' : '#FDE68A';
+  }
 
   return (
     <TouchableOpacity
@@ -69,50 +112,95 @@ const MatrixCell = React.memo<MatrixCellProps>(({
       style={[
         styles.cell,
         {
-          backgroundColor: isSelected
-            ? isDarkMode
-              ? '#312E81'
-              : '#EEF2FF'
-            : activeColors.surface,
-          borderColor: isSelected
-            ? activeColors.primary
-            : activeColors.border,
-          borderWidth: isSelected ? 2 : 1,
+          width: cellW,
+          height: cellH,
+          backgroundColor: cellBg,
+          borderColor: cellBorder,
+          borderWidth: cellBorderWidth,
         },
       ]}
     >
       {cellData ? (
         <View style={styles.stockBadgeWrap}>
+          <View style={styles.stockQuantityRow}>
+            <Text
+              style={[
+                styles.stockNumber,
+                {
+                  fontSize: isTablet ? 19 : 16,
+                  lineHeight: isTablet ? 22 : 18,
+                  color: isOutOfStock
+                    ? (isDarkMode ? '#F87171' : '#DC2626')
+                    : isSelected
+                    ? activeColors.primary
+                    : isLow
+                    ? activeColors.warning || '#D97706'
+                    : hasStock
+                    ? activeColors.textPrimary
+                    : activeColors.textMuted,
+                  fontWeight: hasStock || isOutOfStock ? '700' : '500',
+                },
+              ]}
+            >
+              {isOutOfStock ? 0 : hasStock ? stock : '-'}
+            </Text>
+            {isOutOfStock && (
+              <View
+                style={[
+                  styles.lowIndicator,
+                  {
+                    width: isTablet ? 6 : 5,
+                    height: isTablet ? 6 : 5,
+                    borderRadius: isTablet ? 3 : 2.5,
+                    backgroundColor: isDarkMode ? '#F87171' : '#DC2626',
+                  },
+                ]}
+              />
+            )}
+            {isLow && (
+              <View
+                style={[
+                  styles.lowIndicator,
+                  {
+                    width: isTablet ? 5 : 4,
+                    height: isTablet ? 5 : 4,
+                    borderRadius: isTablet ? 2.5 : 2,
+                    backgroundColor: activeColors.warning || '#D97706',
+                  },
+                ]}
+              />
+            )}
+          </View>
           <Text
             style={[
-              styles.stockNumber,
+              styles.priceText,
               {
+                fontSize: isTablet ? 13 : 11,
+                lineHeight: isTablet ? 16 : 13,
                 color: isSelected
                   ? activeColors.primary
-                  : isLow
-                  ? activeColors.warning || '#D97706'
-                  : stock === 0
-                  ? activeColors.textMuted
-                  : activeColors.textPrimary,
-                fontWeight: hasStock ? '700' : '500',
+                  : hasPrice
+                  ? isDarkMode
+                    ? '#93C5FD'
+                    : '#2563EB'
+                  : activeColors.textMuted,
+                fontWeight: hasPrice ? '700' : '500',
               },
             ]}
+            numberOfLines={1}
           >
-            {stock === 0 ? '-' : stock}
+            {hasPrice ? formattedPrice : '₹ --'}
           </Text>
-          {isLow && (
-            <View
-              style={[
-                styles.lowIndicator,
-                { backgroundColor: activeColors.warning || '#D97706' },
-              ]}
-            />
-          )}
         </View>
       ) : (
-        <Text style={[styles.stockNumber, { color: activeColors.textMuted }]}>
-          -
-        </Text>
+        <View style={styles.stockBadgeWrap}>
+          <Text style={[styles.stockNumber, { fontSize: isTablet ? 19 : 16, color: activeColors.textMuted }]}>
+            -
+          </Text>
+          <Text style={[styles.priceText, { fontSize: isTablet ? 13 : 11, color: activeColors.textMuted }]}>
+            ₹ --
+          </Text>
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -120,8 +208,14 @@ const MatrixCell = React.memo<MatrixCellProps>(({
   return (
     prev.isSelected === next.isSelected &&
     prev.isDarkMode === next.isDarkMode &&
+    prev.columnWidth === next.columnWidth &&
+    prev.cellHeight === next.cellHeight &&
+    prev.isTablet === next.isTablet &&
     prev.cellData?.currentStock === next.cellData?.currentStock &&
+    prev.cellData?.sellingPricePaise === next.cellData?.sellingPricePaise &&
+    prev.cellData?.priceDisplay === next.cellData?.priceDisplay &&
     prev.cellData?.variantId === next.cellData?.variantId &&
+    prev.cellData?.hasStockHistory === next.cellData?.hasStockHistory &&
     prev.cellKey === next.cellKey &&
     prev.activeColors === next.activeColors
   );
@@ -134,6 +228,11 @@ interface MatrixRowProps {
   selectedCellKey: string | null;
   isDarkMode: boolean;
   activeColors: any;
+  rowHeaderWidth?: number;
+  columnWidth?: number;
+  cellHeight?: number;
+  addBrandWidth?: number;
+  isTablet?: boolean;
   onSelectCell: (cellKey: string, cell: MatrixCellData | null, size: string, brand: string) => void;
   onOpenManageSize: (size: string) => void;
 }
@@ -145,11 +244,21 @@ const MatrixRow = React.memo<MatrixRowProps>(({
   selectedCellKey,
   isDarkMode,
   activeColors,
+  rowHeaderWidth,
+  columnWidth,
+  cellHeight,
+  addBrandWidth,
+  isTablet,
   onSelectCell,
   onOpenManageSize,
 }) => {
+  const rowW = rowHeaderWidth ?? ROW_HEADER_WIDTH;
+  const colW = columnWidth ?? COLUMN_WIDTH;
+  const rowH = cellHeight ?? CELL_HEIGHT;
+  const addW = addBrandWidth ?? 110;
+
   return (
-    <View style={styles.dataRow}>
+    <View style={[styles.dataRow, { height: rowH }]}>
       {/* Left Frozen Column: Size Label */}
       <TouchableOpacity
         activeOpacity={0.8}
@@ -159,6 +268,8 @@ const MatrixRow = React.memo<MatrixRowProps>(({
         style={[
           styles.rowHeaderCell,
           {
+            width: rowW,
+            height: rowH,
             backgroundColor: isDarkMode
               ? activeColors.surfaceElevated
               : activeColors.surfaceSubtle,
@@ -171,6 +282,7 @@ const MatrixRow = React.memo<MatrixRowProps>(({
             style={[
               styles.rowHeaderText,
               {
+                fontSize: isTablet ? 14.5 : 13,
                 color: activeColors.textPrimary,
                 fontWeight: '700',
                 flex: 1,
@@ -196,6 +308,9 @@ const MatrixRow = React.memo<MatrixRowProps>(({
             isSelected={selectedCellKey === cellKey}
             isDarkMode={isDarkMode}
             activeColors={activeColors}
+            columnWidth={colW}
+            cellHeight={rowH}
+            isTablet={isTablet}
             onSelect={onSelectCell}
           />
         );
@@ -206,6 +321,8 @@ const MatrixRow = React.memo<MatrixRowProps>(({
         style={[
           styles.cell,
           {
+            width: addW,
+            height: rowH,
             backgroundColor: isDarkMode
               ? activeColors.surfaceElevated
               : activeColors.surfaceSubtle,
@@ -219,6 +336,11 @@ const MatrixRow = React.memo<MatrixRowProps>(({
   if (prev.isDarkMode !== next.isDarkMode || prev.activeColors !== next.activeColors) return false;
   if (prev.currentBrands !== next.currentBrands) return false;
   if (prev.size !== next.size) return false;
+  if (prev.rowHeaderWidth !== next.rowHeaderWidth) return false;
+  if (prev.columnWidth !== next.columnWidth) return false;
+  if (prev.cellHeight !== next.cellHeight) return false;
+  if (prev.addBrandWidth !== next.addBrandWidth) return false;
+  if (prev.isTablet !== next.isTablet) return false;
   if (prev.onSelectCell !== next.onSelectCell) return false;
   if (prev.onOpenManageSize !== next.onOpenManageSize) return false;
 
@@ -255,6 +377,8 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
   isDarkMode,
   activeColors,
   emptyLabel = 'Pipes',
+  searchQuery,
+  onClearSearch,
 }) => {
   const { brands, sizes, cells } = data;
 
@@ -326,6 +450,27 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
   const [submittingRename, setSubmittingRename] = useState(false);
 
   const themeShadows = getThemeShadows(isDarkMode);
+
+  const { width, height } = useWindowDimensions();
+  const isTablet = width >= 600;
+
+  const rowHeaderWidth = isTablet ? 140 : ROW_HEADER_WIDTH;
+  const cellHeight = isTablet ? 72 : CELL_HEIGHT;
+  const headerHeight = isTablet ? 54 : 50;
+  const addBrandWidth = isTablet ? 130 : 92;
+  const horizontalMargin = isTablet ? 20 : 14;
+
+  const tableBorderWidth = 4;
+  const containerWidth = width - (horizontalMargin * 2) - tableBorderWidth;
+  const availForBrands = containerWidth - rowHeaderWidth - addBrandWidth;
+
+  const columnWidth = useMemo(() => {
+    if (currentBrands.length === 0) return isTablet ? 140 : COLUMN_WIDTH;
+    const distributed = Math.floor(availForBrands / currentBrands.length);
+    const minW = isTablet ? 140 : 105;
+    const maxW = isTablet ? 260 : 160;
+    return Math.min(maxW, Math.max(minW, distributed));
+  }, [availForBrands, currentBrands.length, isTablet]);
 
   const handleOpenManage = useCallback((type: 'brand' | 'size', name: string) => {
     setManageTarget({ type, name });
@@ -472,21 +617,31 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
       style={[
         styles.tableContainer,
         {
+          marginHorizontal: horizontalMargin,
           backgroundColor: activeColors.surface,
           borderColor: activeColors.border,
         },
         themeShadows.card,
       ]}
     >
-      <ScrollView horizontal showsHorizontalScrollIndicator={true} bounces={false} keyboardShouldPersistTaps="always">
-        <View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={true}
+        bounces={false}
+        keyboardShouldPersistTaps="always"
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1 }}
+      >
+        <View style={{ flex: 1 }}>
           {/* Header Row */}
-          <View style={styles.headerRow}>
+          <View style={[styles.headerRow, { height: headerHeight }]}>
             {/* Corner Cell (Size / Item) */}
             <View
               style={[
                 styles.cornerCell,
                 {
+                  width: rowHeaderWidth,
+                  height: headerHeight,
                   backgroundColor: isDarkMode
                     ? activeColors.surfaceElevated
                     : activeColors.surfaceSubtle,
@@ -498,7 +653,10 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
                 <Text
                   style={[
                     styles.headerTitle,
-                    { color: activeColors.textPrimary },
+                    {
+                      fontSize: isTablet ? 12.5 : 11,
+                      color: activeColors.textPrimary,
+                    },
                   ]}
                   numberOfLines={1}
                 >
@@ -518,7 +676,7 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
                   >
                     <MaterialCommunityIcons
                       name="swap-vertical"
-                      size={15}
+                      size={isTablet ? 18 : 15}
                       color={activeColors.primary}
                     />
                   </TouchableOpacity>
@@ -536,6 +694,8 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
                 style={[
                   styles.headerCell,
                   {
+                    width: columnWidth,
+                    height: headerHeight,
                     backgroundColor: isDarkMode
                       ? activeColors.surfaceElevated
                       : activeColors.surfaceSubtle,
@@ -546,22 +706,29 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
                 <Text
                   style={[
                     styles.brandHeaderText,
-                    { color: activeColors.textPrimary },
+                    {
+                      fontSize: isTablet ? 15.5 : 12.5,
+                      lineHeight: isTablet ? 18 : 15,
+                      color: activeColors.textPrimary,
+                      textAlign: 'center',
+                    },
                   ]}
-                  numberOfLines={1}
+                  numberOfLines={2}
                 >
                   {brand}
                 </Text>
               </TouchableOpacity>
             ))}
 
-            {/* "add brands +" Column */}
+            {/* "+ Brand" Column */}
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => setAddBrandVisible(true)}
               style={[
                 styles.addBrandHeaderCell,
                 {
+                  width: addBrandWidth,
+                  height: headerHeight,
                   backgroundColor: isDarkMode
                     ? activeColors.surfaceElevated
                     : activeColors.primaryLight,
@@ -572,39 +739,65 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
               <Text
                 style={[
                   styles.addBrandHeaderText,
-                  { color: activeColors.primary },
+                  {
+                    fontSize: isTablet ? 14 : 12.5,
+                    color: activeColors.primary,
+                  },
                 ]}
+                numberOfLines={1}
               >
-                add brands +
+                {isTablet ? '+ Add Brand' : '+ Brand'}
               </Text>
             </TouchableOpacity>
           </View>
 
           {/* Table Body (Sizes as Rows) */}
           {currentSizes.length === 0 ? (
-            <View style={styles.emptyTableBanner}>
-              <MaterialCommunityIcons name="table-plus" size={32} color={activeColors.primary} />
-              <Text style={[styles.emptyTableTitle, { color: activeColors.textPrimary }]}>
-                {currentBrands.length > 0 ? `Brand "${currentBrands.join(', ')}" added!` : 'No items found'}
-              </Text>
-              <Text style={[styles.emptyTableSubtitle, { color: activeColors.textMuted }]}>
-                {currentBrands.length > 0
-                  ? 'Tap "+ Add Size / Item" below to add sizes'
-                  : 'Tap "add brands +" above or "+ Add Size" below to get started'}
-              </Text>
-              <TouchableOpacity
-                onPress={() => setAddSizeVisible(true)}
-                style={[styles.emptyAddBtn, { backgroundColor: activeColors.primary }]}
-              >
-                <MaterialCommunityIcons name="plus" size={16} color="#FFFFFF" />
-                <Text style={styles.emptyAddBtnText}>Add Size / Item</Text>
-              </TouchableOpacity>
-            </View>
+            searchQuery && searchQuery.trim() ? (
+              <View style={[styles.emptyTableBanner, { width: isTablet ? 420 : 320 }]}>
+                <MaterialCommunityIcons name="magnify-remove-outline" size={isTablet ? 38 : 32} color={activeColors.textMuted} />
+                <Text style={[styles.emptyTableTitle, { fontSize: isTablet ? 17 : 15, color: activeColors.textPrimary }]}>
+                  No items found
+                </Text>
+                <Text style={[styles.emptyTableSubtitle, { fontSize: isTablet ? 13.5 : 12, color: activeColors.textMuted }]}>
+                  No size or brand matched "{searchQuery}"
+                </Text>
+                {onClearSearch && (
+                  <TouchableOpacity
+                    onPress={onClearSearch}
+                    style={[styles.emptyAddBtn, { backgroundColor: activeColors.primary, marginTop: 12 }]}
+                  >
+                    <MaterialCommunityIcons name="close-circle-outline" size={isTablet ? 18 : 16} color="#FFFFFF" />
+                    <Text style={[styles.emptyAddBtnText, { fontSize: isTablet ? 14 : 13 }]}>Clear Search</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ) : (
+              <View style={[styles.emptyTableBanner, { width: isTablet ? 420 : 320 }]}>
+                <MaterialCommunityIcons name="table-plus" size={isTablet ? 38 : 32} color={activeColors.primary} />
+                <Text style={[styles.emptyTableTitle, { fontSize: isTablet ? 17 : 15, color: activeColors.textPrimary }]}>
+                  {currentBrands.length > 0 ? `Brand "${currentBrands.join(', ')}" added!` : 'No items found'}
+                </Text>
+                <Text style={[styles.emptyTableSubtitle, { fontSize: isTablet ? 13.5 : 12, color: activeColors.textMuted }]}>
+                  {currentBrands.length > 0
+                    ? 'Tap "+ Add Size / Item" below to add sizes'
+                    : 'Tap "add brands +" above or "+ Add Size" below to get started'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setAddSizeVisible(true)}
+                  style={[styles.emptyAddBtn, { backgroundColor: activeColors.primary }]}
+                >
+                  <MaterialCommunityIcons name="plus" size={isTablet ? 18 : 16} color="#FFFFFF" />
+                  <Text style={[styles.emptyAddBtnText, { fontSize: isTablet ? 14 : 13 }]}>Add Size / Item</Text>
+                </TouchableOpacity>
+              </View>
+            )
           ) : (
             <ScrollView
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="always"
-              style={{ maxHeight: 380 }}
+              style={{ flex: 1 }}
+              contentContainerStyle={{ flexGrow: 1 }}
             >
               {currentSizes.map((size) => (
                 <MatrixRow
@@ -615,48 +808,75 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
                   selectedCellKey={selectedCellKey}
                   isDarkMode={isDarkMode}
                   activeColors={activeColors}
+                  rowHeaderWidth={rowHeaderWidth}
+                  columnWidth={columnWidth}
+                  cellHeight={cellHeight}
+                  addBrandWidth={addBrandWidth}
+                  isTablet={isTablet}
                   onSelectCell={onSelectCell}
                   onOpenManageSize={handleOpenManageSize}
                 />
               ))}
 
-            {/* Bottom Row: "+ Add Size / Item" Button */}
-            <View style={styles.dataRow}>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => setAddSizeVisible(true)}
-                style={[
-                  styles.addSizeCell,
-                  {
-                    backgroundColor: isDarkMode
-                      ? activeColors.surfaceElevated
-                      : activeColors.primaryLight,
-                    borderColor: activeColors.primaryBorder || activeColors.primary,
-                  },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="plus"
-                  size={16}
-                  color={activeColors.primary}
-                />
-                <Text
+              {/* Bottom Row: "+ Add Size / Item" Button */}
+              <View style={[styles.dataRow, { height: cellHeight }]}>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => setAddSizeVisible(true)}
                   style={[
-                    styles.addSizeText,
-                    { color: activeColors.primary },
+                    styles.addSizeCell,
+                    {
+                      width: rowHeaderWidth,
+                      height: cellHeight,
+                      backgroundColor: isDarkMode
+                        ? activeColors.surfaceElevated
+                        : activeColors.primaryLight,
+                      borderColor: activeColors.primaryBorder || activeColors.primary,
+                    },
                   ]}
                 >
-                  Add Size +
-                </Text>
-              </TouchableOpacity>
+                  <MaterialCommunityIcons
+                    name="plus"
+                    size={isTablet ? 18 : 16}
+                    color={activeColors.primary}
+                  />
+                  <Text
+                    style={[
+                      styles.addSizeText,
+                      {
+                        fontSize: isTablet ? 13 : 11.5,
+                        color: activeColors.primary,
+                      },
+                    ]}
+                  >
+                    Add Size +
+                  </Text>
+                </TouchableOpacity>
 
-              {/* Blank filler across all brand columns for symmetry */}
-              {currentBrands.map((b) => (
+                {/* Blank filler across all brand columns for symmetry */}
+                {currentBrands.map((b) => (
+                  <View
+                    key={b}
+                    style={[
+                      styles.cell,
+                      {
+                        width: columnWidth,
+                        height: cellHeight,
+                        backgroundColor: isDarkMode
+                          ? activeColors.surfaceElevated
+                          : activeColors.surfaceSubtle,
+                        borderColor: activeColors.border,
+                      },
+                    ]}
+                  />
+                ))}
+
                 <View
-                  key={b}
                   style={[
                     styles.cell,
                     {
+                      width: addBrandWidth,
+                      height: cellHeight,
                       backgroundColor: isDarkMode
                         ? activeColors.surfaceElevated
                         : activeColors.surfaceSubtle,
@@ -664,21 +884,8 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
                     },
                   ]}
                 />
-              ))}
-
-              <View
-                style={[
-                  styles.cell,
-                  {
-                    backgroundColor: isDarkMode
-                      ? activeColors.surfaceElevated
-                      : activeColors.surfaceSubtle,
-                    borderColor: activeColors.border,
-                  },
-                ]}
-              />
-            </View>
-          </ScrollView>
+              </View>
+            </ScrollView>
           )}
         </View>
       </ScrollView>
@@ -1664,12 +1871,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRightWidth: 1.5,
     borderBottomWidth: 1.5,
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
   },
   brandHeaderText: {
     fontSize: 14,
     fontWeight: '800',
-    letterSpacing: 0.3,
+    letterSpacing: 0.1,
   },
   addBrandHeaderCell: {
     width: 110,
@@ -1677,7 +1884,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderBottomWidth: 1.5,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
   },
   addBrandHeaderText: {
     fontSize: 13,
@@ -1740,16 +1947,30 @@ const styles = StyleSheet.create({
   stockBadgeWrap: {
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 2,
+  },
+  stockQuantityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stockNumber: {
-    fontSize: 17,
+    fontSize: 16,
     letterSpacing: -0.3,
+    lineHeight: 18,
   },
   lowIndicator: {
     width: 4,
     height: 4,
     borderRadius: 2,
+    marginLeft: 3,
+    alignSelf: 'center',
+  },
+  priceText: {
+    fontSize: 11,
     marginTop: 2,
+    letterSpacing: -0.2,
+    lineHeight: 13,
   },
   addSizeCell: {
     width: ROW_HEADER_WIDTH,
@@ -1776,7 +1997,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 460,
     borderRadius: 24,
     padding: 24,
     borderWidth: 1,
@@ -1894,7 +2115,7 @@ const styles = StyleSheet.create({
   },
   actionSheetCard: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 500,
     borderRadius: 24,
     padding: 20,
     borderWidth: 1,

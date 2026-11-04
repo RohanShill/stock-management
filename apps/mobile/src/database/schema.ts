@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS product_variants (
   currentStock REAL DEFAULT 0, -- in base units
   rackLocation TEXT,
   preferredSupplierId TEXT,
+  priceDisplay TEXT,
   customValues TEXT, -- JSON key-value pairs
   displayOrder INTEGER DEFAULT 0,
   active INTEGER DEFAULT 1,
