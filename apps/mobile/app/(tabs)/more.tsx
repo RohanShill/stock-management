@@ -21,6 +21,7 @@ import {
   Divider,
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Category, Subcategory } from '@hardware-store/shared';
@@ -1056,7 +1057,7 @@ export default function SettingsScreen() {
           MANJU STORES
         </Text>
         <Text style={[styles.aboutVersion, { color: activeColors.textSecondary }]}>
-          Version 1.0.0
+          Version {Constants.expoConfig?.version || '1.0.1'}
         </Text>
       </Surface>
 
