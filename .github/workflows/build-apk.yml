@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version tag (e.g. v1.0.1)'
+        description: 'Release version tag (e.g. v1.0.2)'
         required: false
-        default: 'v1.0.1'
+        default: 'v1.0.2'
   push:
     branches:
       - main
@@ -66,7 +66,7 @@ jobs:
       - name: 8. Prepare & Sign APK Artifact
         run: |
           mkdir -p build-output
-          TAG="${{ github.event.inputs.version || github.ref_name || 'v1.0.1' }}"
+          TAG="${{ github.event.inputs.version || github.ref_name || 'v1.0.2' }}"
           OUTPUT_APK="build-output/Manju_Stores_${TAG}.apk"
 
           # Locate generated APK
@@ -99,18 +99,35 @@ jobs:
           fi
 
           if [ "$NEEDS_SIGNING" = true ]; then
-            echo "Signing APK with Android keystore..."
-            DEBUG_KEYSTORE="$HOME/.android/debug.keystore"
-            if [ ! -f "$DEBUG_KEYSTORE" ]; then
-              mkdir -p "$HOME/.android"
-              keytool -genkey -v -keystore "$DEBUG_KEYSTORE" -alias androiddebugkey -storepass android -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=AndroidDebug,O=Android,C=US"
+            echo "Signing APK with project release keystore..."
+            RELEASE_KEYSTORE=""
+            if [ -f "keystores/release.keystore" ]; then
+              RELEASE_KEYSTORE="keystores/release.keystore"
+            elif [ -f "apps/mobile/keystores/release.keystore" ]; then
+              RELEASE_KEYSTORE="apps/mobile/keystores/release.keystore"
+            elif [ -f "apps/mobile/android/keystores/release.keystore" ]; then
+              RELEASE_KEYSTORE="apps/mobile/android/keystores/release.keystore"
             fi
-            if [ -n "$APKSIGNER" ]; then
-              echo "Signing with apksigner ($APKSIGNER)..."
-              "$APKSIGNER" sign --ks "$DEBUG_KEYSTORE" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey "$FOUND_APK"
+
+            if [ -n "$RELEASE_KEYSTORE" ] && [ -f "$RELEASE_KEYSTORE" ]; then
+              echo "Using permanent project release keystore: $RELEASE_KEYSTORE"
+              if [ -n "$APKSIGNER" ]; then
+                "$APKSIGNER" sign --ks "$RELEASE_KEYSTORE" --ks-pass pass:manjustore123 --key-pass pass:manjustore123 --ks-key-alias manjustore "$FOUND_APK"
+              else
+                jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 -keystore "$RELEASE_KEYSTORE" -storepass manjustore123 -keypass manjustore123 "$FOUND_APK" manjustore
+              fi
             else
-              echo "Signing with jarsigner..."
-              jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 -keystore "$DEBUG_KEYSTORE" -storepass android -keypass android "$FOUND_APK" androiddebugkey
+              echo "Falling back to debug keystore..."
+              DEBUG_KEYSTORE="$HOME/.android/debug.keystore"
+              if [ ! -f "$DEBUG_KEYSTORE" ]; then
+                mkdir -p "$HOME/.android"
+                keytool -genkey -v -keystore "$DEBUG_KEYSTORE" -alias androiddebugkey -storepass android -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=AndroidDebug,O=Android,C=US"
+              fi
+              if [ -n "$APKSIGNER" ]; then
+                "$APKSIGNER" sign --ks "$DEBUG_KEYSTORE" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey "$FOUND_APK"
+              else
+                jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 -keystore "$DEBUG_KEYSTORE" -storepass android -keypass android "$FOUND_APK" androiddebugkey
+              fi
             fi
           fi
 
@@ -129,14 +146,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
-          tag_name: ${{ github.event.inputs.version || github.ref_name || 'v1.0.0' }}
-          name: MANJU STORES Official Release ${{ github.event.inputs.version || github.ref_name || 'v1.0.0' }}
+          tag_name: ${{ github.event.inputs.version || github.ref_name || 'v1.0.2' }}
+          name: MANJU STORES Official Release ${{ github.event.inputs.version || github.ref_name || 'v1.0.2' }}
           body: |
             ## 📱 MANJU STORES — Official Android Release
 
             Official standalone build for Android Mobile Phones & Android Tablets.
 
-            - **Version**: `${{ github.event.inputs.version || github.ref_name || 'v1.0.0' }}`
+            - **Version**: `${{ github.event.inputs.version || github.ref_name || 'v1.0.2' }}`
             - **Target Architecture**: `arm64-v8a` (Optimized ~28 MB)
             - **Package**: `com.manjuhardware.store`
 

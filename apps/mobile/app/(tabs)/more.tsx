@@ -22,7 +22,6 @@ import {
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
-import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Category, Subcategory } from '@hardware-store/shared';
 import { useAppStore } from '../../src/store/useAppStore.js';
@@ -30,6 +29,7 @@ import { ProductRepository } from '../../src/database/repositories/productReposi
 import { CategoryRepository } from '../../src/database/repositories/categoryRepository.js';
 import { MatrixRepository } from '../../src/database/repositories/matrixRepository.js';
 import { InventoryRepository } from '../../src/database/repositories/inventoryRepository.js';
+import { BackupService, StoreBackupPackage, LocalBackupInfo } from '../../src/services/BackupService.js';
 import { lightColors, darkColors, spacing, borderRadius, shadows } from '../../src/theme/tokens.js';
 
 export default function SettingsScreen() {
@@ -47,7 +47,12 @@ export default function SettingsScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [categorySubcategories, setCategorySubcategories] = useState<Record<string, Subcategory[]>>({});
   const [loading, setLoading] = useState(false);
-  const [exportingPdf, setExportingPdf] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restorePreviewPkg, setRestorePreviewPkg] = useState<StoreBackupPackage | null>(null);
+  const [restoreDialogVisible, setRestoreDialogVisible] = useState(false);
+  const [localBackupsModalVisible, setLocalBackupsModalVisible] = useState(false);
+  const [localBackups, setLocalBackups] = useState<LocalBackupInfo[]>([]);
   const [expandedCatIds, setExpandedCatIds] = useState<Set<string>>(new Set());
   const [catSearchQuery, setCatSearchQuery] = useState('');
 
@@ -206,256 +211,6 @@ export default function SettingsScreen() {
     });
   };
 
-  // Export Stock as PDF
-  const handleExportPDF = async () => {
-    try {
-      setExportingPdf(true);
-      const storeId = store?.id || 'store-1';
-      const prods = await ProductRepository.getProductsWithVariants(storeId);
-      const cats = await ProductRepository.getCategories(storeId);
-      const catMap = new Map<string, string>();
-      cats.forEach((c) => catMap.set(c.id, c.name));
-
-      let totalStockUnits = 0;
-      let lowCount = 0;
-      let outCount = 0;
-      let rowIdx = 1;
-      let rowsHtml = '';
-
-      for (const p of prods) {
-        const catName = catMap.get(p.categoryId) || 'Hardware';
-        for (const v of p.variants) {
-          const stock = Number(v.currentStock || 0);
-          const minStock = Number(v.minStockLevel || 5);
-          totalStockUnits += Math.max(0, stock);
-
-          let statusBadge = '';
-          if (stock <= 0) {
-            outCount++;
-            statusBadge = '<span class="badge badge-out">Out of Stock</span>';
-          } else if (stock <= minStock) {
-            lowCount++;
-            statusBadge = '<span class="badge badge-low">Low Stock</span>';
-          } else {
-            statusBadge = '<span class="badge badge-in">In Stock</span>';
-          }
-
-          rowsHtml += `
-            <tr>
-              <td>${rowIdx++}</td>
-              <td class="font-bold">${p.name || ''}</td>
-              <td>${p.brand || '-'}</td>
-              <td>${catName}</td>
-              <td>${v.size || v.name || 'Standard'}</td>
-              <td class="font-bold">${stock} ${p.baseUnit || 'pcs'}</td>
-              <td>${statusBadge}</td>
-            </tr>
-          `;
-        }
-      }
-
-      const generatedAt = new Date().toLocaleDateString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>MANJU STORES - Stock Inventory Report</title>
-          <style>
-            @page { size: A4; margin: 15mm; }
-            * { box-sizing: border-box; }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-              color: #0F172A;
-              margin: 0;
-              padding: 0;
-              background-color: #FFFFFF;
-            }
-            .header {
-              border-bottom: 2px solid #1E3A8A;
-              padding-bottom: 12px;
-              margin-bottom: 16px;
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-end;
-            }
-            .store-name {
-              font-size: 24px;
-              font-weight: 800;
-              color: #1E3A8A;
-              margin: 0;
-              letter-spacing: -0.5px;
-            }
-            .store-sub {
-              font-size: 13px;
-              color: #64748B;
-              margin: 4px 0 0 0;
-            }
-            .report-meta {
-              text-align: right;
-              font-size: 12px;
-              color: #64748B;
-            }
-            .summary-cards {
-              display: flex;
-              gap: 12px;
-              margin-bottom: 20px;
-            }
-            .card {
-              flex: 1;
-              border: 1px solid #E2E8F0;
-              border-radius: 8px;
-              padding: 10px 14px;
-              background: #F8FAFC;
-            }
-            .card-label {
-              font-size: 11px;
-              text-transform: uppercase;
-              color: #64748B;
-              font-weight: 700;
-              letter-spacing: 0.5px;
-            }
-            .card-val {
-              font-size: 22px;
-              font-weight: 800;
-              color: #0F172A;
-              margin-top: 4px;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-top: 10px;
-              font-size: 12px;
-            }
-            th {
-              background: #1E3A8A;
-              color: #FFFFFF;
-              text-align: left;
-              padding: 8px 10px;
-              font-weight: 700;
-              font-size: 11px;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-            }
-            td {
-              padding: 8px 10px;
-              border-bottom: 1px solid #E2E8F0;
-            }
-            tr:nth-child(even) {
-              background-color: #F8FAFC;
-            }
-            .font-bold {
-              font-weight: 700;
-            }
-            .badge {
-              display: inline-block;
-              padding: 2px 7px;
-              border-radius: 12px;
-              font-size: 10px;
-              font-weight: 700;
-            }
-            .badge-in {
-              background: #DCFCE7;
-              color: #15803D;
-            }
-            .badge-low {
-              background: #FEF3C7;
-              color: #B45309;
-            }
-            .badge-out {
-              background: #FEE2E2;
-              color: #DC2626;
-            }
-            .footer {
-              margin-top: 24px;
-              text-align: center;
-              font-size: 11px;
-              color: #94A3B8;
-              border-top: 1px solid #E2E8F0;
-              padding-top: 12px;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div>
-              <h1 class="store-name">MANJU STORES</h1>
-              <p class="store-sub">Complete Stock Inventory & Catalogue Report</p>
-            </div>
-            <div class="report-meta">
-              <strong>Generated:</strong> ${generatedAt}<br/>
-              <strong>System:</strong> Offline-First SQLite
-            </div>
-          </div>
-
-          <div class="summary-cards">
-            <div class="card">
-              <div class="card-label">Total Products</div>
-              <div class="card-val">${prods.length}</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Total Stock Units</div>
-              <div class="card-val">${totalStockUnits}</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Low Stock Alerts</div>
-              <div class="card-val" style="color: #D97706;">${lowCount}</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Out of Stock</div>
-              <div class="card-val" style="color: #DC2626;">${outCount}</div>
-            </div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 5%;">#</th>
-                <th style="width: 25%;">Product Name</th>
-                <th style="width: 15%;">Brand</th>
-                <th style="width: 15%;">Category</th>
-                <th style="width: 15%;">Size / Spec</th>
-                <th style="width: 13%;">Available</th>
-                <th style="width: 12%;">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml || '<tr><td colspan="7" style="text-align:center; padding: 20px;">No products found in catalogue.</td></tr>'}
-            </tbody>
-          </table>
-
-          <div class="footer">
-            MANJU STORES • Official Stock Record • Offline Database
-          </div>
-        </body>
-        </html>
-      `;
-
-      if (Platform.OS === 'web') {
-        await Print.printAsync({ html });
-      } else {
-        const { uri } = await Print.printToFileAsync({ html });
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
-        } else {
-          showToast(`Exported to ${uri}`, 'success');
-        }
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Could not generate PDF.';
-      showToast(msg, 'error');
-    } finally {
-      setExportingPdf(false);
-    }
-  };
-
   // Export Stock CSV
   const handleExportCSV = async () => {
     try {
@@ -500,7 +255,7 @@ export default function SettingsScreen() {
       } else {
         // Native Mobile
         try {
-          const FileSystem = require('expo-file-system');
+          const FileSystem = require('expo-file-system/legacy');
           const fileUri = `${FileSystem.documentDirectory}stock_catalogue.csv`;
           await FileSystem.writeAsStringAsync(fileUri, csv, {
             encoding: FileSystem.EncodingType.UTF8,
@@ -537,6 +292,95 @@ export default function SettingsScreen() {
         }
       },
     });
+  };
+
+  // Full Store Backup
+  const handleCreateBackup = async () => {
+    try {
+      setIsBackingUp(true);
+      const storeId = store?.id || 'store-1';
+      const result = await BackupService.exportBackupToFile(storeId);
+      if (result.success) {
+        showToast('Store backup created & ready to save/share.', 'success');
+      } else {
+        showToast(result.error || 'Could not export backup.', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Error creating backup.', 'error');
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  // Pick Backup File to Restore
+  const handlePickAndRestoreBackup = async () => {
+    try {
+      const pickRes = await BackupService.pickBackupFile();
+      if (pickRes.canceled || !pickRes.fileContent) {
+        return;
+      }
+      const validation = BackupService.validateBackupString(pickRes.fileContent);
+      if (!validation.valid || !validation.pkg) {
+        showToast(validation.error || 'Selected file is not a valid Manju Stores backup.', 'error');
+        return;
+      }
+      setRestorePreviewPkg(validation.pkg);
+      setRestoreDialogVisible(true);
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to read backup file.', 'error');
+    }
+  };
+
+  // Confirm Restore
+  const handleConfirmRestore = async () => {
+    if (!restorePreviewPkg) return;
+    try {
+      setIsRestoring(true);
+      setRestoreDialogVisible(false);
+      const storeId = store?.id || 'store-1';
+      const res = await BackupService.restoreBackup(restorePreviewPkg, storeId);
+      if (res.success) {
+        if (restorePreviewPkg.data?.stores && restorePreviewPkg.data.stores.length > 0) {
+          useAppStore.getState().setStore(restorePreviewPkg.data.stores[0]);
+        }
+        showToast('Store data successfully restored!', 'success');
+        await loadData();
+      } else {
+        showToast(res.error || 'Restore failed. Data safely preserved.', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Error restoring backup.', 'error');
+    } finally {
+      setIsRestoring(false);
+      setRestorePreviewPkg(null);
+    }
+  };
+
+  // Local Backups Modal
+  const handleOpenLocalBackups = async () => {
+    try {
+      const list = await BackupService.getLocalBackups();
+      setLocalBackups(list);
+      setLocalBackupsModalVisible(true);
+    } catch (e) {
+      showToast('Could not load local backups.', 'warning');
+    }
+  };
+
+  const handleRestoreFromLocalFile = async (item: LocalBackupInfo) => {
+    try {
+      const content = await BackupService.readUriContent(item.uri);
+      const validation = BackupService.validateBackupString(content);
+      if (!validation.valid || !validation.pkg) {
+        showToast('Local backup is invalid or corrupted.', 'error');
+        return;
+      }
+      setLocalBackupsModalVisible(false);
+      setRestorePreviewPkg(validation.pkg);
+      setRestoreDialogVisible(true);
+    } catch (err: any) {
+      showToast('Error reading local backup.', 'error');
+    }
   };
 
   return (
@@ -615,9 +459,6 @@ export default function SettingsScreen() {
           <View style={{ flex: 1 }}>
             <Text style={[styles.menuTitle, { color: activeColors.textPrimary }]}>
               {isDarkMode ? 'Dark Mode' : 'Light Mode'}
-            </Text>
-            <Text style={[styles.menuSub, { color: activeColors.textSecondary }]}>
-              {isDarkMode ? 'Comfortable high-contrast dark theme' : 'Crisp clean daylight theme'}
             </Text>
           </View>
           <TouchableOpacity
@@ -960,30 +801,95 @@ export default function SettingsScreen() {
           },
         ]}
       >
-        {/* Export PDF */}
+        {/* Full Store Backup (WhatsApp / Drive / Storage) */}
         <TouchableOpacity
           style={styles.menuRow}
-          onPress={handleExportPDF}
+          onPress={handleCreateBackup}
           activeOpacity={0.7}
-          disabled={exportingPdf}
+          disabled={isBackingUp}
         >
           <View
             style={[
               styles.menuIconCircle,
-              { backgroundColor: isDarkMode ? '#450A0A' : '#FEE2E2' },
+              { backgroundColor: isDarkMode ? '#064E3B' : '#D1FAE5' },
             ]}
           >
-            <MaterialCommunityIcons name="file-pdf-box" size={22} color="#DC2626" />
+            <MaterialCommunityIcons name="cloud-upload" size={22} color="#059669" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.menuTitle, { color: activeColors.textPrimary }]}>
-              {exportingPdf ? 'Preparing PDF...' : 'Export Stock as PDF'}
+              {isBackingUp ? 'Creating Backup Package...' : 'Create Full Store Backup'}
             </Text>
             <Text style={[styles.menuSub, { color: activeColors.textSecondary }]}>
-              Print or save formatted A4 inventory report
+              Save full inventory & bills to WhatsApp, Google Drive, or Storage
             </Text>
           </View>
-          <MaterialCommunityIcons name="printer" size={20} color={activeColors.primary} />
+          <MaterialCommunityIcons name="share-variant-outline" size={20} color={activeColors.primary} />
+        </TouchableOpacity>
+
+        <Divider
+          style={[
+            styles.divider,
+            { backgroundColor: isDarkMode ? '#1F2937' : '#F1F5F9' },
+          ]}
+        />
+
+        {/* Restore Store from Backup */}
+        <TouchableOpacity
+          style={styles.menuRow}
+          onPress={handlePickAndRestoreBackup}
+          activeOpacity={0.7}
+          disabled={isRestoring}
+        >
+          <View
+            style={[
+              styles.menuIconCircle,
+              { backgroundColor: isDarkMode ? '#1E3A8A' : '#DBEAFE' },
+            ]}
+          >
+            <MaterialCommunityIcons name="cloud-download" size={22} color="#2563EB" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuTitle, { color: activeColors.textPrimary }]}>
+              {isRestoring ? 'Restoring Store Data...' : 'Restore Store from Backup'}
+            </Text>
+            <Text style={[styles.menuSub, { color: activeColors.textSecondary }]}>
+              Restore products, categories & transactions from a backup file
+            </Text>
+          </View>
+          <MaterialCommunityIcons name="folder-open-outline" size={20} color={activeColors.primary} />
+        </TouchableOpacity>
+
+        <Divider
+          style={[
+            styles.divider,
+            { backgroundColor: isDarkMode ? '#1F2937' : '#F1F5F9' },
+          ]}
+        />
+
+        {/* Automatic Daily Backups */}
+        <TouchableOpacity
+          style={styles.menuRow}
+          onPress={handleOpenLocalBackups}
+          activeOpacity={0.7}
+        >
+          <View
+            style={[
+              styles.menuIconCircle,
+              { backgroundColor: isDarkMode ? '#312E81' : '#EDE9FE' },
+            ]}
+          >
+            <MaterialCommunityIcons name="history" size={22} color="#7C3AED" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuTitle, { color: activeColors.textPrimary }]}>
+              Automatic Daily Backups
+            </Text>
+            <Text style={[styles.menuSub, { color: activeColors.textSecondary }]}>
+              View & restore rolling 7-day automatic device snapshots
+            </Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={20} color={activeColors.textMuted} />
         </TouchableOpacity>
 
         <Divider
@@ -1054,10 +960,13 @@ export default function SettingsScreen() {
         ]}
       >
         <Text style={[styles.aboutTitle, { color: activeColors.textPrimary }]}>
-          MANJU STORES
+          {store?.name || 'MANJU STORES'}
         </Text>
         <Text style={[styles.aboutVersion, { color: activeColors.textSecondary }]}>
-          Version 1.0.1
+          Version {Constants.expoConfig?.version || '1.0.2'} (Build {Constants.expoConfig?.android?.versionCode || 3})
+        </Text>
+        <Text style={[styles.aboutCopyright, { color: activeColors.textMuted }]}>
+          © {new Date().getFullYear()} {store?.name || 'MANJU STORES'}. All Rights Reserved.
         </Text>
       </Surface>
 
@@ -1104,6 +1013,169 @@ export default function SettingsScreen() {
               ]}
             >
               <Text style={styles.dialogConfirmText}>Save</Text>
+            </TouchableOpacity>
+          </Dialog.Actions>
+        </Dialog>
+
+        {/* Restore Confirmation Dialog */}
+        <Dialog
+          visible={restoreDialogVisible}
+          onDismiss={() => {
+            if (!isRestoring) setRestoreDialogVisible(false);
+          }}
+          style={[styles.dialog, { backgroundColor: activeColors.surface }]}
+        >
+          <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
+            Restore Store Data
+          </Dialog.Title>
+          <Dialog.Content>
+            {restorePreviewPkg ? (
+              <View style={{ gap: 10 }}>
+                <Text style={{ fontSize: 13, color: activeColors.textSecondary }}>
+                  Backup Date:{' '}
+                  <Text style={{ fontWeight: '700', color: activeColors.textPrimary }}>
+                    {new Date(restorePreviewPkg.metadata.createdAt).toLocaleString('en-IN', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                </Text>
+                <Text style={{ fontSize: 13, color: activeColors.textSecondary }}>
+                  Store:{' '}
+                  <Text style={{ fontWeight: '700', color: activeColors.textPrimary }}>
+                    {restorePreviewPkg.metadata.storeName}
+                  </Text>
+                </Text>
+
+                <View
+                  style={{
+                    backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC',
+                    padding: 10,
+                    borderRadius: borderRadius.sm,
+                    borderWidth: 1,
+                    borderColor: activeColors.border,
+                    gap: 4,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: activeColors.textPrimary }}>
+                    • Categories: <Text style={{ fontWeight: '700' }}>{restorePreviewPkg.metadata.totalCategories}</Text>
+                  </Text>
+                  <Text style={{ fontSize: 12, color: activeColors.textPrimary }}>
+                    • Products: <Text style={{ fontWeight: '700' }}>{restorePreviewPkg.metadata.totalProducts}</Text> ({restorePreviewPkg.metadata.totalVariants} variants)
+                  </Text>
+                  <Text style={{ fontSize: 12, color: activeColors.textPrimary }}>
+                    • Sales Bills: <Text style={{ fontWeight: '700' }}>{restorePreviewPkg.metadata.totalSales}</Text>
+                  </Text>
+                  <Text style={{ fontSize: 12, color: activeColors.textPrimary }}>
+                    • Stock Movements: <Text style={{ fontWeight: '700' }}>{restorePreviewPkg.metadata.totalMovements}</Text>
+                  </Text>
+                </View>
+
+                <View
+                  style={{
+                    backgroundColor: isDarkMode ? '#451A03' : '#FEF3C7',
+                    padding: 10,
+                    borderRadius: borderRadius.sm,
+                    borderWidth: 1,
+                    borderColor: isDarkMode ? '#B45309' : '#F59E0B',
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: isDarkMode ? '#FCD34D' : '#92400E', fontWeight: '600' }}>
+                    ⚠️ Warning: Restoring will overwrite existing data on this phone. A safety snapshot will be created automatically before restore.
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <TouchableOpacity
+              onPress={() => setRestoreDialogVisible(false)}
+              style={styles.dialogCancelBtn}
+              disabled={isRestoring}
+            >
+              <Text style={[styles.dialogCancelText, { color: activeColors.textSecondary }]}>
+                Cancel
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleConfirmRestore}
+              style={[styles.dialogConfirmBtn, { backgroundColor: '#2563EB' }]}
+              disabled={isRestoring}
+            >
+              <Text style={styles.dialogConfirmText}>
+                {isRestoring ? 'Restoring...' : 'Confirm & Restore'}
+              </Text>
+            </TouchableOpacity>
+          </Dialog.Actions>
+        </Dialog>
+
+        {/* Local Auto-Backups Modal */}
+        <Dialog
+          visible={localBackupsModalVisible}
+          onDismiss={() => setLocalBackupsModalVisible(false)}
+          style={[styles.dialog, { backgroundColor: activeColors.surface, maxHeight: 520 }]}
+        >
+          <Dialog.Title style={[styles.dialogTitle, { color: activeColors.textPrimary }]}>
+            Device Automatic Backups
+          </Dialog.Title>
+          <Dialog.Content>
+            {localBackups.length === 0 ? (
+              <Text style={{ fontSize: 13, color: activeColors.textSecondary, fontStyle: 'italic', paddingVertical: 12 }}>
+                No local automatic snapshots found yet. Daily snapshots are created automatically every day the app is opened.
+              </Text>
+            ) : (
+              <ScrollView style={{ maxHeight: 280 }}>
+                {localBackups.map((bk, i) => (
+                  <View
+                    key={bk.filename}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      paddingVertical: 10,
+                      borderBottomWidth: i < localBackups.length - 1 ? 1 : 0,
+                      borderBottomColor: activeColors.border,
+                    }}
+                  >
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: activeColors.textPrimary }}>
+                        {bk.formattedDate}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: activeColors.textMuted, marginTop: 2 }}>
+                        {bk.filename.startsWith('pre_restore') ? 'Emergency Pre-Restore' : 'Daily Auto-Backup'} • {(bk.sizeBytes / 1024).toFixed(1)} KB
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => handleRestoreFromLocalFile(bk)}
+                      style={{
+                        backgroundColor: isDarkMode ? '#1E3A8A' : '#EFF6FF',
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: borderRadius.sm,
+                        borderWidth: 1,
+                        borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDarkMode ? '#93C5FD' : '#2563EB' }}>
+                        Restore
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <TouchableOpacity
+              onPress={() => setLocalBackupsModalVisible(false)}
+              style={styles.dialogCancelBtn}
+            >
+              <Text style={[styles.dialogCancelText, { color: activeColors.textSecondary }]}>
+                Close
+              </Text>
             </TouchableOpacity>
           </Dialog.Actions>
         </Dialog>
@@ -1349,6 +1421,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     fontWeight: '500',
+  },
+  aboutCopyright: {
+    fontSize: 11,
+    marginTop: 5,
+    fontWeight: '400',
+    textAlign: 'center',
+    letterSpacing: 0.1,
   },
 
   // Dialogs

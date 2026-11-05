@@ -130,7 +130,7 @@ export class ProductRepository {
     sql += ` ORDER BY name ASC;`;
 
     // 1. Fetch active categories, active subcategories, and raw products concurrently
-    const [activeCats, activeSubs, rawProducts] = await Promise.all([
+    let [activeCats, activeSubs, rawProducts] = await Promise.all([
       db.getAllAsync<any>(
         `SELECT id FROM categories WHERE storeId = ? AND deletedAt IS NULL AND active = 1;`,
         [storeId]
@@ -142,6 +142,22 @@ export class ProductRepository {
       db.getAllAsync<any>(sql, params),
     ]);
 
+    // Resilient fallback if storeId didn't match categories
+    if ((!activeCats || activeCats.length === 0) && typeof db.getAllAsync === 'function') {
+      try {
+        activeCats = await db.getAllAsync<any>(
+          `SELECT id FROM categories WHERE deletedAt IS NULL AND active = 1;`
+        );
+      } catch {}
+    }
+    if ((!activeSubs || activeSubs.length === 0) && typeof db.getAllAsync === 'function') {
+      try {
+        activeSubs = await db.getAllAsync<any>(
+          `SELECT id FROM subcategories WHERE deletedAt IS NULL AND active = 1;`
+        );
+      } catch {}
+    }
+
     if (!rawProducts || rawProducts.length === 0) return [];
 
     const activeCatIds = new Set((activeCats || []).map((c: any) => c.id));
@@ -151,8 +167,6 @@ export class ProductRepository {
     const isDummyProduct = (p: any): boolean => {
       const pid = String(p.id || '');
       if (pid.startsWith('demo-') || pid.startsWith('prod-demo')) return true;
-      const brand = (p.brand || '').trim().toLowerCase();
-      if (brand === 'general') return true;
       return false;
     };
 
@@ -272,10 +286,15 @@ export class ProductRepository {
         const variantId = vData.id || uuidv4();
         const openingStock = vData.openingStock || 0;
         const currentStock = openingStock;
+        const cleanPriceDisplay = vData.priceDisplay
+          ? String(vData.priceDisplay).trim()
+          : (vData.sellingPricePaise && vData.sellingPricePaise > 0
+              ? String(vData.sellingPricePaise / 100)
+              : null);
 
         await db.runAsync(
-          `INSERT INTO product_variants (id, storeId, productId, name, sku, barcode, size, color, purchasePricePaise, sellingPricePaise, mrpPaise, taxRatePercent, minStockLevel, openingStock, currentStock, rackLocation, preferredSupplierId, customValues, active, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
+          `INSERT INTO product_variants (id, storeId, productId, name, sku, barcode, size, color, purchasePricePaise, sellingPricePaise, priceDisplay, mrpPaise, taxRatePercent, minStockLevel, openingStock, currentStock, rackLocation, preferredSupplierId, customValues, active, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
           [
             variantId,
             storeId,
@@ -287,6 +306,7 @@ export class ProductRepository {
             vData.color ?? null,
             vData.purchasePricePaise ?? 0,
             vData.sellingPricePaise ?? 0,
+            cleanPriceDisplay,
             vData.mrpPaise ?? null,
             vData.taxRatePercent ?? 18,
             vData.minStockLevel ?? 5,
@@ -348,17 +368,32 @@ export class ProductRepository {
     const now = new Date().toISOString();
 
     await db.withTransactionAsync(async () => {
+      const existingProduct = await db.getFirstAsync<any>(
+        `SELECT * FROM products WHERE id = ? AND storeId = ?;`,
+        [productId, storeId]
+      );
+
+      const updatedName = productUpdates.name !== undefined ? productUpdates.name : (existingProduct?.name ?? '');
+      const updatedBrand = productUpdates.brand !== undefined ? productUpdates.brand : (existingProduct?.brand ?? null);
+      const updatedMaterial = productUpdates.material !== undefined ? productUpdates.material : (existingProduct?.material ?? null);
+      const updatedDesc = productUpdates.description !== undefined ? productUpdates.description : (existingProduct?.description ?? null);
+      const updatedModel = productUpdates.modelNumber !== undefined ? productUpdates.modelNumber : (existingProduct?.modelNumber ?? null);
+      const updatedImage = productUpdates.imageUrl !== undefined ? productUpdates.imageUrl : (existingProduct?.imageUrl ?? null);
+      const updatedCustom = productUpdates.customValues !== undefined
+        ? JSON.stringify(productUpdates.customValues)
+        : (existingProduct?.customValues ?? null);
+
       await db.runAsync(
         `UPDATE products SET name = ?, brand = ?, material = ?, description = ?, modelNumber = ?, imageUrl = ?, customValues = ?, updatedAt = ?
          WHERE id = ? AND storeId = ?;`,
         [
-          productUpdates.name || '',
-          productUpdates.brand ?? null,
-          productUpdates.material ?? null,
-          productUpdates.description ?? null,
-          productUpdates.modelNumber ?? null,
-          productUpdates.imageUrl ?? null,
-          productUpdates.customValues ? JSON.stringify(productUpdates.customValues) : null,
+          updatedName,
+          updatedBrand,
+          updatedMaterial,
+          updatedDesc,
+          updatedModel,
+          updatedImage,
+          updatedCustom,
           now,
           productId,
           storeId,
@@ -368,31 +403,48 @@ export class ProductRepository {
       for (const vData of variantsData) {
         if (vData.id) {
           const prevVariant = await db.getFirstAsync<any>(
-            `SELECT currentStock, openingStock FROM product_variants WHERE id = ?;`,
+            `SELECT * FROM product_variants WHERE id = ?;`,
             [vData.id]
           );
-          const oldStock = prevVariant?.currentStock ?? 0;
+          const oldStock = Number(prevVariant?.currentStock ?? 0);
           const newStock = vData.currentStock !== undefined ? vData.currentStock : oldStock;
-          const newOpeningStock = vData.openingStock !== undefined ? vData.openingStock : (prevVariant?.openingStock ?? oldStock);
+          const newOpeningStock = vData.openingStock !== undefined ? vData.openingStock : Number(prevVariant?.openingStock ?? oldStock);
+
+          const vName = vData.name !== undefined ? vData.name : (prevVariant?.name ?? '');
+          const vSku = vData.sku !== undefined ? vData.sku : (prevVariant?.sku ?? '');
+          const vBarcode = vData.barcode !== undefined ? vData.barcode : (prevVariant?.barcode ?? null);
+          const vSize = vData.size !== undefined ? vData.size : (prevVariant?.size ?? null);
+          const vColor = vData.color !== undefined ? vData.color : (prevVariant?.color ?? null);
+          const vPurchase = vData.purchasePricePaise !== undefined ? vData.purchasePricePaise : (prevVariant?.purchasePricePaise ?? 0);
+          const vSelling = vData.sellingPricePaise !== undefined ? vData.sellingPricePaise : (prevVariant?.sellingPricePaise ?? 0);
+          const vPriceDisplay = vData.priceDisplay !== undefined
+            ? (vData.priceDisplay ? String(vData.priceDisplay).trim() : null)
+            : (prevVariant?.priceDisplay ?? null);
+          const vTax = vData.taxRatePercent !== undefined ? vData.taxRatePercent : (prevVariant?.taxRatePercent ?? 18);
+          const vMin = vData.minStockLevel !== undefined ? vData.minStockLevel : (prevVariant?.minStockLevel ?? 5);
+          const vRack = vData.rackLocation !== undefined ? vData.rackLocation : (prevVariant?.rackLocation ?? null);
+          const vSupplier = vData.preferredSupplierId !== undefined ? vData.preferredSupplierId : (prevVariant?.preferredSupplierId ?? null);
+          const vCustom = vData.customValues !== undefined ? JSON.stringify(vData.customValues) : (prevVariant?.customValues ?? null);
 
           await db.runAsync(
-            `UPDATE product_variants SET name = ?, sku = ?, barcode = ?, size = ?, color = ?, purchasePricePaise = ?, sellingPricePaise = ?, currentStock = ?, openingStock = ?, taxRatePercent = ?, minStockLevel = ?, rackLocation = ?, preferredSupplierId = ?, customValues = ?, updatedAt = ?
+            `UPDATE product_variants SET name = ?, sku = ?, barcode = ?, size = ?, color = ?, purchasePricePaise = ?, sellingPricePaise = ?, priceDisplay = ?, currentStock = ?, openingStock = ?, taxRatePercent = ?, minStockLevel = ?, rackLocation = ?, preferredSupplierId = ?, customValues = ?, updatedAt = ?
              WHERE id = ? AND storeId = ?;`,
             [
-              vData.name || '',
-              vData.sku || '',
-              vData.barcode ?? null,
-              vData.size ?? null,
-              vData.color ?? null,
-              vData.purchasePricePaise ?? 0,
-              vData.sellingPricePaise ?? 0,
+              vName,
+              vSku,
+              vBarcode,
+              vSize,
+              vColor,
+              vPurchase,
+              vSelling,
+              vPriceDisplay,
               newStock,
               newOpeningStock,
-              vData.taxRatePercent ?? 18,
-              vData.minStockLevel ?? 5,
-              vData.rackLocation ?? null,
-              vData.preferredSupplierId ?? null,
-              vData.customValues ? JSON.stringify(vData.customValues) : null,
+              vTax,
+              vMin,
+              vRack,
+              vSupplier,
+              vCustom,
               now,
               vData.id,
               storeId,
@@ -424,9 +476,15 @@ export class ProductRepository {
           }
         } else {
           const newVarId = uuidv4();
+          const cleanPriceDisplay = vData.priceDisplay
+            ? String(vData.priceDisplay).trim()
+            : (vData.sellingPricePaise && vData.sellingPricePaise > 0
+                ? String(vData.sellingPricePaise / 100)
+                : null);
+
           await db.runAsync(
-            `INSERT INTO product_variants (id, storeId, productId, name, sku, barcode, size, color, purchasePricePaise, sellingPricePaise, mrpPaise, taxRatePercent, minStockLevel, openingStock, currentStock, rackLocation, preferredSupplierId, customValues, active, createdAt, updatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
+            `INSERT INTO product_variants (id, storeId, productId, name, sku, barcode, size, color, purchasePricePaise, sellingPricePaise, priceDisplay, mrpPaise, taxRatePercent, minStockLevel, openingStock, currentStock, rackLocation, preferredSupplierId, customValues, active, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
             [
               newVarId,
               storeId,
@@ -438,6 +496,7 @@ export class ProductRepository {
               vData.color ?? null,
               vData.purchasePricePaise ?? 0,
               vData.sellingPricePaise ?? 0,
+              cleanPriceDisplay,
               vData.mrpPaise ?? null,
               vData.taxRatePercent ?? 18,
               vData.minStockLevel ?? 5,
@@ -520,7 +579,7 @@ export class ProductRepository {
 
         // Find or create Category
         let cat = await db.getFirstAsync<any>(
-          `SELECT id FROM categories WHERE name = ? AND storeId = ?;`,
+          `SELECT id FROM categories WHERE name = ? AND storeId = ? AND deletedAt IS NULL;`,
           [row.categoryName, storeId]
         );
         if (!cat) {
@@ -539,7 +598,7 @@ export class ProductRepository {
 
         // Find or create Subcategory
         let subcat = await db.getFirstAsync<any>(
-          `SELECT id FROM subcategories WHERE name = ? AND categoryId = ? AND storeId = ?;`,
+          `SELECT id FROM subcategories WHERE name = ? AND categoryId = ? AND storeId = ? AND deletedAt IS NULL;`,
           [row.subcategoryName, cat.id, storeId]
         );
         if (!subcat) {
@@ -559,7 +618,7 @@ export class ProductRepository {
 
         // Find or create Product
         let prod = await db.getFirstAsync<any>(
-          `SELECT id FROM products WHERE name = ? AND categoryId = ? AND subcategoryId = ? AND storeId = ?;`,
+          `SELECT id FROM products WHERE name = ? AND categoryId = ? AND subcategoryId = ? AND storeId = ? AND deletedAt IS NULL;`,
           [row.productName, cat.id, subcat.id, storeId]
         );
         if (!prod) {
@@ -583,16 +642,28 @@ export class ProductRepository {
           );
           prod = { id: prodId };
           importedProducts++;
+          await SyncQueueRepository.enqueue(storeId, deviceId, 'product', prodId, 'create', {
+            id: prodId,
+            storeId,
+            categoryId: cat.id,
+            subcategoryId: subcat.id,
+            name: row.productName,
+            brand: row.brand ?? null,
+            measurementType: row.measurementType,
+            baseUnit: row.baseUnit,
+            active: true,
+          }).catch(() => {});
         }
 
         // Create Variant
         const varId = uuidv4();
         const purchasePricePaise = rupeeToPaise(row.purchasePriceRs);
         const sellingPricePaise = rupeeToPaise(row.sellingPriceRs);
+        const priceDisplay = row.sellingPriceRs ? String(row.sellingPriceRs).trim() : null;
 
         await db.runAsync(
-          `INSERT INTO product_variants (id, storeId, productId, name, sku, barcode, size, purchasePricePaise, sellingPricePaise, taxRatePercent, minStockLevel, openingStock, currentStock, rackLocation, active, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
+          `INSERT INTO product_variants (id, storeId, productId, name, sku, barcode, size, purchasePricePaise, sellingPricePaise, priceDisplay, taxRatePercent, minStockLevel, openingStock, currentStock, rackLocation, active, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
           [
             varId,
             storeId,
@@ -603,6 +674,7 @@ export class ProductRepository {
             row.size ?? null,
             purchasePricePaise,
             sellingPricePaise,
+            priceDisplay,
             row.taxRatePercent,
             row.minStockLevel,
             row.openingStock,
@@ -612,6 +684,19 @@ export class ProductRepository {
             now,
           ]
         );
+
+        await SyncQueueRepository.enqueue(storeId, deviceId, 'product_variant', varId, 'create', {
+          id: varId,
+          storeId,
+          productId: prod.id,
+          name: row.variantName,
+          sku: row.sku,
+          size: row.size ?? null,
+          purchasePricePaise,
+          sellingPricePaise,
+          currentStock: row.openingStock,
+          active: true,
+        }).catch(() => {});
 
         if (row.openingStock > 0) {
           const movementId = uuidv4();

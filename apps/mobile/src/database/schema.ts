@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS product_variants (
   deletedAt TEXT,
   FOREIGN KEY (productId) REFERENCES products(id)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_variants_sku ON product_variants(storeId, sku);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_variants_sku ON product_variants(storeId, sku) WHERE deletedAt IS NULL;
 CREATE INDEX IF NOT EXISTS idx_variants_barcode ON product_variants(barcode);
 CREATE INDEX IF NOT EXISTS idx_variants_product ON product_variants(productId, deletedAt, active);
 CREATE INDEX IF NOT EXISTS idx_variants_store ON product_variants(storeId, deletedAt, active);
@@ -240,6 +240,8 @@ CREATE TABLE IF NOT EXISTS purchase_items (
   numberOfPieces INTEGER,
   FOREIGN KEY (purchaseId) REFERENCES purchases(id)
 );
+CREATE INDEX IF NOT EXISTS idx_purchases_store_date ON purchases(storeId, purchaseDate DESC);
+CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase ON purchase_items(purchaseId);
 
 -- Sales & Line Items
 CREATE TABLE IF NOT EXISTS sales (
@@ -267,6 +269,7 @@ CREATE TABLE IF NOT EXISTS sales (
   updatedAt TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(saleDate);
+CREATE INDEX IF NOT EXISTS idx_sales_store_date ON sales(storeId, saleDate DESC);
 
 CREATE TABLE IF NOT EXISTS sale_items (
   id TEXT PRIMARY KEY,
@@ -282,6 +285,7 @@ CREATE TABLE IF NOT EXISTS sale_items (
   pipeCutSummary TEXT,
   FOREIGN KEY (saleId) REFERENCES sales(id)
 );
+CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(saleId);
 
 -- Expenses
 CREATE TABLE IF NOT EXISTS expenses (
@@ -295,6 +299,7 @@ CREATE TABLE IF NOT EXISTS expenses (
   reference TEXT,
   createdAt TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_expenses_store_date ON expenses(storeId, date DESC);
 
 -- Persistent Synchronization Outbox
 CREATE TABLE IF NOT EXISTS sync_queue (

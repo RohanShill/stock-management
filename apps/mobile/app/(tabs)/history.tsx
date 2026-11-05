@@ -321,6 +321,11 @@ export default function HistoryScreen() {
   const [exportingPdf, setExportingPdf] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Pagination state (default 25 records per page, toggleable 25/50/All)
+  const flatListRef = useRef<FlatList>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
+
   // Active Filters
   const [filterType, setFilterType] = useState<'all' | 'sale' | 'restock'>('all');
   const [timeFilterMode, setTimeFilterMode] = useState<TimeFilterMode>('all');
@@ -774,6 +779,34 @@ export default function HistoryScreen() {
       return true;
     });
   }, [history, timeFilterMode, selectedDate, rangeStartDate, rangeEndDate, filterType, searchQuery]);
+
+  // Auto-reset to page 1 whenever any filter or search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [timeFilterMode, selectedDate, rangeStartDate, rangeEndDate, filterType, searchQuery]);
+
+  const totalFilteredCount = filteredHistory.length;
+  const totalPages = Math.max(1, Math.ceil(totalFilteredCount / pageSize));
+
+  // Slice filtered items for the current active page
+  const paginatedHistory = useMemo(() => {
+    if (pageSize >= 1000) return filteredHistory; // "All" continuous mode
+    const start = (currentPage - 1) * pageSize;
+    return filteredHistory.slice(start, start + pageSize);
+  }, [filteredHistory, currentPage, pageSize]);
+
+  // Page Navigation Handlers
+  const handlePageChange = useCallback((newPage: number) => {
+    if (newPage < 1 || newPage > totalPages) return;
+    setCurrentPage(newPage);
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, [totalPages]);
+
+  const handleSetPageSize = useCallback((newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1);
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, []);
 
   // Compute Summary Statistics for the active time period
   const stats = useMemo(() => {
@@ -1356,7 +1389,8 @@ export default function HistoryScreen() {
         draftRangeStartDate,
         draftRangeEndDate
       );
-      const items = await InventoryRepository.getAllStockHistory(storeId, 300, startIso, endIso);
+      // Query up to 5000 items for full PDF export coverage across selected date range
+      const items = await InventoryRepository.getAllStockHistory(storeId, 5000, startIso, endIso);
       setHistory(items);
 
       await generatePdfReport({
@@ -1676,14 +1710,165 @@ export default function HistoryScreen() {
     );
   }, [initialLoading, activeColors, searchQuery, isAnyFilterActive]);
 
+  // Pagination Footer Controller UI
+  const renderPaginationFooter = useCallback(() => {
+    if (totalFilteredCount === 0 || initialLoading) return null;
+
+    const startItem = pageSize >= 1000 ? 1 : (currentPage - 1) * pageSize + 1;
+    const endItem = pageSize >= 1000 ? totalFilteredCount : Math.min(currentPage * pageSize, totalFilteredCount);
+
+    return (
+      <View
+        style={[
+          styles.paginationContainer,
+          {
+            backgroundColor: isDarkMode ? activeColors.surfaceElevated : activeColors.surface,
+            borderColor: activeColors.border,
+          },
+        ]}
+      >
+        {/* Top Info row: Showing X-Y of Z entries & Per-page chips */}
+        <View style={styles.paginationTopRow}>
+          <Text style={[styles.paginationInfoText, { color: activeColors.textSecondary }]}>
+            Showing <Text style={{ fontWeight: '700', color: activeColors.textPrimary }}>{startItem}–{endItem}</Text> of <Text style={{ fontWeight: '700', color: activeColors.primary }}>{totalFilteredCount}</Text>
+          </Text>
+
+          {/* Per Page selector */}
+          <View style={styles.pageSizeRow}>
+            <Text style={[styles.pageSizeLabel, { color: activeColors.textMuted }]}>Per page:</Text>
+            {[25, 50, 1000].map((sz) => {
+              const isActive = pageSize === sz;
+              const label = sz >= 1000 ? 'All' : String(sz);
+              return (
+                <TouchableOpacity
+                  key={`sz-${sz}`}
+                  onPress={() => handleSetPageSize(sz)}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.pageSizeChip,
+                    {
+                      backgroundColor: isActive
+                        ? activeColors.primary
+                        : (isDarkMode ? '#1E293B' : '#F1F5F9'),
+                      borderColor: isActive ? activeColors.primary : activeColors.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.pageSizeChipText,
+                      {
+                        color: isActive ? '#FFFFFF' : activeColors.textSecondary,
+                        fontWeight: isActive ? '700' : '500',
+                      },
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Navigation buttons: Prev, Current/Total Page, Next */}
+        {pageSize < 1000 && totalPages > 1 && (
+          <View style={styles.paginationButtonsRow}>
+            <TouchableOpacity
+              onPress={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage <= 1}
+              activeOpacity={0.7}
+              style={[
+                styles.pageNavBtn,
+                {
+                  backgroundColor: currentPage <= 1
+                    ? (isDarkMode ? '#1E293B' : '#F3F4F6')
+                    : activeColors.primary,
+                  borderColor: activeColors.border,
+                  opacity: currentPage <= 1 ? 0.45 : 1,
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="chevron-left"
+                size={20}
+                color={currentPage <= 1 ? activeColors.textMuted : '#FFFFFF'}
+              />
+              <Text
+                style={[
+                  styles.pageNavBtnText,
+                  {
+                    color: currentPage <= 1 ? activeColors.textMuted : '#FFFFFF',
+                  },
+                ]}
+              >
+                Prev
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.pageIndicatorBox}>
+              <Text style={[styles.pageIndicatorText, { color: activeColors.textPrimary }]}>
+                Page <Text style={{ fontWeight: '800', color: activeColors.primary }}>{currentPage}</Text> of {totalPages}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage >= totalPages}
+              activeOpacity={0.7}
+              style={[
+                styles.pageNavBtn,
+                {
+                  backgroundColor: currentPage >= totalPages
+                    ? (isDarkMode ? '#1E293B' : '#F3F4F6')
+                    : activeColors.primary,
+                  borderColor: activeColors.border,
+                  opacity: currentPage >= totalPages ? 0.45 : 1,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.pageNavBtnText,
+                  {
+                    color: currentPage >= totalPages ? activeColors.textMuted : '#FFFFFF',
+                  },
+                ]}
+              >
+                Next
+              </Text>
+              <MaterialCommunityIcons
+                name="chevron-right"
+                size={20}
+                color={currentPage >= totalPages ? activeColors.textMuted : '#FFFFFF'}
+              />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+  }, [
+    totalFilteredCount,
+    initialLoading,
+    pageSize,
+    currentPage,
+    totalPages,
+    isDarkMode,
+    activeColors,
+    handleSetPageSize,
+    handlePageChange,
+  ]);
+
   return (
     <View style={[styles.container, { backgroundColor: activeColors.background }]}>
       <FlatList
-        data={filteredHistory}
+        ref={flatListRef}
+        data={paginatedHistory}
         keyExtractor={(item, index) => (item.id ? String(item.id) : `hist-${index}`)}
         renderItem={renderHistoryItem}
         ListHeaderComponent={renderHeader}
         ListEmptyComponent={renderEmpty}
+        ListFooterComponent={renderPaginationFooter}
         contentContainerStyle={[
           styles.listContent,
           { paddingBottom: Math.max(insets.bottom || 0, 16) + 85 },
@@ -2927,6 +3112,75 @@ const styles = StyleSheet.create({
   },
   calPresetBtnText: {
     fontSize: 11,
+    fontWeight: '600',
+  },
+
+  // Pagination Styles
+  paginationContainer: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    ...shadows.card,
+  },
+  paginationTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  paginationInfoText: {
+    fontSize: 12.5,
+  },
+  pageSizeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pageSizeLabel: {
+    fontSize: 11.5,
+    marginRight: 2,
+  },
+  pageSizeChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  pageSizeChipText: {
+    fontSize: 11.5,
+  },
+  paginationButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(156, 163, 175, 0.3)',
+  },
+  pageNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 2,
+  },
+  pageNavBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  pageIndicatorBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pageIndicatorText: {
+    fontSize: 13,
     fontWeight: '600',
   },
 });

@@ -132,6 +132,7 @@ export interface ProductVariant {
   color?: string;
   purchasePricePaise: number;
   sellingPricePaise: number;
+  priceDisplay?: string | null;
   mrpPaise?: number;
   taxRatePercent: number;
   minStockLevel: number;
@@ -325,6 +326,7 @@ export type SyncEntityType =
   | 'subcategory'
   | 'product'
   | 'variant'
+  | 'product_variant'
   | 'supplier'
   | 'customer'
   | 'purchase'

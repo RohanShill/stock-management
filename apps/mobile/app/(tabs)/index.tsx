@@ -18,6 +18,7 @@ import { useAppStore } from '../../src/store/useAppStore.js';
 import { ProductRepository } from '../../src/database/repositories/productRepository.js';
 import { InventoryRepository } from '../../src/database/repositories/inventoryRepository.js';
 import { getDatabase } from '../../src/database/db.js';
+import { BackupService } from '../../src/services/BackupService.js';
 import { lightColors, darkColors, colors, spacing, borderRadius, shadows, getThemeShadows } from '../../src/theme/tokens.js';
 import { StockSuccessModal, StockSuccessInfo } from '../../src/components/StockSuccessModal.js';
 
@@ -523,6 +524,11 @@ export default function HomeScreen() {
 
       setLowStockItems(lowList);
       setAllSelectableItems(allList);
+
+      // Silent daily local auto-backup check
+      BackupService.checkAndPerformDailyBackup(storeId).catch((bErr) => {
+        console.warn('Daily auto backup silent check error:', bErr);
+      });
     } catch (err) {
       console.error('Error loading dashboard data:', err);
     }

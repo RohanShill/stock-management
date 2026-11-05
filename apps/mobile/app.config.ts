@@ -5,7 +5,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ...config,
     name: 'MANJU STORES',
     slug: 'manju-store-management',
-    version: '1.0.1',
+    version: '1.0.2',
     orientation: 'default',
     icon: './assets/icon.png',
     userInterfaceStyle: 'automatic',
@@ -16,7 +16,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     android: {
       package: 'com.manjuhardware.store',
-      versionCode: 2,
+      versionCode: 3,
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#000000',

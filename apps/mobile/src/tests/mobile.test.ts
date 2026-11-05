@@ -35,4 +35,54 @@ describe('Mobile App Architecture & I18n', () => {
     store.setApiUrl('https://api.hardwarestore.in');
     expect(useAppStore.getState().apiUrl).toBe('https://api.hardwarestore.in');
   });
+
+  describe('History Pagination Logic', () => {
+    const dummyItems = Array.from({ length: 65 }, (_, i) => ({
+      id: `mov-${i + 1}`,
+      productName: `Item ${i + 1}`,
+      variantName: `Var ${i + 1}`,
+      unit: 'pcs',
+      quantityChangeBase: i % 2 === 0 ? 5 : -2,
+      movementType: i % 2 === 0 ? 'increase' : 'sale',
+    }));
+
+    it('correctly calculates totalPages and slices items for Page 1 and Page 2', () => {
+      const pageSize = 25;
+      const totalPages = Math.max(1, Math.ceil(dummyItems.length / pageSize));
+      expect(totalPages).toBe(3); // 25 + 25 + 15 = 65 items (3 pages)
+
+      // Page 1
+      const page1 = dummyItems.slice(0, pageSize);
+      expect(page1).toHaveLength(25);
+      expect(page1[0].id).toBe('mov-1');
+      expect(page1[24].id).toBe('mov-25');
+
+      // Page 2
+      const page2 = dummyItems.slice(pageSize, pageSize * 2);
+      expect(page2).toHaveLength(25);
+      expect(page2[0].id).toBe('mov-26');
+      expect(page2[24].id).toBe('mov-50');
+
+      // Page 3 (remaining items)
+      const page3 = dummyItems.slice(pageSize * 2, pageSize * 3);
+      expect(page3).toHaveLength(15);
+      expect(page3[0].id).toBe('mov-51');
+      expect(page3[14].id).toBe('mov-65');
+    });
+
+    it('returns all items when page size is set to All (1000)', () => {
+      const pageSize = 1000;
+      const paginated = pageSize >= 1000 ? dummyItems : dummyItems.slice(0, pageSize);
+      expect(paginated).toHaveLength(65);
+    });
+
+    it('handles empty datasets cleanly without division by zero', () => {
+      const emptyItems: any[] = [];
+      const pageSize = 25;
+      const totalPages = Math.max(1, Math.ceil(emptyItems.length / pageSize));
+      expect(totalPages).toBe(1);
+      const sliced = emptyItems.slice(0, pageSize);
+      expect(sliced).toHaveLength(0);
+    });
+  });
 });

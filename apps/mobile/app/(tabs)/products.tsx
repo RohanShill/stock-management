@@ -400,6 +400,9 @@ export default function ProductsScreen() {
             ? cats.find((c) => c.id === routerParams.categoryId) || cats[0]
             : cats.find((c) => c.name.toLowerCase().includes('pipe')) || cats[0];
           await switchCategory(targetCat.id, cats);
+          if (routerParams?.action === 'add') {
+            setNewCatModalVisible(true);
+          }
         } else {
           setLoading(false);
           if (routerParams?.action === 'add') {
@@ -906,10 +909,11 @@ export default function ProductsScreen() {
           ? (actionNote.trim() || 'Sale')
           : (actionNote.trim() || 'Stock In');
 
+        const cellUnit = (selectedCell?.unit as any) || 'piece';
         await InventoryRepository.adjustStock(
           variantId,
           numQty,
-          'piece',
+          cellUnit,
           actionModalMode === 'sell' ? 'sale' : 'increase',
           reason,
           storeId,
@@ -938,18 +942,19 @@ export default function ProductsScreen() {
       await loadMatrix(selectedCategoryId, activeSubcategoryId, selectedSize, selectedBrand);
 
       // Feedback Toast
+      const displayUnit = selectedCell?.unit || 'pc';
       if (hasValidQty && hasPrice) {
         showToast(
           actionModalMode === 'sell'
-            ? `Sold ${numQty} pc & updated price!`
-            : `Added +${numQty} pc & updated price!`,
+            ? `Sold ${numQty} ${displayUnit} & updated price!`
+            : `Added +${numQty} ${displayUnit} & updated price!`,
           'success'
         );
       } else if (hasValidQty) {
         showToast(
           actionModalMode === 'sell'
-            ? `Sold ${numQty} pc successfully!`
-            : `Added +${numQty} pc to stock!`,
+            ? `Sold ${numQty} ${displayUnit} successfully!`
+            : `Added +${numQty} ${displayUnit} to stock!`,
           'success'
         );
       } else {
@@ -1056,23 +1061,45 @@ export default function ProductsScreen() {
         showToast('Could not save category order', 'error');
       }
     } else {
-      const nextList = [...subcategories];
-      const temp = nextList[idx];
-      nextList[idx] = nextList[idx - 1];
-      nextList[idx - 1] = temp;
+      const isRootSub = subcategories.some((s) => s.id === manageTarget.item.id);
+      if (isRootSub) {
+        const nextList = [...subcategories];
+        const temp = nextList[idx];
+        nextList[idx] = nextList[idx - 1];
+        nextList[idx - 1] = temp;
 
-      const ordered = nextList.map((s, i) => ({ ...s, displayOrder: i }));
-      setSubcategories(ordered);
+        const ordered = nextList.map((s, i) => ({ ...s, displayOrder: i }));
+        setSubcategories(ordered);
 
-      try {
-        await CategoryRepository.reorderSubcategories(
-          ordered.map((s) => ({ id: s.id, displayOrder: s.displayOrder })),
-          storeId,
-          deviceId
-        );
-      } catch (e) {
-        console.error('Failed to reorder sections:', e);
-        showToast('Could not save section order', 'error');
+        try {
+          await CategoryRepository.reorderSubcategories(
+            ordered.map((s) => ({ id: s.id, displayOrder: s.displayOrder })),
+            storeId,
+            deviceId
+          );
+        } catch (e) {
+          console.error('Failed to reorder sections:', e);
+          showToast('Could not save section order', 'error');
+        }
+      } else {
+        const nextList = [...childSubcategories];
+        const temp = nextList[idx];
+        nextList[idx] = nextList[idx - 1];
+        nextList[idx - 1] = temp;
+
+        const ordered = nextList.map((s, i) => ({ ...s, displayOrder: i }));
+        setChildSubcategories(ordered);
+
+        try {
+          await CategoryRepository.reorderSubcategories(
+            ordered.map((s) => ({ id: s.id, displayOrder: s.displayOrder })),
+            storeId,
+            deviceId
+          );
+        } catch (e) {
+          console.error('Failed to reorder sub-sections:', e);
+          showToast('Could not save sub-section order', 'error');
+        }
       }
     }
   };
@@ -1102,23 +1129,45 @@ export default function ProductsScreen() {
         showToast('Could not save category order', 'error');
       }
     } else {
-      const nextList = [...subcategories];
-      const temp = nextList[idx];
-      nextList[idx] = nextList[idx + 1];
-      nextList[idx + 1] = temp;
+      const isRootSub = subcategories.some((s) => s.id === manageTarget.item.id);
+      if (isRootSub) {
+        const nextList = [...subcategories];
+        const temp = nextList[idx];
+        nextList[idx] = nextList[idx + 1];
+        nextList[idx + 1] = temp;
 
-      const ordered = nextList.map((s, i) => ({ ...s, displayOrder: i }));
-      setSubcategories(ordered);
+        const ordered = nextList.map((s, i) => ({ ...s, displayOrder: i }));
+        setSubcategories(ordered);
 
-      try {
-        await CategoryRepository.reorderSubcategories(
-          ordered.map((s) => ({ id: s.id, displayOrder: s.displayOrder })),
-          storeId,
-          deviceId
-        );
-      } catch (e) {
-        console.error('Failed to reorder sections:', e);
-        showToast('Could not save section order', 'error');
+        try {
+          await CategoryRepository.reorderSubcategories(
+            ordered.map((s) => ({ id: s.id, displayOrder: s.displayOrder })),
+            storeId,
+            deviceId
+          );
+        } catch (e) {
+          console.error('Failed to reorder sections:', e);
+          showToast('Could not save section order', 'error');
+        }
+      } else {
+        const nextList = [...childSubcategories];
+        const temp = nextList[idx];
+        nextList[idx] = nextList[idx + 1];
+        nextList[idx + 1] = temp;
+
+        const ordered = nextList.map((s, i) => ({ ...s, displayOrder: i }));
+        setChildSubcategories(ordered);
+
+        try {
+          await CategoryRepository.reorderSubcategories(
+            ordered.map((s) => ({ id: s.id, displayOrder: s.displayOrder })),
+            storeId,
+            deviceId
+          );
+        } catch (e) {
+          console.error('Failed to reorder sub-sections:', e);
+          showToast('Could not save sub-section order', 'error');
+        }
       }
     }
   };
@@ -1763,7 +1812,7 @@ export default function ProductsScreen() {
                     color: (selectedCell?.currentStock || 0) > 0 ? activeColors.textPrimary : '#DC2626',
                   }}
                 >
-                  {selectedCell ? selectedCell.currentStock : 0} pcs
+                  {selectedCell ? selectedCell.currentStock : 0} {selectedCell?.unit || 'pcs'}
                 </Text>
               </Text>
             </View>
@@ -1774,7 +1823,9 @@ export default function ProductsScreen() {
                 { color: activeColors.textPrimary },
               ]}
             >
-              {actionModalMode === 'sell' ? 'Quantity to Sell (pcs):' : 'Quantity to Add (pcs):'}
+              {actionModalMode === 'sell'
+                ? `Quantity to Sell (${selectedCell?.unit || 'pcs'}):`
+                : `Quantity to Add (${selectedCell?.unit || 'pcs'}):`}
             </Text>
             <TextInput
               style={[
@@ -1802,7 +1853,7 @@ export default function ProductsScreen() {
             {actionModalMode === 'sell' &&
               parseFloat(actionQty || '0') > (selectedCell?.currentStock || 0) && (
                 <Text style={styles.stockWarningText}>
-                  ⚠️ Quantity exceeds available stock ({selectedCell?.currentStock || 0} pcs)
+                  ⚠️ Quantity exceeds available stock ({selectedCell?.currentStock || 0} {selectedCell?.unit || 'pcs'})
                 </Text>
               )}
 
@@ -1851,8 +1902,8 @@ export default function ProductsScreen() {
                 </Text>
                 <Text style={[styles.totalAmountValue, { color: activeColors.primary }]}>
                   ₹{(
-                    parseFloat(actionQty) *
-                    parseFloat(actionPriceRs.match(/(\d+(?:\.\d+)?)/)![1])
+                    parseFloat(actionQty || '0') *
+                    parseFloat(actionPriceRs.match(/(\d+(?:\.\d+)?)/)?.[1] || '0')
                   ).toFixed(2)}
                 </Text>
               </View>

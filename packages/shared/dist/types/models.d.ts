@@ -121,6 +121,7 @@ export interface ProductVariant {
     color?: string;
     purchasePricePaise: number;
     sellingPricePaise: number;
+    priceDisplay?: string | null;
     mrpPaise?: number;
     taxRatePercent: number;
     minStockLevel: number;
@@ -284,7 +285,7 @@ export interface Expense {
     reference?: string;
     createdAt: string;
 }
-export type SyncEntityType = 'category' | 'subcategory' | 'product' | 'variant' | 'supplier' | 'customer' | 'purchase' | 'sale' | 'stock_movement' | 'expense' | 'pipe_segment' | 'store' | 'custom_field';
+export type SyncEntityType = 'category' | 'subcategory' | 'product' | 'variant' | 'product_variant' | 'supplier' | 'customer' | 'purchase' | 'sale' | 'stock_movement' | 'expense' | 'pipe_segment' | 'store' | 'custom_field';
 export type SyncOperationType = 'create' | 'update' | 'delete';
 export interface SyncOperation {
     id: string;

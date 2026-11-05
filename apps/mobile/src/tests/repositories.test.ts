@@ -97,20 +97,47 @@ const { mockTables, mockDb } = vi.hoisted(() => {
           }
         }
       } else if (trimmed.startsWith('UPDATE PRODUCTS')) {
-        const id = params[params.length - 1];
+        const id = sql.includes('storeId = ?') ? params[params.length - 2] : params[params.length - 1];
         const prod = tables.products.find((p) => p.id === id);
-        if (prod && sql.includes('deletedAt = ?')) {
-          prod.deletedAt = params[0];
-          prod.active = 0;
+        if (prod) {
+          if (sql.includes('deletedAt = ?')) {
+            prod.deletedAt = params[0];
+            prod.active = 0;
+          } else if (sql.includes('SET name = ?')) {
+            prod.name = params[0];
+            prod.brand = params[1];
+            prod.material = params[2];
+            prod.description = params[3];
+            prod.modelNumber = params[4];
+            prod.imageUrl = params[5];
+            prod.customValues = params[6];
+          }
         }
       } else if (trimmed.startsWith('UPDATE PRODUCT_VARIANTS')) {
-        const prodId = params[params.length - 1];
-        tables.product_variants.forEach((v) => {
-          if (v.productId === prodId && sql.includes('deletedAt = ?')) {
-            v.deletedAt = params[0];
-            v.active = 0;
+        if (sql.includes('WHERE id = ?')) {
+          const varId = params[params.length - 2];
+          const v = tables.product_variants.find((item) => item.id === varId);
+          if (v) {
+            v.name = params[0];
+            v.sku = params[1];
+            v.barcode = params[2];
+            v.size = params[3];
+            v.color = params[4];
+            v.purchasePricePaise = params[5];
+            v.sellingPricePaise = params[6];
+            v.priceDisplay = params[7];
+            v.currentStock = params[8];
+            v.openingStock = params[9];
           }
-        });
+        } else {
+          const prodId = params[params.length - 1];
+          tables.product_variants.forEach((v) => {
+            if (v.productId === prodId && sql.includes('deletedAt = ?')) {
+              v.deletedAt = params[0];
+              v.active = 0;
+            }
+          });
+        }
       }
       return { lastInsertRowId: 1, changes: 1 };
     }),
@@ -147,6 +174,12 @@ const { mockTables, mockDb } = vi.hoisted(() => {
       }
       if (trimmed.includes('FROM SUBCATEGORIES WHERE ID = ?')) {
         return tables.subcategories.find((s) => s.id === params[0]) || null;
+      }
+      if (trimmed.includes('FROM PRODUCTS WHERE ID = ?')) {
+        return tables.products.find((p) => p.id === params[0]) || null;
+      }
+      if (trimmed.includes('FROM PRODUCT_VARIANTS WHERE ID = ?')) {
+        return tables.product_variants.find((v) => v.id === params[0]) || null;
       }
       if (trimmed.includes('SELECT COUNT(*) AS COUNT FROM SUBCATEGORIES')) {
         const count = tables.subcategories.filter((s) => s.categoryId === params[0] && !s.deletedAt).length;
@@ -346,6 +379,41 @@ describe('CategoryRepository Offline Operations', () => {
     expect(archived?.active).toBe(0);
     expect(archived?.deletedAt).toBeDefined();
   });
+
+  it('recursively archives subcategory and all nested child subcategories', async () => {
+    const cat = await CategoryRepository.createCategory({ name: 'Plumbing' }, 'store-1', 'dev-1');
+    const parentSub = await CategoryRepository.createSubcategory(
+      { categoryId: cat.id, name: 'Pipes', parentId: null },
+      'store-1',
+      'dev-1'
+    );
+    const childSub1 = await CategoryRepository.createSubcategory(
+      { categoryId: cat.id, name: 'PVC Pipes', parentId: parentSub.id },
+      'store-1',
+      'dev-1'
+    );
+    const grandChildSub = await CategoryRepository.createSubcategory(
+      { categoryId: cat.id, name: 'Heavy Duty PVC', parentId: childSub1.id },
+      'store-1',
+      'dev-1'
+    );
+
+    const affected = await CategoryRepository.archiveSubcategory(parentSub.id, 'store-1', 'dev-1');
+    expect(affected).toBe(0);
+
+    const deletedSubs = mockTables.subcategories.filter((s) => s.active === 0 && s.deletedAt != null);
+    const deletedIds = deletedSubs.map((s) => s.id);
+    expect(deletedIds).toContain(parentSub.id);
+    expect(deletedIds).toContain(childSub1.id);
+    expect(deletedIds).toContain(grandChildSub.id);
+
+    const deleteSyncOps = mockTables.sync_queue.filter(
+      (q) => q.entityType === 'subcategory' && q.operationType === 'delete'
+    );
+    expect(deleteSyncOps.map((o) => o.entityId)).toContain(parentSub.id);
+    expect(deleteSyncOps.map((o) => o.entityId)).toContain(childSub1.id);
+    expect(deleteSyncOps.map((o) => o.entityId)).toContain(grandChildSub.id);
+  });
 });
 
 describe('CustomFieldRepository Dynamic Specifications', () => {
@@ -515,5 +583,63 @@ describe('CustomFieldRepository Dynamic Specifications', () => {
 
     await InventoryRepository.clearStockHistory('store-1');
     expect(mockTables.stock_movements.length).toBe(0);
+  });
+
+  it('preserves existing product and variant fields on partial updateProduct', async () => {
+    mockTables.products.push({
+      id: 'prod-partial',
+      storeId: 'store-1',
+      categoryId: 'cat-1',
+      subcategoryId: 'sub-1',
+      name: 'Original Product Name',
+      brand: 'Dulux',
+      material: 'Acrylic',
+      description: 'Original Desc',
+      modelNumber: 'M-100',
+      active: 1,
+    });
+
+    mockTables.product_variants.push({
+      id: 'var-partial',
+      productId: 'prod-partial',
+      storeId: 'store-1',
+      name: 'Original Var Name',
+      sku: 'SKU-ORIG-123',
+      barcode: 'BARCODE-999',
+      size: '10L',
+      color: 'White',
+      purchasePricePaise: 30000,
+      sellingPricePaise: 45000,
+      priceDisplay: '450',
+      currentStock: 20,
+      openingStock: 20,
+      taxRatePercent: 18,
+      minStockLevel: 5,
+      active: 1,
+    });
+
+    // Partial update: only update description and change stock
+    await ProductRepository.updateProduct(
+      'prod-partial',
+      { description: 'Brand new updated description' },
+      [{ id: 'var-partial', currentStock: 25 }],
+      'store-1',
+      'dev-1'
+    );
+
+    const updatedProd = mockTables.products.find((p) => p.id === 'prod-partial');
+    expect(updatedProd.name).toBe('Original Product Name');
+    expect(updatedProd.brand).toBe('Dulux');
+    expect(updatedProd.material).toBe('Acrylic');
+    expect(updatedProd.description).toBe('Brand new updated description');
+
+    const updatedVar = mockTables.product_variants.find((v) => v.id === 'var-partial');
+    expect(updatedVar.name).toBe('Original Var Name');
+    expect(updatedVar.sku).toBe('SKU-ORIG-123');
+    expect(updatedVar.barcode).toBe('BARCODE-999');
+    expect(updatedVar.size).toBe('10L');
+    expect(updatedVar.sellingPricePaise).toBe(45000);
+    expect(updatedVar.priceDisplay).toBe('450');
+    expect(updatedVar.currentStock).toBe(25);
   });
 });

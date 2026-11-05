@@ -4,7 +4,7 @@ import { SQL_CREATE_TABLES } from './schema.js';
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 let dbInitPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
-const CURRENT_DB_VERSION = 5;
+const CURRENT_DB_VERSION = 6;
 
 async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   const safeAlterQueries = [
@@ -23,6 +23,8 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
     'ALTER TABLE customers ADD COLUMN email TEXT;',
     "UPDATE products SET baseUnit = 'l' WHERE baseUnit = 'liter';",
     "UPDATE products SET baseUnit = 'piece' WHERE baseUnit = 'pcs';",
+    "DROP INDEX IF EXISTS idx_variants_sku;",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_variants_sku ON product_variants(storeId, sku) WHERE deletedAt IS NULL;",
     "CREATE INDEX IF NOT EXISTS idx_movements_store_created ON stock_movements(storeId, createdAt DESC);",
     "CREATE INDEX IF NOT EXISTS idx_variants_product ON product_variants(productId, deletedAt, active);",
     "CREATE INDEX IF NOT EXISTS idx_variants_store ON product_variants(storeId, deletedAt, active);",
@@ -30,6 +32,11 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
     "CREATE INDEX IF NOT EXISTS idx_products_brand ON products(storeId, categoryId, subcategoryId, brand);",
     "CREATE INDEX IF NOT EXISTS idx_products_deleted ON products(storeId, deletedAt, active);",
     "CREATE INDEX IF NOT EXISTS idx_subcategories_parent ON subcategories(categoryId, parentId, displayOrder);",
+    "CREATE INDEX IF NOT EXISTS idx_purchases_store_date ON purchases(storeId, purchaseDate DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase ON purchase_items(purchaseId);",
+    "CREATE INDEX IF NOT EXISTS idx_sales_store_date ON sales(storeId, saleDate DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(saleId);",
+    "CREATE INDEX IF NOT EXISTS idx_expenses_store_date ON expenses(storeId, date DESC);",
     // Reset automatic placeholder minStockLevel = 5 down to 0 for unstocked items so they don't falsely alert Out of Stock
     "UPDATE product_variants SET minStockLevel = 0 WHERE minStockLevel = 5 AND currentStock = 0 AND (openingStock = 0 OR openingStock IS NULL);",
   ];
@@ -47,39 +54,25 @@ async function runVersionedMigrations(db: SQLite.SQLiteDatabase): Promise<void> 
     `UPDATE products SET deletedAt = datetime('now'), active = 0 
      WHERE deletedAt IS NULL AND (
        id LIKE 'demo-%' OR 
-       id LIKE 'prod-demo%' OR
-       LOWER(brand) = 'general'
+       id LIKE 'prod-demo%'
      );`,
     `UPDATE product_variants SET deletedAt = datetime('now'), active = 0 
      WHERE deletedAt IS NULL AND (
        id LIKE 'demo-%' OR 
        id LIKE 'demo-var-%'
      );`,
-    // 2. Restore any real user products and variants that were mistakenly soft-deleted by previous filters
-    `UPDATE products SET deletedAt = NULL, active = 1
-     WHERE deletedAt IS NOT NULL 
-       AND id NOT LIKE 'demo-%' 
-       AND id NOT LIKE 'prod-demo%'
-       AND LOWER(brand) != 'general'
-       AND categoryId IN (SELECT id FROM categories WHERE deletedAt IS NULL AND active = 1)
-       AND (subcategoryId IS NULL OR subcategoryId = '' OR subcategoryId IN (SELECT id FROM subcategories WHERE deletedAt IS NULL AND active = 1));`,
-    `UPDATE product_variants SET deletedAt = NULL, active = 1
-     WHERE deletedAt IS NOT NULL 
-       AND id NOT LIKE 'demo-%' 
-       AND id NOT LIKE 'demo-var-%' 
-       AND productId IN (SELECT id FROM products WHERE deletedAt IS NULL AND active = 1);`,
-    // 3. Cascade soft-delete to variants whose parent product is soft-deleted or inactive
+    // 2. Cascade soft-delete to variants whose parent product is soft-deleted or inactive
     `UPDATE product_variants SET deletedAt = datetime('now'), active = 0
      WHERE deletedAt IS NULL AND productId IN (
        SELECT id FROM products WHERE deletedAt IS NOT NULL OR active = 0
      );`,
-    // 4. Cascade soft-delete to products whose category or subcategory is soft-deleted or inactive
+    // 3. Cascade soft-delete to products whose category or subcategory is soft-deleted or inactive
     `UPDATE products SET deletedAt = datetime('now'), active = 0
      WHERE deletedAt IS NULL AND (
        categoryId IN (SELECT id FROM categories WHERE deletedAt IS NOT NULL OR active = 0) OR
        (subcategoryId IS NOT NULL AND subcategoryId != '' AND subcategoryId IN (SELECT id FROM subcategories WHERE deletedAt IS NOT NULL OR active = 0))
      );`,
-    // 5. Cascade again to variants of newly soft-deleted products
+    // 4. Cascade again to variants of newly soft-deleted products
     `UPDATE product_variants SET deletedAt = datetime('now'), active = 0
      WHERE deletedAt IS NULL AND productId IN (
        SELECT id FROM products WHERE deletedAt IS NOT NULL OR active = 0

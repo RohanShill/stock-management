@@ -266,6 +266,10 @@ export class SalesRepository {
         const balanceBefore = Number(fresh?.currentStock ?? sp.variantRow.currentStock ?? 0);
         const balanceAfter = balanceBefore - sp.baseDeduction;
 
+        if (balanceAfter < 0 && !store?.negativeStockAllowed) {
+          throw new Error(`Insufficient stock for '${sp.variantRow.name}'. Available: ${balanceBefore} ${sp.variantRow.baseUnit}, Requested: ${sp.baseDeduction} ${sp.variantRow.baseUnit}`);
+        }
+
         await db.runAsync(
           `UPDATE product_variants SET currentStock = ?, updatedAt = ? WHERE id = ?;`,
           [balanceAfter, now, sp.variantRow.id]

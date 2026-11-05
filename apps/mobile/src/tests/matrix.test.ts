@@ -50,7 +50,7 @@ describe('MatrixRepository Utilities', () => {
         if (sql.includes('FROM products')) {
           return Promise.resolve([
             { id: 'p1', brand: 'Supreme', name: 'Supreme Items' },
-            { id: 'p2', brand: 'General', name: 'General Items' },
+            { id: 'p2', brand: 'Finolex', name: 'Finolex Items' },
           ]);
         }
         if (sql.includes('FROM product_variants')) {
@@ -65,12 +65,12 @@ describe('MatrixRepository Utilities', () => {
     vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
 
     const data = await MatrixRepository.getMatrixData('store-1', 'cat-1', 'sub-1');
-    expect(data.brands).toEqual(['Supreme']);
+    expect(data.brands).toEqual(['Supreme', 'Finolex']);
     expect(data.sizes).toEqual([]);
     expect(Object.keys(data.cells)).toHaveLength(0);
   });
 
-  it('allows elbow and albow items in sizes and variants while excluding general brands', async () => {
+  it('allows elbow and albow items in sizes and variants while excluding demo products', async () => {
     const mockDb = {
       getAllAsync: vi.fn().mockImplementation((sql: string) => {
         if (sql.includes('FROM products')) {
@@ -144,7 +144,7 @@ describe('MatrixRepository Utilities', () => {
     expect(powderTabs).toEqual([]);
   });
 
-  it('filters out dummy general brands and demo IDs from getMatrixData while preserving user brands', async () => {
+  it('preserves user brands including General while filtering demo IDs from getMatrixData', async () => {
     const mockDb = {
       getAllAsync: vi.fn().mockImplementation((sql: string) => {
         if (sql.includes('FROM products')) {
@@ -172,7 +172,7 @@ describe('MatrixRepository Utilities', () => {
     const data = await MatrixRepository.getMatrixData('store-1', 'cat-bath', 'sub-bath');
     expect(data.brands).toContain('Jaquar');
     expect(data.brands).toContain('Asian Paints');
-    expect(data.brands).not.toContain('General');
+    expect(data.brands).toContain('General');
     expect(data.sizes).toContain('1/2"');
     expect(data.sizes).toContain('4L');
   });
@@ -681,5 +681,73 @@ describe('MatrixRepository Utilities', () => {
     // Empty query returns empty array
     const emptyResults = await MatrixRepository.searchCrossSections('store-1', '   ', 'sub-wall-paint');
     expect(emptyResults).toHaveLength(0);
+  });
+
+  it('addBrand enqueues created product and variants to SyncQueue', async () => {
+    const mockDb = {
+      getFirstAsync: vi.fn().mockResolvedValue(null),
+      getAllAsync: vi.fn().mockResolvedValue([]),
+      runAsync: vi.fn().mockResolvedValue({}),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+    const { SyncQueueRepository } = await import('../database/repositories/syncQueueRepository.js');
+    vi.mocked(SyncQueueRepository.enqueue).mockClear();
+
+    await MatrixRepository.addBrand(
+      'store-1',
+      'cat-1',
+      'sub-1',
+      'Supreme',
+      ['1/2"', '3/4"'],
+      'dev-1'
+    );
+
+    // Should have enqueued product creation + 2 variant creations
+    expect(SyncQueueRepository.enqueue).toHaveBeenCalledWith(
+      'store-1',
+      'dev-1',
+      'product',
+      expect.any(String),
+      'create',
+      expect.objectContaining({ brand: 'Supreme' })
+    );
+    expect(SyncQueueRepository.enqueue).toHaveBeenCalledWith(
+      'store-1',
+      'dev-1',
+      'product_variant',
+      expect.any(String),
+      'create',
+      expect.objectContaining({ size: '1/2"' })
+    );
+  });
+
+  it('renameSize renames safely and enqueues sync update', async () => {
+    const runAsyncMock = vi.fn().mockResolvedValue({});
+    const mockDb = {
+      getFirstAsync: vi.fn().mockResolvedValue(null),
+      runAsync: runAsyncMock,
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+    const { SyncQueueRepository } = await import('../database/repositories/syncQueueRepository.js');
+    vi.mocked(SyncQueueRepository.enqueue).mockClear();
+
+    await MatrixRepository.renameSize('store-1', 'cat-1', 'sub-1', '1"', '2"', 'dev-1');
+
+    expect(runAsyncMock).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE product_variants'),
+      expect.arrayContaining(['2"', '2"', expect.any(String), 'store-1', '1"', 'cat-1', 'sub-1'])
+    );
+    expect(SyncQueueRepository.enqueue).toHaveBeenCalledWith(
+      'store-1',
+      'dev-1',
+      'product_variant',
+      'rename_2"',
+      'update',
+      expect.objectContaining({ oldSize: '1"', newSize: '2"' })
+    );
   });
 });

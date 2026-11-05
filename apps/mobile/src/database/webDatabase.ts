@@ -47,111 +47,25 @@ class WebSQLiteStore {
         if (saved) {
           const parsed = JSON.parse(saved);
           this.tables = { ...this.tables, ...parsed };
-          // Ensure ONLY "Pipes" and "Paints" categories are kept
-          this.tables.categories = this.tables.categories
-            .filter((c: any) => {
-              const n = (c.name || '').toLowerCase();
-              return (
-                n.includes('pipe') ||
-                n.includes('plumb') ||
-                n.includes('paint')
-              );
-            })
-            .map((c: any) => {
-              const n = (c.name || '').toLowerCase();
-              if (n.includes('pipe') || n.includes('plumb')) {
-                return { ...c, name: 'Pipes' };
-              }
-              if (n.includes('paint')) {
-                return { ...c, name: 'Paints' };
-              }
-              return c;
-            });
-
-          // Deduplicate categories by name
-          const seenCat = new Set<string>();
-          this.tables.categories = this.tables.categories.filter((c: any) => {
-            if (seenCat.has(c.name)) return false;
-            seenCat.add(c.name);
-            return true;
-          });
-
-          const now = new Date().toISOString();
-          let pipesCat = this.tables.categories.find((c: any) => c.name === 'Pipes');
-          let paintsCat = this.tables.categories.find((c: any) => c.name === 'Paints');
-          if (!pipesCat) {
-            pipesCat = {
-              id: 'cat-plumbing',
-              storeId: 'store-1',
-              name: 'Pipes',
-              description: 'Pipes, fittings, valves',
-              icon: 'pipe',
-              displayOrder: 1,
-              active: 1,
-              createdAt: now,
-              updatedAt: now,
-            };
-            this.tables.categories.push(pipesCat);
-          }
-          if (!paintsCat) {
-            paintsCat = {
-              id: 'cat-paints',
-              storeId: 'store-1',
-              name: 'Paints',
-              description: 'Wall paints, primers, finishes',
-              icon: 'brush',
-              displayOrder: 2,
-              active: 1,
-              createdAt: now,
-              updatedAt: now,
-            };
-            this.tables.categories.push(paintsCat);
-          }
 
           if (this.tables.stores[0]) {
             this.tables.stores[0].name = 'MANJU STORES';
             this.tables.stores[0].email = 'store@manjustore.in';
           }
 
-          // Clear all demo products as requested: "dont add demo data"
-          this.tables.products = (this.tables.products || []).filter(
-            (p: any) => !p.id.startsWith('prod-') && !p.id.startsWith('demo-')
-          );
-          const validProdIds = new Set(this.tables.products.map((p: any) => p.id));
-          this.tables.product_variants = (this.tables.product_variants || []).filter(
-            (v: any) => validProdIds.has(v.productId)
-          );
-
-          // Retain only subcategories belonging to Pipes and Paints
-          const validCatIds = new Set(this.tables.categories.map((c: any) => c.id));
-          this.tables.subcategories = this.tables.subcategories.filter((s: any) => validCatIds.has(s.categoryId));
-
-          // Clean up any old dummy subcategories like 'Angles', 'Emulsion', 'Distemper', 'Primer', 'Waterproof', 'Putty'
-          this.tables.subcategories = (this.tables.subcategories || []).filter(
-            (s: any) =>
-              !s.name.toLowerCase().includes('angle') &&
-              !s.name.toLowerCase().includes('emulsion') &&
-              !s.name.toLowerCase().includes('distemper') &&
-              !s.name.toLowerCase().includes('primer') &&
-              !s.name.toLowerCase().includes('solvent') &&
-              !s.name.toLowerCase().includes('waterproof') &&
-              !s.name.toLowerCase().includes('putty') &&
-              s.name.toLowerCase() !== 'general' &&
-              !s.id?.startsWith('demo-sub-')
-          );
-
-          // Clean up any paint demo items
-          this.tables.product_variants = (this.tables.product_variants || []).filter(
-            (v: any) => !v.id?.startsWith('demo-var-')
-          );
+          // Filter out dummy demo products/variants only
           this.tables.products = (this.tables.products || []).filter(
             (p: any) =>
-              p.brand?.toLowerCase() !== 'general' &&
               !p.id?.startsWith('demo-') &&
               !p.id?.startsWith('prod-demo')
           );
+          const validProdIds = new Set(this.tables.products.map((p: any) => p.id));
+          this.tables.product_variants = (this.tables.product_variants || []).filter(
+            (v: any) => validProdIds.has(v.productId) && !v.id?.startsWith('demo-var-')
+          );
 
           // Sanitize and repair stock_movements if corrupted
+          const now = new Date().toISOString();
           if (Array.isArray(this.tables.stock_movements)) {
             this.tables.stock_movements = this.tables.stock_movements.map((sm: any) => {
               const itemDate = sm.createdAt && sm.createdAt !== 'null' ? sm.createdAt : now;

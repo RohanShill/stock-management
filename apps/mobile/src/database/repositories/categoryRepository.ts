@@ -416,42 +416,72 @@ export class CategoryRepository {
 
   static async archiveSubcategory(id: string, storeId: string, deviceId: string): Promise<number> {
     const db = await getDatabase();
-    const prods = await db.getFirstAsync<{ count: number }>(
-      `SELECT COUNT(*) as count FROM products WHERE subcategoryId = ? AND storeId = ? AND deletedAt IS NULL;`,
-      [id, storeId]
-    );
-    const count = prods?.count || 0;
     const now = new Date().toISOString();
 
+    // 1. Recursively find all descendant child subcategories under this node
+    const toDeleteIds: string[] = [id];
+    let scanIdx = 0;
+    while (scanIdx < toDeleteIds.length) {
+      const currentParentId = toDeleteIds[scanIdx++];
+      try {
+        const children = await db.getAllAsync<{ id: string }>(
+          `SELECT id FROM subcategories WHERE storeId = ? AND parentId = ? AND deletedAt IS NULL;`,
+          [storeId, currentParentId]
+        );
+        if (children && children.length > 0) {
+          for (const ch of children) {
+            if (!toDeleteIds.includes(ch.id)) {
+              toDeleteIds.push(ch.id);
+            }
+          }
+        }
+      } catch {
+        // Safe fallback
+      }
+    }
+
+    const placeholders = toDeleteIds.map(() => '?').join(',');
+
+    // 2. Count total affected products across all descendant subcategories
+    const prods = await db.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) as count FROM products WHERE subcategoryId IN (${placeholders}) AND storeId = ? AND deletedAt IS NULL;`,
+      [...toDeleteIds, storeId]
+    );
+    const count = prods?.count || 0;
+
     await db.withTransactionAsync(async () => {
-      // 1. Cascade soft-delete variants under products of this subcategory
-      await db.runAsync(
-        `UPDATE product_variants SET deletedAt = ?, active = 0, updatedAt = ? 
-         WHERE storeId = ? AND productId IN (SELECT id FROM products WHERE subcategoryId = ? AND storeId = ?);`,
-        [now, now, storeId, id, storeId]
-      );
+      for (const subId of toDeleteIds) {
+        // Cascade soft-delete variants under products of this subcategory
+        await db.runAsync(
+          `UPDATE product_variants SET deletedAt = ?, active = 0, updatedAt = ? 
+           WHERE storeId = ? AND productId IN (SELECT id FROM products WHERE subcategoryId = ? AND storeId = ?);`,
+          [now, now, storeId, subId, storeId]
+        );
 
-      // 2. Cascade soft-delete products under this subcategory
-      await db.runAsync(
-        `UPDATE products SET deletedAt = ?, active = 0, updatedAt = ? WHERE subcategoryId = ? AND storeId = ?;`,
-        [now, now, id, storeId]
-      );
+        // Cascade soft-delete products under this subcategory
+        await db.runAsync(
+          `UPDATE products SET deletedAt = ?, active = 0, updatedAt = ? WHERE subcategoryId = ? AND storeId = ?;`,
+          [now, now, subId, storeId]
+        );
 
-      // 3. Soft-delete subcategory
-      await db.runAsync(
-        `UPDATE subcategories SET deletedAt = ?, active = 0, updatedAt = ? WHERE id = ? AND storeId = ?;`,
-        [now, now, id, storeId]
-      );
+        // Soft-delete subcategory
+        await db.runAsync(
+          `UPDATE subcategories SET deletedAt = ?, active = 0, updatedAt = ? WHERE id = ? AND storeId = ?;`,
+          [now, now, subId, storeId]
+        );
+      }
     });
 
-    await SyncQueueRepository.enqueue(
-      storeId,
-      deviceId,
-      'subcategory',
-      id,
-      'delete',
-      { deletedAt: now, active: false }
-    );
+    for (const subId of toDeleteIds) {
+      await SyncQueueRepository.enqueue(
+        storeId,
+        deviceId,
+        'subcategory',
+        subId,
+        'delete',
+        { deletedAt: now, active: false }
+      );
+    }
 
     return count;
   }

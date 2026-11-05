@@ -82,7 +82,12 @@ export class InventoryRepository {
       finalBalanceBefore = Number(freshVariant?.currentStock ?? variantRow.currentStock ?? 0);
       finalBalanceAfter = finalBalanceBefore + delta;
 
-      if (finalBalanceAfter < 0) {
+      const storeRow = await db.getFirstAsync<any>(
+        `SELECT negativeStockAllowed FROM stores WHERE id = ?;`,
+        [storeId]
+      );
+
+      if (finalBalanceAfter < 0 && !storeRow?.negativeStockAllowed) {
         throw new Error(`Insufficient stock for ${type === 'sale' ? 'sale' : 'adjustment'} (Current: ${finalBalanceBefore} ${baseUnit}, Requested reduction: ${Math.abs(delta)} ${baseUnit})`);
       }
 

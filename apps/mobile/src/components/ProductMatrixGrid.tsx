@@ -596,10 +596,6 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
   const handleAddSize = async () => {
     const clean = newSizeName.trim();
     if (!clean || submittingSize) return;
-    if (brands.length === 0) {
-      showToast('Please add at least one brand first using "+ Add Brands"', 'warning');
-      return;
-    }
     if (sizes.some((s) => s.toLowerCase() === clean.toLowerCase())) {
       showToast(`Size "${clean}" is already present in the table.`, 'warning');
       return;

@@ -13,6 +13,7 @@ export interface MatrixCellData {
   purchasePricePaise: number;
   priceDisplay?: string | null;
   hasStockHistory?: boolean;
+  unit?: string;
 }
 
 export interface CrossSectionMatch {
@@ -230,7 +231,6 @@ export class MatrixRepository {
     const db = await getDatabase();
 
     let sql = `SELECT * FROM products WHERE storeId = ? AND categoryId = ? AND deletedAt IS NULL AND active = 1
-      AND LOWER(brand) != 'general'
       AND id NOT LIKE 'demo-%'
       AND id NOT LIKE 'prod-demo%'`;
     const params: any[] = [storeId, categoryId];
@@ -244,6 +244,23 @@ export class MatrixRepository {
 
     const productRows = await db.getAllAsync<any>(sql, params);
     if (!productRows || productRows.length === 0) {
+      if (subcategoryId && typeof db.getFirstAsync === 'function') {
+        try {
+          const subRow = await db.getFirstAsync<{ customValues?: string }>(
+            `SELECT customValues FROM subcategories WHERE id = ? AND storeId = ?;`,
+            [subcategoryId, storeId]
+          );
+          if (subRow?.customValues) {
+            const parsed = JSON.parse(subRow.customValues);
+            if (Array.isArray(parsed?.sizeOrder) && parsed.sizeOrder.length > 0) {
+              const sizes = this.sortSizes(parsed.sizeOrder.filter(Boolean));
+              return { brands: [], sizes, cells: {} };
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
       return { brands: [], sizes: [], cells: {} };
     }
 
@@ -251,7 +268,7 @@ export class MatrixRepository {
     const placeholders = productIds.map(() => '?').join(',');
 
     const variantRows = await db.getAllAsync<any>(
-      `SELECT * FROM product_variants WHERE productId IN (${placeholders}) AND deletedAt IS NULL;`,
+      `SELECT * FROM product_variants WHERE productId IN (${placeholders}) AND deletedAt IS NULL AND active = 1;`,
       productIds
     );
 
@@ -283,8 +300,7 @@ export class MatrixRepository {
     // 1. First collect all existing brands from active products in this section
     for (const p of productRows) {
       const rawBrand = (p.brand || '').trim();
-      const lowerBrand = rawBrand.toLowerCase();
-      if (rawBrand && lowerBrand !== 'general') {
+      if (rawBrand) {
         brandSet.add(rawBrand);
       }
     }
@@ -293,10 +309,8 @@ export class MatrixRepository {
     for (const v of variantRows) {
       const prod = prodMap.get(v.productId);
       const rawBrand = (prod?.brand || '').trim();
-      const lowerBrand = rawBrand.toLowerCase();
 
-      // Filter out dummy general placeholder
-      if (!rawBrand || lowerBrand === 'general') {
+      if (!rawBrand) {
         continue;
       }
 
@@ -321,6 +335,7 @@ export class MatrixRepository {
         purchasePricePaise: Number(v.purchasePricePaise) || 0,
         priceDisplay: v.priceDisplay ? String(v.priceDisplay).trim() : null,
         hasStockHistory: Boolean(hasHistory),
+        unit: prod?.baseUnit || 'pcs',
       };
     }
 
@@ -347,8 +362,8 @@ export class MatrixRepository {
       }
     }
 
-    // Brands preserved in unique array (strictly non-general)
-    const rawBrands = Array.from(brandSet).filter((b) => b.toLowerCase() !== 'general');
+    // Brands preserved in unique array
+    const rawBrands = Array.from(brandSet);
     let brands: string[];
     if (customBrandOrder && customBrandOrder.length > 0) {
       const bOrderMap = new Map<string, number>();
@@ -395,7 +410,7 @@ export class MatrixRepository {
     const db = await getDatabase();
     const now = new Date().toISOString();
     const cleanBrand = brandName.trim();
-    if (!cleanBrand || cleanBrand.toLowerCase() === 'general') return;
+    if (!cleanBrand) return;
 
     // Check if product already exists for this brand under this category/subcat
     let prod = await db.getFirstAsync<any>(
@@ -411,6 +426,17 @@ export class MatrixRepository {
          VALUES (?, ?, ?, ?, ?, ?, 'count', 'piece', '["piece"]', 1, 1, ?, ?);`,
         [prodId, storeId, categoryId, subcategoryId, `${cleanBrand} Items`, cleanBrand, now, now]
       );
+      if (storeId && deviceId) {
+        await SyncQueueRepository.enqueue(storeId, deviceId, 'product', prodId, 'create', {
+          id: prodId,
+          storeId,
+          categoryId,
+          subcategoryId,
+          name: `${cleanBrand} Items`,
+          brand: cleanBrand,
+          active: true,
+        }).catch(() => {});
+      }
     } else {
       prodId = prod.id;
       if (prod.deletedAt) {
@@ -418,6 +444,13 @@ export class MatrixRepository {
           `UPDATE products SET deletedAt = NULL, active = 1, updatedAt = ? WHERE id = ?;`,
           [now, prodId]
         );
+        if (storeId && deviceId) {
+          await SyncQueueRepository.enqueue(storeId, deviceId, 'product', prodId, 'update', {
+            deletedAt: null,
+            active: true,
+            updatedAt: now,
+          }).catch(() => {});
+        }
       }
     }
 
@@ -469,11 +502,30 @@ export class MatrixRepository {
            VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 1, ?, ?);`,
           [varId, storeId, prodId, `${cleanBrand} ${cleanSize}`, sku, cleanSize, now, now]
         );
-      } else if (existingVar.deletedAt) {
+        if (storeId && deviceId) {
+          await SyncQueueRepository.enqueue(storeId, deviceId, 'product_variant', varId, 'create', {
+            id: varId,
+            storeId,
+            productId: prodId,
+            name: `${cleanBrand} ${cleanSize}`,
+            sku,
+            size: cleanSize,
+            currentStock: 0,
+            active: true,
+          }).catch(() => {});
+        }
+      } else if (existingVar.deletedAt || existingVar.active === 0 || !existingVar.active) {
         await db.runAsync(
           `UPDATE product_variants SET deletedAt = NULL, active = 1, updatedAt = ? WHERE id = ?;`,
           [now, existingVar.id]
         );
+        if (storeId && deviceId) {
+          await SyncQueueRepository.enqueue(storeId, deviceId, 'product_variant', existingVar.id, 'update', {
+            deletedAt: null,
+            active: true,
+            updatedAt: now,
+          }).catch(() => {});
+        }
       }
     }
 
@@ -541,13 +593,13 @@ export class MatrixRepository {
     }
 
     let brandsToApply = existingBrands.filter(
-      (b) => b && b.trim().toLowerCase() !== 'general' && b.trim() !== ''
+      (b) => b && b.trim() !== ''
     );
 
     // 2. If not passed from UI, check if any brands already exist in this subcategory in DB
     if (brandsToApply.length === 0) {
       const subProds = await db.getAllAsync<any>(
-        `SELECT DISTINCT brand FROM products WHERE storeId = ? AND categoryId = ? AND subcategoryId = ? AND deletedAt IS NULL AND LOWER(brand) != 'general' AND brand IS NOT NULL AND TRIM(brand) != '';`,
+        `SELECT DISTINCT brand FROM products WHERE storeId = ? AND categoryId = ? AND subcategoryId = ? AND deletedAt IS NULL AND brand IS NOT NULL AND TRIM(brand) != '';`,
         [storeId, categoryId, subcategoryId]
       );
       if (subProds && subProds.length > 0) {
@@ -558,7 +610,7 @@ export class MatrixRepository {
     // 3. If still empty, check brands in the parent category
     if (brandsToApply.length === 0) {
       const catProds = await db.getAllAsync<any>(
-        `SELECT DISTINCT brand FROM products WHERE storeId = ? AND categoryId = ? AND deletedAt IS NULL AND LOWER(brand) != 'general' AND brand IS NOT NULL AND TRIM(brand) != '';`,
+        `SELECT DISTINCT brand FROM products WHERE storeId = ? AND categoryId = ? AND deletedAt IS NULL AND brand IS NOT NULL AND TRIM(brand) != '';`,
         [storeId, categoryId]
       );
       if (catProds && catProds.length > 0) {
@@ -586,6 +638,17 @@ export class MatrixRepository {
            VALUES (?, ?, ?, ?, ?, ?, 'count', 'piece', '["piece"]', 1, 1, ?, ?);`,
           [prodId, storeId, categoryId, subcategoryId, `${cleanBrand} Items`, cleanBrand, now, now]
         );
+        if (storeId && deviceId) {
+          await SyncQueueRepository.enqueue(storeId, deviceId, 'product', prodId, 'create', {
+            id: prodId,
+            storeId,
+            categoryId,
+            subcategoryId,
+            name: `${cleanBrand} Items`,
+            brand: cleanBrand,
+            active: true,
+          }).catch(() => {});
+        }
       } else {
         prodId = prod.id;
         if (prod.deletedAt) {
@@ -593,6 +656,13 @@ export class MatrixRepository {
             `UPDATE products SET deletedAt = NULL, active = 1, updatedAt = ? WHERE id = ?;`,
             [now, prodId]
           );
+          if (storeId && deviceId) {
+            await SyncQueueRepository.enqueue(storeId, deviceId, 'product', prodId, 'update', {
+              deletedAt: null,
+              active: true,
+              updatedAt: now,
+            }).catch(() => {});
+          }
         }
       }
 
@@ -609,11 +679,30 @@ export class MatrixRepository {
            VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 1, ?, ?);`,
           [varId, storeId, prodId, `${cleanBrand} ${cleanSize}`, sku, cleanSize, now, now]
         );
-      } else if (existingVar.deletedAt) {
+        if (storeId && deviceId) {
+          await SyncQueueRepository.enqueue(storeId, deviceId, 'product_variant', varId, 'create', {
+            id: varId,
+            storeId,
+            productId: prodId,
+            name: `${cleanBrand} ${cleanSize}`,
+            sku,
+            size: cleanSize,
+            currentStock: 0,
+            active: true,
+          }).catch(() => {});
+        }
+      } else if (existingVar.deletedAt || existingVar.active === 0 || !existingVar.active) {
         await db.runAsync(
           `UPDATE product_variants SET deletedAt = NULL, active = 1, updatedAt = ? WHERE id = ?;`,
           [now, existingVar.id]
         );
+        if (storeId && deviceId) {
+          await SyncQueueRepository.enqueue(storeId, deviceId, 'product_variant', existingVar.id, 'update', {
+            deletedAt: null,
+            active: true,
+            updatedAt: now,
+          }).catch(() => {});
+        }
       }
     }
   }
@@ -645,6 +734,9 @@ export class MatrixRepository {
               `UPDATE product_variants SET deletedAt = ?, active = 0 WHERE storeId = ? AND productId = ?;`,
               [now, storeId, p.id]
             );
+            if (storeId && deviceId) {
+              await SyncQueueRepository.enqueue(storeId, deviceId, 'product', p.id, 'delete', { deletedAt: now, active: false }).catch(() => {});
+            }
           }
         }
       } catch {
@@ -661,6 +753,16 @@ export class MatrixRepository {
       `UPDATE products SET deletedAt = ?, active = 0 WHERE storeId = ? AND categoryId = ? AND subcategoryId = ? AND LOWER(brand) = ?;`,
       [now, storeId, categoryId, subcategoryId, cleanBrand]
     );
+
+    if (storeId && deviceId) {
+      await SyncQueueRepository.enqueue(storeId, deviceId, 'product_variant', 'del_brand_' + cleanBrand, 'delete', {
+        brand: cleanBrand,
+        categoryId,
+        subcategoryId,
+        deletedAt: now,
+        active: false,
+      }).catch(() => {});
+    }
 
     // 3. Clean from brandOrder in subcategories.customValues if present
     if (typeof db.getFirstAsync === 'function') {
@@ -728,6 +830,16 @@ export class MatrixRepository {
       [cleanNew, now, storeId, categoryId, subcategoryId, cleanNew.toLowerCase()]
     );
 
+    if (storeId && deviceId) {
+      await SyncQueueRepository.enqueue(storeId, deviceId, 'product', 'rename_brand_' + cleanNew, 'update', {
+        oldBrand: cleanOld,
+        newBrand: cleanNew,
+        categoryId,
+        subcategoryId,
+        updatedAt: now,
+      }).catch(() => {});
+    }
+
     // 3. Update brandOrder in subcategories.customValues if present
     if (typeof db.getFirstAsync === 'function') {
       try {
@@ -790,6 +902,16 @@ export class MatrixRepository {
       [now, storeId, cleanSize, categoryId, subcategoryId]
     );
 
+    if (storeId && deviceId) {
+      await SyncQueueRepository.enqueue(storeId, deviceId, 'product_variant', 'del_size_' + cleanSize, 'delete', {
+        size: cleanSize,
+        categoryId,
+        subcategoryId,
+        deletedAt: now,
+        active: false,
+      }).catch(() => {});
+    }
+
     // Also clean from custom sizeOrder if present
     try {
       const subRow = await db.getFirstAsync<{ customValues?: string }>(
@@ -832,7 +954,7 @@ export class MatrixRepository {
     await db.runAsync(
       `UPDATE product_variants 
        SET size = ?, 
-           name = REPLACE(name, ?, ?),
+           name = (SELECT p.brand || ' ' || ? FROM products p WHERE p.id = product_variants.productId),
            updatedAt = ?
        WHERE storeId = ? 
          AND size = ? 
@@ -840,8 +962,17 @@ export class MatrixRepository {
            SELECT id FROM products 
            WHERE categoryId = ? AND subcategoryId = ?
          );`,
-      [cleanNew, cleanOld, cleanNew, now, storeId, cleanOld, categoryId, subcategoryId]
+      [cleanNew, cleanNew, now, storeId, cleanOld, categoryId, subcategoryId]
     );
+
+    if (storeId && deviceId) {
+      await SyncQueueRepository.enqueue(storeId, deviceId, 'product_variant', 'rename_' + cleanNew, 'update', {
+        oldSize: cleanOld,
+        newSize: cleanNew,
+        categoryId,
+        subcategoryId,
+      }).catch(() => {});
+    }
 
     // 2. Update subcategories customValues if sizeOrder was stored
     try {
@@ -1131,7 +1262,7 @@ export class MatrixRepository {
     const cleanDisplay = priceDisplay !== undefined && priceDisplay !== null ? priceDisplay.trim() : null;
 
     if (mode === 'sell') {
-      if (cleanDisplay !== null) {
+      if (priceDisplay !== undefined) {
         await db.runAsync(
           `UPDATE product_variants SET sellingPricePaise = ?, priceDisplay = ?, updatedAt = ? WHERE id = ?;`,
           [pricePaise, cleanDisplay, now, variantId]
@@ -1151,7 +1282,7 @@ export class MatrixRepository {
 
     if (storeId && deviceId) {
       const payload: any = mode === 'sell'
-        ? { sellingPricePaise: pricePaise, ...(cleanDisplay !== null ? { priceDisplay: cleanDisplay } : {}) }
+        ? { sellingPricePaise: pricePaise, ...(priceDisplay !== undefined ? { priceDisplay: cleanDisplay } : {}) }
         : { purchasePricePaise: pricePaise };
       await SyncQueueRepository.enqueue(storeId, deviceId, 'product_variant', variantId, 'update', payload).catch(() => {});
     }
@@ -1194,13 +1325,12 @@ export class MatrixRepository {
         FROM product_variants v
         JOIN products p ON v.productId = p.id
         JOIN categories c ON p.categoryId = c.id
-        JOIN subcategories s ON p.subcategoryId = s.id
+        LEFT JOIN subcategories s ON p.subcategoryId = s.id
         WHERE p.storeId = ?
           AND p.deletedAt IS NULL AND p.active = 1
           AND v.deletedAt IS NULL AND v.active = 1
           AND c.deletedAt IS NULL AND c.active = 1
-          AND s.deletedAt IS NULL AND s.active = 1
-          AND LOWER(p.brand) != 'general'
+          AND (s.id IS NULL OR (s.deletedAt IS NULL AND s.active = 1))
           AND p.id NOT LIKE 'demo-%'
           AND p.id NOT LIKE 'prod-demo%'
         ORDER BY s.displayOrder ASC, s.name ASC, p.name ASC;
