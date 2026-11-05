@@ -1057,7 +1057,7 @@ export default function SettingsScreen() {
           MANJU STORES
         </Text>
         <Text style={[styles.aboutVersion, { color: activeColors.textSecondary }]}>
-          Version {Constants.expoConfig?.version || '1.0.1'}
+          Version 1.0.1
         </Text>
       </Surface>
 

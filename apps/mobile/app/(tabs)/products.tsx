@@ -25,6 +25,7 @@ import {
   MatrixRepository,
   MatrixGridData,
   MatrixCellData,
+  CrossSectionMatch,
 } from '../../src/database/repositories/matrixRepository.js';
 import { CategorySubTabs, HierarchyTier } from '../../src/components/CategorySubTabs.js';
 import { ProductMatrixGrid } from '../../src/components/ProductMatrixGrid.js';
@@ -123,6 +124,38 @@ export default function ProductsScreen() {
 
   // Search filter
   const [searchQuery, setSearchQuery] = useState('');
+  const [crossSectionMatches, setCrossSectionMatches] = useState<CrossSectionMatch[]>([]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const runCrossSearch = async () => {
+      const q = searchQuery.trim();
+      if (!q || q.length < 2) {
+        setCrossSectionMatches([]);
+        return;
+      }
+      try {
+        const storeId = store?.id || 'store-1';
+        const matches = await MatrixRepository.searchCrossSections(
+          storeId,
+          q,
+          activeSubcategoryId || undefined,
+          selectedCategoryId || undefined
+        );
+        if (!isCancelled) {
+          setCrossSectionMatches(matches);
+        }
+      } catch (err) {
+        console.error('Error in cross-section search:', err);
+      }
+    };
+
+    const timer = setTimeout(runCrossSearch, 150);
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchQuery, activeSubcategoryId, selectedCategoryId, store?.id]);
 
   const activeCategory = useMemo(() => {
     return categories.find((c) => c.id === selectedCategoryId) || categories[0] || null;
@@ -463,6 +496,29 @@ export default function ProductsScreen() {
       setLoading(false);
     }
   };
+
+  /**
+   * Quick jump to an item found in another section via search
+   */
+  const handleSelectCrossSectionMatch = useCallback(async (match: CrossSectionMatch) => {
+    try {
+      setLoading(true);
+      setSearchQuery('');
+      if (match.categoryId && match.categoryId !== selectedCategoryId) {
+        setSelectedCategoryId(match.categoryId);
+        const { effectiveSubId } = await refreshHierarchy(match.categoryId, match.subcategoryId);
+        await loadMatrix(match.categoryId, effectiveSubId || match.subcategoryId, match.size, match.brand);
+      } else {
+        const { effectiveSubId } = await refreshHierarchy(selectedCategoryId, match.subcategoryId);
+        await loadMatrix(selectedCategoryId, effectiveSubId || match.subcategoryId, match.size, match.brand);
+      }
+    } catch (e: any) {
+      console.error('Error selecting cross-section match:', e);
+      showToast('Could not open section', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedCategoryId, refreshHierarchy, loadMatrix, showToast]);
 
   /**
    * Add a custom sub-tab / sub-section dynamically at any arbitrary depth
@@ -1197,6 +1253,13 @@ export default function ProductsScreen() {
     const tokens = rawQuery.split(/\s+/).filter(Boolean);
     if (tokens.length === 0) return matrixData;
 
+    const catName = (activeCategory?.name || '').trim().toLowerCase();
+    const subName = (activeSubcategory?.name || '').trim().toLowerCase();
+    const catSubText = `${catName} ${subName}`.trim();
+
+    // Check if query is entirely part of the category or subcategory name (e.g. "paint" or "wall")
+    const allTokensInCatSub = tokens.every((token) => catSubText.includes(token));
+
     const matchingSizes = new Set<string>();
     const matchingBrands = new Set<string>();
 
@@ -1219,7 +1282,8 @@ export default function ProductsScreen() {
           }
           const stockStr = cell ? ` ${cell.currentStock}` : '';
 
-          const combinedText = `${cleanSize} ${cleanBrand}${priceTokens}${stockStr}`.toLowerCase();
+          // Include category name and subcategory name so searching "paint" or "wall paint 10L" works seamlessly!
+          const combinedText = `${catName} ${subName} ${cleanSize} ${cleanBrand}${priceTokens}${stockStr}`.toLowerCase();
 
           // Cell matches if EVERY token appears somewhere in the combined size/brand/price/stock
           if (tokens.every((token) => combinedText.includes(token))) {
@@ -1232,7 +1296,8 @@ export default function ProductsScreen() {
       // 2. Unbranded categories (only sizes)
       for (const size of matrixData.sizes) {
         const cleanSize = size.trim().toLowerCase();
-        if (tokens.every((token) => cleanSize.includes(token))) {
+        const combinedText = `${catName} ${subName} ${cleanSize}`.toLowerCase();
+        if (tokens.every((token) => combinedText.includes(token))) {
           matchingSizes.add(size);
         }
       }
@@ -1240,11 +1305,16 @@ export default function ProductsScreen() {
 
     // 3. Fallback: check sizes and brands individually if no direct cell combination matched
     if (matchingSizes.size === 0 && matchingBrands.size === 0) {
+      if (allTokensInCatSub) {
+        // If the query was the category or subcategory name itself (e.g. "paint"), show all items in the matrix!
+        return matrixData;
+      }
+
       const sizeMatches = matrixData.sizes.filter((s) =>
-        tokens.every((token) => s.toLowerCase().includes(token))
+        tokens.every((token) => `${catName} ${subName} ${s.toLowerCase()}`.includes(token))
       );
       const brandMatches = matrixData.brands.filter((b) =>
-        tokens.every((token) => b.toLowerCase().includes(token))
+        tokens.every((token) => `${catName} ${subName} ${b.toLowerCase()}`.includes(token))
       );
 
       if (sizeMatches.length > 0 || brandMatches.length > 0) {
@@ -1268,7 +1338,7 @@ export default function ProductsScreen() {
       sizes: matrixData.sizes.filter((s) => matchingSizes.has(s)),
       cells: matrixData.cells,
     };
-  }, [matrixData, searchQuery]);
+  }, [matrixData, searchQuery, activeCategory?.name, activeSubcategory?.name]);
 
   return (
     <View style={[styles.container, { backgroundColor: activeColors.background }]}>
@@ -1550,6 +1620,8 @@ export default function ProductsScreen() {
                 emptyLabel={activeCategory?.name || 'Items'}
                 searchQuery={searchQuery}
                 onClearSearch={() => setSearchQuery('')}
+                crossSectionMatches={crossSectionMatches}
+                onSelectCrossSectionMatch={handleSelectCrossSectionMatch}
               />
             )}
           </View>

@@ -620,4 +620,66 @@ describe('MatrixRepository Utilities', () => {
     // Non-matching term fails even if other term matches
     expect(matchHistory('Dulux 100L')).toBe(false);
   });
+
+  it('searches cross-section products and variants matching multi-word tokens', async () => {
+    const mockDb = {
+      getAllAsync: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('FROM product_variants v')) {
+          return Promise.resolve([
+            {
+              variantId: 'v1',
+              size: '10L',
+              currentStock: 24,
+              sellingPricePaise: 45000,
+              priceDisplay: '450',
+              productId: 'p1',
+              productName: 'Primium Finolex paint Items',
+              brand: 'Primium Finolex',
+              unit: 'piece',
+              categoryId: 'cat-paint',
+              subcategoryId: 'sub-wall-paint',
+              categoryName: 'Paint',
+              subcategoryName: 'Wall paint',
+            },
+            {
+              variantId: 'v2',
+              size: '5kg',
+              currentStock: 10,
+              sellingPricePaise: 25000,
+              priceDisplay: '250',
+              productId: 'p2',
+              productName: 'Birla White Putty',
+              brand: 'Birla White',
+              unit: 'bag',
+              categoryId: 'cat-paint',
+              subcategoryId: 'sub-putty',
+              categoryName: 'Paint',
+              subcategoryName: 'Putty',
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      }),
+      runAsync: vi.fn().mockResolvedValue({}),
+    };
+
+    const { getDatabase } = await import('../database/db.js');
+    vi.mocked(getDatabase).mockResolvedValue(mockDb as any);
+
+    // Searching 'putty' from 'sub-wall-paint' should return the Putty item
+    const results = await MatrixRepository.searchCrossSections('store-1', 'putty', 'sub-wall-paint', 'cat-paint');
+    expect(results).toHaveLength(1);
+    expect(results[0].subcategoryName).toBe('Putty');
+    expect(results[0].brand).toBe('Birla White');
+    expect(results[0].priceDisplay).toBe('250');
+
+    // Searching 'paint' should exclude current subcategory 'sub-wall-paint' and match other Paint sections
+    const paintResults = await MatrixRepository.searchCrossSections('store-1', 'paint', 'sub-wall-paint', 'cat-paint');
+    expect(paintResults).toHaveLength(1);
+    expect(paintResults[0].subcategoryName).toBe('Putty');
+
+    // Empty query returns empty array
+    const emptyResults = await MatrixRepository.searchCrossSections('store-1', '   ', 'sub-wall-paint');
+    expect(emptyResults).toHaveLength(0);
+  });
 });

@@ -254,6 +254,13 @@ const SearchResultItem = React.memo<SearchResultItemProps>(({
   const isLow = !isOut && item.currentStock > 0 && item.currentStock <= threshold;
   const isZeroUnstocked = item.currentStock <= 0 && !isOut;
 
+  // Format price
+  const formattedPrice = item.priceDisplay
+    ? (item.priceDisplay.startsWith('₹') ? item.priceDisplay : `₹${item.priceDisplay}`)
+    : (item.sellingPricePaise && item.sellingPricePaise > 0
+        ? `₹${(item.sellingPricePaise / 100).toLocaleString('en-IN')}`
+        : null);
+
   return (
     <Surface
       style={[
@@ -293,41 +300,78 @@ const SearchResultItem = React.memo<SearchResultItemProps>(({
           </View>
         </View>
 
-        <View
-          style={[
-            styles.searchStockPill,
-            isOut
-              ? styles.stockPillOut
-              : isLow
-              ? styles.stockPillLow
-              : isZeroUnstocked
-              ? (isDarkMode ? styles.stockPillNeutralDark : styles.stockPillNeutral)
-              : styles.stockPillOk,
-          ]}
-        >
-          <Text
+        <View style={styles.searchHeaderBadges}>
+          {formattedPrice ? (
+            <View
+              style={[
+                styles.searchPriceBadge,
+                {
+                  backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF',
+                  borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE',
+                },
+              ]}
+            >
+              <Text style={[styles.searchPriceBadgeText, { color: isDarkMode ? '#93C5FD' : '#1D4ED8' }]}>
+                {formattedPrice}
+              </Text>
+            </View>
+          ) : null}
+
+          <View
             style={[
-              styles.searchStockPillText,
+              styles.searchStockPill,
               isOut
-                ? styles.stockTextOut
+                ? styles.stockPillOut
                 : isLow
-                ? styles.stockTextLow
+                ? styles.stockPillLow
                 : isZeroUnstocked
-                ? (isDarkMode ? styles.stockTextNeutralDark : styles.stockTextNeutral)
-                : styles.stockTextOk,
+                ? (isDarkMode ? styles.stockPillNeutralDark : styles.stockPillNeutral)
+                : styles.stockPillOk,
             ]}
           >
-            {isOut ? 'Out of Stock' : `${item.currentStock} ${item.unit}`}
-          </Text>
+            <Text
+              style={[
+                styles.searchStockPillText,
+                isOut
+                  ? styles.stockTextOut
+                  : isLow
+                  ? styles.stockTextLow
+                  : isZeroUnstocked
+                  ? (isDarkMode ? styles.stockTextNeutralDark : styles.stockTextNeutral)
+                  : styles.stockTextOk,
+              ]}
+            >
+              {isOut ? 'Out of Stock' : `${item.currentStock} ${item.unit}`}
+            </Text>
+          </View>
         </View>
       </View>
 
       <View style={styles.searchActionsRow}>
-        {item.rackLocation ? (
-          <Text style={[styles.searchRackText, { color: activeColors.textMuted }]}>
-            📍 {item.rackLocation}
-          </Text>
-        ) : <View />}
+        <View style={styles.searchLeftMeta}>
+          <View
+            style={[
+              styles.searchPriceTag,
+              {
+                backgroundColor: isDarkMode ? '#1E293B' : '#EEF2FF',
+                borderColor: isDarkMode ? '#3730A3' : '#C7D2FE',
+              },
+            ]}
+          >
+            <Text style={[styles.searchPriceTagText, { color: isDarkMode ? '#93C5FD' : '#2563EB' }]}>
+              {formattedPrice ? formattedPrice : '₹ --'}
+            </Text>
+            <Text style={[styles.searchPriceUnit, { color: activeColors.textMuted }]}>
+              /{item.unit}
+            </Text>
+          </View>
+
+          {item.rackLocation ? (
+            <Text style={[styles.searchRackText, { color: activeColors.textMuted }]}>
+              📍 {item.rackLocation}
+            </Text>
+          ) : null}
+        </View>
 
         <View style={styles.searchButtonsWrap}>
           <TouchableOpacity
@@ -1521,6 +1565,21 @@ const styles = StyleSheet.create({
   stockTextNeutralDark: {
     color: '#94A3B8',
   },
+  searchHeaderBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  searchPriceBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+  },
+  searchPriceBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
   searchActionsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1529,6 +1588,28 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: 'rgba(150, 150, 150, 0.1)',
+  },
+  searchLeftMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 1,
+  },
+  searchPriceTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+  },
+  searchPriceTagText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  searchPriceUnit: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   searchRackText: {
     fontSize: 11,

@@ -11,7 +11,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { MatrixCellData, MatrixGridData } from '../database/repositories/matrixRepository.js';
+import { MatrixCellData, MatrixGridData, CrossSectionMatch } from '../database/repositories/matrixRepository.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { borderRadius, getThemeShadows } from '../theme/tokens.js';
 
@@ -32,6 +32,8 @@ interface ProductMatrixGridProps {
   emptyLabel?: string;
   searchQuery?: string;
   onClearSearch?: () => void;
+  crossSectionMatches?: CrossSectionMatch[];
+  onSelectCrossSectionMatch?: (match: CrossSectionMatch) => void;
 }
 
 const ROW_HEADER_WIDTH = 98;
@@ -379,6 +381,8 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
   emptyLabel = 'Pipes',
   searchQuery,
   onClearSearch,
+  crossSectionMatches,
+  onSelectCrossSectionMatch,
 }) => {
   const { brands, sizes, cells } = data;
 
@@ -754,24 +758,113 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
           {/* Table Body (Sizes as Rows) */}
           {currentSizes.length === 0 ? (
             searchQuery && searchQuery.trim() ? (
-              <View style={[styles.emptyTableBanner, { width: isTablet ? 420 : 320 }]}>
-                <MaterialCommunityIcons name="magnify-remove-outline" size={isTablet ? 38 : 32} color={activeColors.textMuted} />
-                <Text style={[styles.emptyTableTitle, { fontSize: isTablet ? 17 : 15, color: activeColors.textPrimary }]}>
-                  No items found
-                </Text>
-                <Text style={[styles.emptyTableSubtitle, { fontSize: isTablet ? 13.5 : 12, color: activeColors.textMuted }]}>
-                  No size or brand matched "{searchQuery}"
-                </Text>
-                {onClearSearch && (
-                  <TouchableOpacity
-                    onPress={onClearSearch}
-                    style={[styles.emptyAddBtn, { backgroundColor: activeColors.primary, marginTop: 12 }]}
+              crossSectionMatches && crossSectionMatches.length > 0 ? (
+                <View style={[styles.crossMatchesContainer, { width: isTablet ? 540 : 360 }]}>
+                  <View style={styles.crossMatchesHeaderRow}>
+                    <View style={[styles.crossMatchesIconCircle, { backgroundColor: isDarkMode ? '#1E1B4B' : '#EEF2FF' }]}>
+                      <MaterialCommunityIcons name="folder-search-outline" size={20} color={activeColors.primary} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={[styles.crossMatchesTitle, { color: activeColors.textPrimary }]}>
+                        Found in other sections ({crossSectionMatches.length})
+                      </Text>
+                      <Text style={[styles.crossMatchesSubtitle, { color: activeColors.textMuted }]}>
+                        No match in this section. Tap any item to jump directly to it:
+                      </Text>
+                    </View>
+                    {onClearSearch && (
+                      <TouchableOpacity onPress={onClearSearch} style={styles.clearMiniBtn}>
+                        <MaterialCommunityIcons name="close-circle" size={20} color={activeColors.textMuted} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <ScrollView
+                    style={styles.crossMatchesScroll}
+                    showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled
+                    keyboardShouldPersistTaps="always"
                   >
-                    <MaterialCommunityIcons name="close-circle-outline" size={isTablet ? 18 : 16} color="#FFFFFF" />
-                    <Text style={[styles.emptyAddBtnText, { fontSize: isTablet ? 14 : 13 }]}>Clear Search</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+                    {crossSectionMatches.map((match, idx) => {
+                      const formattedPrice = match.priceDisplay
+                        ? (match.priceDisplay.startsWith('₹') ? match.priceDisplay : `₹${match.priceDisplay}`)
+                        : (match.sellingPricePaise && match.sellingPricePaise > 0
+                            ? `₹${(match.sellingPricePaise / 100).toLocaleString('en-IN')}`
+                            : null);
+
+                      return (
+                        <TouchableOpacity
+                          key={`${match.subcategoryId}-${match.size}-${match.brand}-${idx}`}
+                          style={[
+                            styles.crossMatchCard,
+                            {
+                              backgroundColor: isDarkMode ? activeColors.surfaceElevated : '#F8FAFC',
+                              borderColor: activeColors.border,
+                            },
+                          ]}
+                          activeOpacity={0.7}
+                          onPress={() => onSelectCrossSectionMatch && onSelectCrossSectionMatch(match)}
+                        >
+                          <View style={styles.crossMatchLeft}>
+                            <View style={[styles.crossMatchSectionBadge, { backgroundColor: isDarkMode ? '#1E1B4B' : '#EEF2FF' }]}>
+                              <Text style={[styles.crossMatchSectionBadgeText, { color: activeColors.primary }]} numberOfLines={1}>
+                                {match.categoryName && match.categoryName !== emptyLabel ? `${match.categoryName} › ` : ''}{match.subcategoryName}
+                              </Text>
+                            </View>
+                            <Text style={[styles.crossMatchItemName, { color: activeColors.textPrimary }]} numberOfLines={1}>
+                              {match.brand} • {match.size}
+                            </Text>
+                            {match.productName && match.productName !== match.brand && (
+                              <Text style={[styles.crossMatchProductSub, { color: activeColors.textSecondary }]} numberOfLines={1}>
+                                {match.productName}
+                              </Text>
+                            )}
+                          </View>
+
+                          <View style={styles.crossMatchRight}>
+                            {formattedPrice ? (
+                              <View style={[styles.crossMatchPriceBadge, { backgroundColor: isDarkMode ? '#1E293B' : '#EFF6FF', borderColor: isDarkMode ? '#3B82F6' : '#BFDBFE' }]}>
+                                <Text style={[styles.crossMatchPriceText, { color: isDarkMode ? '#93C5FD' : '#1D4ED8' }]}>
+                                  {formattedPrice}
+                                </Text>
+                              </View>
+                            ) : null}
+
+                            <View style={[styles.crossMatchStockBadge, { backgroundColor: match.currentStock > 0 ? (isDarkMode ? '#064E3B' : '#DCFCE7') : (isDarkMode ? '#7F1D1D' : '#FEE2E2') }]}>
+                              <Text style={[styles.crossMatchStockText, { color: match.currentStock > 0 ? (isDarkMode ? '#6EE7B7' : '#15803D') : (isDarkMode ? '#FCA5A5' : '#B91C1C') }]}>
+                                {match.currentStock} {match.unit}
+                              </Text>
+                            </View>
+
+                            <View style={[styles.crossMatchGoBtn, { backgroundColor: activeColors.primary }]}>
+                              <Text style={styles.crossMatchGoText}>Open →</Text>
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              ) : (
+                <View style={[styles.emptyTableBanner, { width: isTablet ? 420 : 320 }]}>
+                  <MaterialCommunityIcons name="magnify-remove-outline" size={isTablet ? 38 : 32} color={activeColors.textMuted} />
+                  <Text style={[styles.emptyTableTitle, { fontSize: isTablet ? 17 : 15, color: activeColors.textPrimary }]}>
+                    No items found
+                  </Text>
+                  <Text style={[styles.emptyTableSubtitle, { fontSize: isTablet ? 13.5 : 12, color: activeColors.textMuted }]}>
+                    No size or brand matched "{searchQuery}"
+                  </Text>
+                  {onClearSearch && (
+                    <TouchableOpacity
+                      onPress={onClearSearch}
+                      style={[styles.emptyAddBtn, { backgroundColor: activeColors.primary, marginTop: 12 }]}
+                    >
+                      <MaterialCommunityIcons name="close-circle-outline" size={isTablet ? 18 : 16} color="#FFFFFF" />
+                      <Text style={[styles.emptyAddBtnText, { fontSize: isTablet ? 14 : 13 }]}>Clear Search</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )
             ) : (
               <View style={[styles.emptyTableBanner, { width: isTablet ? 420 : 320 }]}>
                 <MaterialCommunityIcons name="table-plus" size={isTablet ? 38 : 32} color={activeColors.primary} />
@@ -817,6 +910,29 @@ export const ProductMatrixGrid: React.FC<ProductMatrixGridProps> = React.memo(({
                   onOpenManageSize={handleOpenManageSize}
                 />
               ))}
+
+              {/* Other sections indicator pill if matches found elsewhere */}
+              {crossSectionMatches && crossSectionMatches.length > 0 && (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => onSelectCrossSectionMatch && onSelectCrossSectionMatch(crossSectionMatches[0])}
+                  style={[
+                    styles.alsoFoundFooter,
+                    {
+                      borderColor: activeColors.border,
+                      backgroundColor: isDarkMode ? '#1E1B4B' : '#EEF2FF',
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons name="information-outline" size={16} color={activeColors.primary} />
+                  <Text style={[styles.alsoFoundText, { color: activeColors.textPrimary }]}>
+                    Also found <Text style={{ fontWeight: '700', color: activeColors.primary }}>{crossSectionMatches.length}</Text> matching item{crossSectionMatches.length > 1 ? 's' : ''} in other sections of {emptyLabel}
+                  </Text>
+                  <Text style={[styles.alsoFoundAction, { color: activeColors.primary }]}>
+                    Open "{crossSectionMatches[0].subcategoryName}" →
+                  </Text>
+                </TouchableOpacity>
+              )}
 
               {/* Bottom Row: "+ Add Size / Item" Button */}
               <View style={[styles.dataRow, { height: cellHeight }]}>
@@ -2232,6 +2348,122 @@ const styles = StyleSheet.create({
   },
   reorderBtnText: {
     fontSize: 13,
+    fontWeight: '700',
+  },
+  crossMatchesContainer: {
+    padding: 16,
+    borderRadius: borderRadius.md,
+    alignSelf: 'flex-start',
+  },
+  crossMatchesHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  crossMatchesIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  crossMatchesTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  crossMatchesSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  clearMiniBtn: {
+    padding: 6,
+  },
+  crossMatchesScroll: {
+    maxHeight: 280,
+  },
+  crossMatchCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  crossMatchLeft: {
+    flex: 1,
+    marginRight: 10,
+  },
+  crossMatchSectionBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginBottom: 4,
+  },
+  crossMatchSectionBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  crossMatchItemName: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  crossMatchProductSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  crossMatchRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  crossMatchPriceBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  crossMatchPriceText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  crossMatchStockBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  crossMatchStockText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  crossMatchGoBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginTop: 2,
+  },
+  crossMatchGoText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  alsoFoundFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 12,
+    gap: 8,
+  },
+  alsoFoundText: {
+    fontSize: 12,
+    flex: 1,
+  },
+  alsoFoundAction: {
+    fontSize: 12,
     fontWeight: '700',
   },
 });

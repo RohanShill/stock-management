@@ -15,6 +15,20 @@ export interface MatrixCellData {
   hasStockHistory?: boolean;
 }
 
+export interface CrossSectionMatch {
+  subcategoryId: string;
+  subcategoryName: string;
+  categoryId: string;
+  categoryName: string;
+  productName: string;
+  brand: string;
+  size: string;
+  currentStock: number;
+  sellingPricePaise: number;
+  priceDisplay?: string | null;
+  unit: string;
+}
+
 export interface MatrixGridData {
   brands: string[];
   sizes: string[];
@@ -1140,6 +1154,116 @@ export class MatrixRepository {
         ? { sellingPricePaise: pricePaise, ...(cleanDisplay !== null ? { priceDisplay: cleanDisplay } : {}) }
         : { purchasePricePaise: pricePaise };
       await SyncQueueRepository.enqueue(storeId, deviceId, 'product_variant', variantId, 'update', payload).catch(() => {});
+    }
+  }
+
+  /**
+   * Searches for matching products/variants across other sections/subcategories.
+   */
+  static async searchCrossSections(
+    storeId: string,
+    query: string,
+    currentSubcatId?: string,
+    currentCatId?: string
+  ): Promise<CrossSectionMatch[]> {
+    const cleanQuery = query.trim().toLowerCase();
+    if (!cleanQuery) return [];
+
+    const tokens = cleanQuery.split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return [];
+
+    try {
+      const db = await getDatabase();
+      if (!db || typeof db.getAllAsync !== 'function') return [];
+
+      const sql = `
+        SELECT 
+          v.id AS variantId,
+          v.size AS size,
+          v.currentStock AS currentStock,
+          v.sellingPricePaise AS sellingPricePaise,
+          v.priceDisplay AS priceDisplay,
+          p.id AS productId,
+          p.name AS productName,
+          p.brand AS brand,
+          p.baseUnit AS unit,
+          p.categoryId AS categoryId,
+          p.subcategoryId AS subcategoryId,
+          c.name AS categoryName,
+          s.name AS subcategoryName
+        FROM product_variants v
+        JOIN products p ON v.productId = p.id
+        JOIN categories c ON p.categoryId = c.id
+        JOIN subcategories s ON p.subcategoryId = s.id
+        WHERE p.storeId = ?
+          AND p.deletedAt IS NULL AND p.active = 1
+          AND v.deletedAt IS NULL AND v.active = 1
+          AND c.deletedAt IS NULL AND c.active = 1
+          AND s.deletedAt IS NULL AND s.active = 1
+          AND LOWER(p.brand) != 'general'
+          AND p.id NOT LIKE 'demo-%'
+          AND p.id NOT LIKE 'prod-demo%'
+        ORDER BY s.displayOrder ASC, s.name ASC, p.name ASC;
+      `;
+
+      const rows = await db.getAllAsync<any>(sql, [storeId]);
+      if (!rows || rows.length === 0) return [];
+
+      const matches: CrossSectionMatch[] = [];
+
+      for (const r of rows) {
+        // Exclude items in the currently active section
+        if (currentSubcatId && r.subcategoryId === currentSubcatId) {
+          continue;
+        }
+
+        const sizeStr = (r.size || '').trim();
+        const brandStr = (r.brand || '').trim();
+        const prodNameStr = (r.productName || '').trim();
+        const catNameStr = (r.categoryName || '').trim();
+        const subNameStr = (r.subcategoryName || '').trim();
+
+        let priceStr = '';
+        if (r.priceDisplay) priceStr += ` ${r.priceDisplay}`;
+        if (r.sellingPricePaise && r.sellingPricePaise > 0) {
+          const rupees = r.sellingPricePaise / 100;
+          priceStr += ` ₹${rupees} ${rupees}`;
+        }
+
+        const target = `${catNameStr} ${subNameStr} ${prodNameStr} ${brandStr} ${sizeStr}${priceStr}`.toLowerCase();
+
+        if (tokens.every((token) => target.includes(token))) {
+          matches.push({
+            subcategoryId: r.subcategoryId,
+            subcategoryName: subNameStr,
+            categoryId: r.categoryId,
+            categoryName: catNameStr,
+            productName: prodNameStr,
+            brand: brandStr,
+            size: sizeStr,
+            currentStock: r.currentStock ?? 0,
+            sellingPricePaise: r.sellingPricePaise ?? 0,
+            priceDisplay: r.priceDisplay ?? null,
+            unit: r.unit || 'pcs',
+          });
+
+          if (matches.length >= 25) break;
+        }
+      }
+
+      // Sort matches: items in current category first, then other categories
+      if (currentCatId) {
+        matches.sort((a, b) => {
+          if (a.categoryId === currentCatId && b.categoryId !== currentCatId) return -1;
+          if (a.categoryId !== currentCatId && b.categoryId === currentCatId) return 1;
+          return 0;
+        });
+      }
+
+      return matches;
+    } catch (e) {
+      console.error('searchCrossSections query error:', e);
+      return [];
     }
   }
 }
