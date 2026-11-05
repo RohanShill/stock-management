@@ -297,7 +297,7 @@ export class CategoryRepository {
       categoryId: subcat.categoryId!,
       parentId,
       depth,
-      name: subcat.name!,
+      name: subcat.name ? subcat.name.trim().toUpperCase() : subcat.name!,
       description: subcat.description,
       displayOrder: subcat.displayOrder ?? 0,
       active: true,
@@ -349,7 +349,7 @@ export class CategoryRepository {
     );
     if (!existing) throw new Error('Subcategory not found');
 
-    const name = updates.name !== undefined ? updates.name : existing.name;
+    const name = updates.name !== undefined ? updates.name.trim().toUpperCase() : existing.name;
     const description = updates.description !== undefined ? updates.description : existing.description;
     const categoryId = updates.categoryId !== undefined ? updates.categoryId : existing.categoryId;
     const displayOrder = updates.displayOrder !== undefined ? updates.displayOrder : existing.displayOrder;

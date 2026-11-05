@@ -534,12 +534,13 @@ export default function ProductsScreen() {
     try {
       setLoading(true);
       const storeId = store?.id || 'store-1';
+      const cleanTabName = tabName.trim().toUpperCase();
       const effectiveParentId = isChild && parentId ? parentId.trim() : null;
 
       const created = await MatrixRepository.addSubTab(
         storeId,
         selectedCategoryId,
-        tabName,
+        cleanTabName,
         deviceId,
         effectiveParentId
       );
@@ -547,7 +548,7 @@ export default function ProductsScreen() {
       const { effectiveSubId } = await refreshHierarchy(selectedCategoryId, created.id);
       await loadMatrix(selectedCategoryId, effectiveSubId || created.id);
       showToast(
-        effectiveParentId ? `Sub-section "${tabName}" created!` : `Section "${tabName}" added!`,
+        effectiveParentId ? `Sub-section "${cleanTabName}" created!` : `Section "${cleanTabName}" added!`,
         'success'
       );
     } catch (e: any) {
@@ -1174,7 +1175,11 @@ export default function ProductsScreen() {
 
   const handleTriggerManageRename = () => {
     if (!manageTarget) return;
-    setManageRenameInput(currentManageItemName);
+    setManageRenameInput(
+      manageTarget.type === 'section'
+        ? currentManageItemName.toUpperCase()
+        : currentManageItemName
+    );
     setManageModalVisible(false);
     setTimeout(() => {
       setManageRenameModalVisible(true);
@@ -1183,12 +1188,13 @@ export default function ProductsScreen() {
 
   const handleConfirmManageRename = async () => {
     if (!manageTarget || submittingManageRename) return;
-    const clean = manageRenameInput.trim();
-    if (!clean) {
+    const rawClean = manageRenameInput.trim();
+    if (!rawClean) {
       showToast('Name cannot be empty', 'warning');
       return;
     }
     const { type, item } = manageTarget;
+    const clean = type === 'section' ? rawClean.toUpperCase() : rawClean;
     if (clean.toLowerCase() === item.name.toLowerCase() && clean === item.name) {
       setManageRenameModalVisible(false);
       return;
@@ -2564,7 +2570,10 @@ export default function ProductsScreen() {
               placeholder={`Enter new ${manageTarget?.type === 'category' ? 'category' : 'section'} name`}
               placeholderTextColor={activeColors.textMuted}
               value={manageRenameInput}
-              onChangeText={setManageRenameInput}
+              autoCapitalize={manageTarget?.type === 'section' ? 'characters' : 'words'}
+              onChangeText={(text) =>
+                setManageRenameInput(manageTarget?.type === 'section' ? text.toUpperCase() : text)
+              }
               autoFocus
               selectTextOnFocus
               returnKeyType="done"
@@ -2675,11 +2684,12 @@ export default function ProductsScreen() {
               placeholder="Enter sub-section name..."
               placeholderTextColor={activeColors.textMuted}
               value={nestedAddName}
-              onChangeText={setNestedAddName}
+              autoCapitalize="characters"
+              onChangeText={(text) => setNestedAddName(text.toUpperCase())}
               autoFocus
               returnKeyType="done"
               onSubmitEditing={async () => {
-                const clean = nestedAddName.trim();
+                const clean = nestedAddName.trim().toUpperCase();
                 if (!clean || !nestedAddTarget || submittingNestedAdd) return;
                 try {
                   setSubmittingNestedAdd(true);
@@ -2712,7 +2722,7 @@ export default function ProductsScreen() {
 
               <TouchableOpacity
                 onPress={async () => {
-                  const clean = nestedAddName.trim();
+                  const clean = nestedAddName.trim().toUpperCase();
                   if (!clean || !nestedAddTarget || submittingNestedAdd) return;
                   try {
                     setSubmittingNestedAdd(true);

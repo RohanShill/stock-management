@@ -127,7 +127,8 @@ export default function CategoriesManagementScreen() {
 
   // Save / Update / Move Subcategory
   const handleSaveSubcategory = async () => {
-    if (!subcatName.trim() || !targetParentCatId) {
+    const cleanSubcatName = subcatName.trim().toUpperCase();
+    if (!cleanSubcatName || !targetParentCatId) {
       showToast('Subcategory name and parent category are mandatory', 'warning');
       return;
     }
@@ -138,7 +139,7 @@ export default function CategoriesManagementScreen() {
           editingSubcat.id,
           {
             categoryId: targetParentCatId,
-            name: subcatName,
+            name: cleanSubcatName,
             description: subcatDesc,
             displayOrder: parseInt(subcatOrder || '0', 10),
           },
@@ -150,14 +151,14 @@ export default function CategoriesManagementScreen() {
         await CategoryRepository.createSubcategory(
           {
             categoryId: targetParentCatId,
-            name: subcatName,
+            name: cleanSubcatName,
             description: subcatDesc,
             displayOrder: parseInt(subcatOrder || '0', 10),
           },
           storeId,
           deviceId
         );
-        showToast(`Subcategory '${subcatName}' added.`, 'success');
+        showToast(`Subcategory '${cleanSubcatName}' added.`, 'success');
       }
       setSubcatDialogVisible(false);
       setEditingSubcat(null);
@@ -440,7 +441,8 @@ export default function CategoriesManagementScreen() {
             <TextInput
               label="Subcategory Name *"
               value={subcatName}
-              onChangeText={setSubcatName}
+              autoCapitalize="characters"
+              onChangeText={(text) => setSubcatName(text.toUpperCase())}
               mode="outlined"
               style={[styles.input, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF' }]}
               textColor={activeColors.textPrimary}

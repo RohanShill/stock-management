@@ -963,7 +963,7 @@ export default function SettingsScreen() {
           {store?.name || 'MANJU STORES'}
         </Text>
         <Text style={[styles.aboutVersion, { color: activeColors.textSecondary }]}>
-          Version {Constants.expoConfig?.version || '1.0.2'} (Build {Constants.expoConfig?.android?.versionCode || 3})
+          Version {Constants.expoConfig?.version || '1.0.3'} (Build {Constants.expoConfig?.android?.versionCode || 4})
         </Text>
         <Text style={[styles.aboutCopyright, { color: activeColors.textMuted }]}>
           © {new Date().getFullYear()} {store?.name || 'MANJU STORES'}. All Rights Reserved.

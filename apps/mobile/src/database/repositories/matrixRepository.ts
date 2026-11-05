@@ -1036,14 +1036,15 @@ export class MatrixRepository {
     const lastRow = await db.getFirstAsync<{ maxOrder: number }>(maxOrderSql, maxOrderParams);
     const displayOrder = (lastRow?.maxOrder || 0) + 1;
 
+    const cleanName = tabName.trim().toUpperCase();
     const record: Subcategory = {
       id,
       storeId,
       categoryId,
       parentId: parentIdClean,
       depth,
-      name: tabName.trim(),
-      description: `${tabName.trim()} section`,
+      name: cleanName,
+      description: `${cleanName} section`,
       displayOrder,
       active: true,
       createdAt: now,

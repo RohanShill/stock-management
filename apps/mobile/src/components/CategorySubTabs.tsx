@@ -125,7 +125,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
   };
 
   const handleCreate = async () => {
-    const clean = newTabName.trim();
+    const clean = newTabName.trim().toUpperCase();
     if (!clean || submitting) return;
 
     try {
@@ -206,7 +206,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                         ]}
                         numberOfLines={1}
                       >
-                        {crumb.name}
+                        {crumb.name?.toUpperCase() || ''}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -333,7 +333,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                       >
                         Sub-sections of{' '}
                         <Text style={{ fontWeight: '800', color: activeColors.textPrimary }}>
-                          "{tier.parent?.name}"
+                          "{tier.parent?.name?.toUpperCase() || ''}"
                         </Text>
                         :
                       </Text>
@@ -410,7 +410,7 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
                           ]}
                           numberOfLines={1}
                         >
-                          {item.name}
+                          {item.name?.toUpperCase() || ''}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -538,7 +538,8 @@ export const CategorySubTabs: React.FC<CategorySubTabsProps> = ({
               }
               placeholderTextColor={activeColors.textMuted}
               value={newTabName}
-              onChangeText={setNewTabName}
+              autoCapitalize="characters"
+              onChangeText={(text) => setNewTabName(text.toUpperCase())}
               autoFocus
               returnKeyType="done"
               onSubmitEditing={handleCreate}

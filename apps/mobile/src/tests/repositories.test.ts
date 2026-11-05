@@ -327,19 +327,19 @@ describe('CategoryRepository Offline Operations', () => {
     // Breadcrumb path from Level 5 to root
     const breadcrumbs = await CategoryRepository.getBreadcrumbPath(l5Sub.id, 'store-1');
     expect(breadcrumbs.map((b) => b.name)).toEqual([
-      'Water Pipes',
-      'UPVC Pipe',
-      'Schedule 80',
-      '4-Metre',
-      'Threaded End',
+      'WATER PIPES',
+      'UPVC PIPE',
+      'SCHEDULE 80',
+      '4-METRE',
+      'THREADED END',
     ]);
 
     // Querying root sections vs child subcategories
     const rootSections = await CategoryRepository.getSubcategories(cat.id, 'store-1', false, null);
-    expect(rootSections.map((s) => s.name)).toEqual(['Water Pipes']);
+    expect(rootSections.map((s) => s.name)).toEqual(['WATER PIPES']);
 
     const l2Children = await CategoryRepository.getSubcategories(cat.id, 'store-1', false, l1Section.id);
-    expect(l2Children.map((s) => s.name)).toEqual(['UPVC Pipe']);
+    expect(l2Children.map((s) => s.name)).toEqual(['UPVC PIPE']);
   });
 
   it('moves a subcategory safely to another parent category', async () => {
